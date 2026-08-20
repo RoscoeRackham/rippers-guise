@@ -22,6 +22,8 @@
  * audit (checkHoplosphereSockets) and a best-effort slotting guard. Stage 8c (alpha.3) adds HEROIC
  * SLOTS: the four canon slots (creation/level40/level50/earned) with level-gated 40/50, creation_banned
  * enforcement, and dormancy (the creation heroic sleeps while masked; 40/50/earned stay live).
+ * HW1 (alpha.4, ratified) wires the Hunter Weapon material to its bane key (silver/cold_iron/
+ * consecrated/wood; cursed = GM-authored) so the canon wpn_material engine resolves — data only.
  *
  * FDN-7 (v0.3.0/0.3.1) adds a player-facing GUISES PANEL in PFU's character-sheet Features tab: a
  * subsection listing the actor's owned guises, each with a Bind/Dismiss button and an ACTIVE
@@ -318,12 +320,39 @@ async function clearActiveGuise(actor) {
 // deferred until that ruling. HW2 (shields on a Guise) is likewise owed.
 const isHunterWeapon = (item) => !!item?.getFlag?.(MODULE_ID, 'isHunterWeapon');
 
-async function setHunterWeapon(weapon, { isHunter = true, material, origin } = {}) {
+// HW1 (RATIFIED 2026-08-20, PROPOSAL-hunter-weapon-banes.md). The weapon's MATERIAL *is* the bane
+// key the canon engine reads (0103 predicate wpn_material = any(foe.banes)) — the existing bane
+// effect (2× damage vs soldier/PC, +2 Pressure vs elite/champion, largest-fill no-stacking). NO new
+// mechanic: our job (weapon side) is to store material normalised to the ratified bane key.
+//   silver → 'silver' · cold_iron → 'cold_iron' · consecrated → 'consecrated' · wood → 'wood'
+//   cursed → NO default (GM authors the bane per weapon; pass baneKey explicitly).
+// (The monster-side species banes[] authoring is a separate task, not here.)
+const HW_MATERIAL_BANE = { silver: 'silver', cold_iron: 'cold_iron', consecrated: 'consecrated', wood: 'wood', cursed: null };
+const normalizeMaterial = (input) => (input == null ? null : String(input).trim().toLowerCase().replace(/[\s-]+/g, '_'));
+/** Resolve the bane key: an explicit key wins (GM-authored cursed bane); else derive from material. Returns undefined to leave unchanged. */
+function baneKeyForMaterial(material, explicit) {
+	if (explicit !== undefined) return explicit || null;
+	const m = normalizeMaterial(material);
+	if (m == null) return undefined;
+	return Object.prototype.hasOwnProperty.call(HW_MATERIAL_BANE, m) ? HW_MATERIAL_BANE[m] : null;
+}
+const hunterWeaponBaneKey = (weapon) => weapon?.getFlag?.(MODULE_ID, 'hunter')?.baneKey ?? null;
+
+async function setHunterWeapon(weapon, { isHunter = true, material, origin, baneKey } = {}) {
 	if (!weapon) { console.warn('[rippers-guise] setHunterWeapon: no weapon.'); return; }
 	await weapon.setFlag(MODULE_ID, 'isHunterWeapon', !!isHunter);
 	const hunter = { ...(weapon.getFlag(MODULE_ID, 'hunter') ?? {}) };
-	if (material !== undefined) hunter.material = material;
+	if (material !== undefined) {
+		const m = normalizeMaterial(material);
+		hunter.material = m;
+		if (m && !Object.prototype.hasOwnProperty.call(HW_MATERIAL_BANE, m)) {
+			ui.notifications?.warn(`Unknown Hunter Weapon material "${material}" — expected silver / cold_iron / consecrated / wood / cursed.`);
+		}
+	}
 	if (origin !== undefined) hunter.origin = origin;
+	// The material IS the bane key (HW1). Explicit baneKey wins (cursed → GM-authored).
+	const bk = baneKeyForMaterial(material, baneKey);
+	if (bk !== undefined) hunter.baneKey = bk;
 	await weapon.setFlag(MODULE_ID, 'hunter', hunter);
 	return weapon;
 }
@@ -966,7 +995,7 @@ Hooks.once('setup', () => {
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -977,4 +1006,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic };

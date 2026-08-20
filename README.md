@@ -144,3 +144,16 @@ await api.assignHeroicSlot(actor, 'creation', actor.items.getName('Brave'));
 await api.assignHeroicSlot(actor, 'earned',   someHeroicItem);
 console.log(api.getHeroicSlots(actor)); // { creation, level40, level50, earned:[...] }
 ```
+
+## Hunter Weapon banes (HW1, ratified)
+
+The Hunter Weapon's **material is its bane key** — the canon engine reads
+`wpn_material = any(foe.banes)` and applies the existing bane effect (2× damage
+vs soldier/PC, +2 Pressure vs elite/champion). Set it with `setHunterWeapon`:
+
+```js
+await api.setHunterWeapon(weapon, { material: 'silver' });   // -> bane key 'silver' (beast/lycanthrope)
+// cold_iron · consecrated · wood map the same way; cursed has no default:
+await api.setHunterWeapon(weapon, { material: 'cursed', baneKey: 'the_hollow_king' }); // GM-authored
+api.hunterWeaponBaneKey(weapon); // -> the resolved bane key
+```
