@@ -1,6 +1,6 @@
 {
 	"name": "rippers-guise",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": true,
 	"type": "module",
 	"description": "Rippers Unmasked — Guise: a first-class 'guise' classFeature (mask/identity swap) registered on Project FU, Arcanum pattern. Personal-table module.",

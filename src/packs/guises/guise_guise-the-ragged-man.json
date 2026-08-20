@@ -8,12 +8,12 @@
 		"summary": {
 			"value": "A street-beggar cover — the city looks past you."
 		},
-		"description": "<p><strong>A nobody the city looks past.</strong></p><p>Nobody remembers a beggar. The mask of the overlooked — you endure what the streets throw.</p><p><em>While bound: +2 max HP.</em></p>",
+		"description": "<p><strong>A nobody the city looks past.</strong></p><p>Nobody remembers a beggar, and no blow quite lands on a man already beneath notice. The mask of the overlooked.</p><p><em>While bound: +1 Defense.</em></p>",
 		"featureType": "rippers-guise.guise",
 		"data": {
 			"identity": "The Ragged Man",
 			"role": "A nobody the city looks past",
-			"notes": "<p>Nobody remembers a beggar. The mask of the overlooked — you endure what the streets throw.</p>"
+			"notes": "<p>Nobody remembers a beggar, and no blow quite lands on a man already beneath notice. The mask of the overlooked.</p>"
 		}
 	},
 	"effects": [
@@ -24,9 +24,9 @@
 			"type": "base",
 			"changes": [
 				{
-					"key": "system.resources.hp.bonus",
+					"key": "system.derived.def.bonus",
 					"mode": 2,
-					"value": "2",
+					"value": "1",
 					"priority": null
 				}
 			],

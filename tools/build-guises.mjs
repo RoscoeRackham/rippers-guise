@@ -44,10 +44,11 @@ const GUISES = [
     img: 'icons/tools/cooking/mortar-herbs-yellow.webp',
     identity: 'Dr. Ravensworth',
     role: 'Harley Street consulting physician',
-    notes: '<p>A respectable practice and a well-stocked bag. The mask of medicine — carries more of everything useful.</p>',
-    summary: 'A Harley Street physician cover — a fuller bag.',
-    changes: [{ key: 'system.resources.ip.bonus', mode: MODE.ADD, value: '4' }],
-    effectLabel: '+4 max IP',
+    notes: '<p>A respectable practice and a diagnostic eye. The mask of medicine — you read a room, a wound and a lie the same way.</p>',
+    summary: 'A Harley Street physician cover — a diagnostic eye.',
+    // Legal (outside the innate benefit pool): a bonus to Open Checks (the doctor's read).
+    changes: [{ key: 'system.bonuses.accuracy.openCheck', mode: MODE.ADD, value: '1' }],
+    effectLabel: '+1 to Open Checks',
   },
   {
     fuid: 'guise-the-ragged-man',
@@ -55,12 +56,32 @@ const GUISES = [
     img: 'icons/environment/people/beggar.webp',
     identity: 'The Ragged Man',
     role: 'A nobody the city looks past',
-    notes: '<p>Nobody remembers a beggar. The mask of the overlooked — you endure what the streets throw.</p>',
+    notes: '<p>Nobody remembers a beggar, and no blow quite lands on a man already beneath notice. The mask of the overlooked.</p>',
     summary: 'A street-beggar cover — the city looks past you.',
-    changes: [{ key: 'system.resources.hp.bonus', mode: MODE.ADD, value: '2' }],
-    effectLabel: '+2 max HP',
+    // Legal (outside the innate benefit pool): a bonus to Defense (harder to pin down).
+    changes: [{ key: 'system.derived.def.bonus', mode: MODE.ADD, value: '1' }],
+    effectLabel: '+1 Defense',
   },
 ];
+
+// INNATE BENEFIT POOL guard (Austin canon): a guise must NEVER apply anything in the
+// class innate pool — HP / MP / IP, martial proficiencies, ritual access, or Projects.
+// (The same block list the module enforces at runtime, in scripts/rippers-guise.mjs.)
+// Fail the build if any starter uses a pool key, so an illegal guise can never ship.
+const POOL_BLOCK = [
+  /^system\.resources\.(hp|mp|ip)\b/i,
+  /^system\.benefits\.martials\b/i,
+  /\bmartials?\.(melee|ranged|armor|shields)\b/i,
+  /^system\.benefits\.rituals\b/i,
+  /\britual/i,
+  /\bproject/i,
+];
+const isPoolKey = (key) => typeof key === 'string' && POOL_BLOCK.some((re) => re.test(key));
+for (const g of GUISES) {
+  for (const c of g.changes) {
+    if (isPoolKey(c.key)) throw new Error(`[build-guises] ILLEGAL starter guise "${g.name}": change "${c.key}" is in the innate benefit pool. Guises may only modify things OUTSIDE the pool (attributes, accuracy/damage bonuses, defenses, affinities, initiative).`);
+  }
+}
 
 rmSync(join(MODULE, 'src', 'packs', 'guises'), { recursive: true, force: true });
 mkdirSync(join(MODULE, 'src', 'packs', 'guises'), { recursive: true });

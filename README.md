@@ -32,7 +32,27 @@ time, the way an Arcanist has one Arcanum merged.
 
 | Pack | Type | Contents |
 |---|---|---|
-| **Rippers Guises** (`guises`) | Item (`classFeature`) | Starter guises (`featureType: rippers-guise.guise`) with a persona (identity/role/notes) and one embedded delta each — Inspector Grange (+1 Accuracy), Dr. Ravensworth (+4 max IP), The Ragged Man (+2 max HP). |
+| **Rippers Guises** (`guises`) | Item (`classFeature`) | Starter guises (`featureType: rippers-guise.guise`) with a persona (identity/role/notes) and one embedded delta each — Inspector Grange (+1 Accuracy), Dr. Ravensworth (+1 to Open Checks), The Ragged Man (+1 Defense). |
+
+## Innate benefit pool guard (Austin canon)
+
+A guise **must never** apply anything in the class **innate benefit pool** — that comes
+from CLASSES (the compendium's TRUE-with-note benefits), not from a mask:
+
+- HP / MP / IP (`system.resources.{hp,mp,ip}.*`)
+- martial proficiencies (melee / ranged / armor / shields)
+- ritual access
+- Projects
+
+Guises may only modify things **outside** the pool — attributes, accuracy / magic / damage
+bonuses, defenses (DEF / MDEF), affinities, initiative, and so on. The module **enforces
+this at the document layer**: any innate-pool change on a guise effect is stripped on
+create/update (compendium drop, effect add, effect edit), so it never persists and never
+applies — **even for player-authored guises**. A guise whose only change is illegal simply
+applies nothing. (FU applies effects via native `changes` with no per-change hook for
+standard modes, so stripping at the data layer is the robust guard.) `console.debug` reports
+what was stripped. `game.modules.get('rippers-guise').api.sanitizeActorGuises(actor)` cleans
+any guise saved before the guard existed.
 
 These starters exercise the mechanism with three delta kinds. A campaign's real guises are
 per-character personas the players author on the guise sheet (or add to `GUISES` in

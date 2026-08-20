@@ -6,14 +6,14 @@
 	"system": {
 		"fuid": "guise-dr-ravensworth",
 		"summary": {
-			"value": "A Harley Street physician cover — a fuller bag."
+			"value": "A Harley Street physician cover — a diagnostic eye."
 		},
-		"description": "<p><strong>Harley Street consulting physician.</strong></p><p>A respectable practice and a well-stocked bag. The mask of medicine — carries more of everything useful.</p><p><em>While bound: +4 max IP.</em></p>",
+		"description": "<p><strong>Harley Street consulting physician.</strong></p><p>A respectable practice and a diagnostic eye. The mask of medicine — you read a room, a wound and a lie the same way.</p><p><em>While bound: +1 to Open Checks.</em></p>",
 		"featureType": "rippers-guise.guise",
 		"data": {
 			"identity": "Dr. Ravensworth",
 			"role": "Harley Street consulting physician",
-			"notes": "<p>A respectable practice and a well-stocked bag. The mask of medicine — carries more of everything useful.</p>"
+			"notes": "<p>A respectable practice and a diagnostic eye. The mask of medicine — you read a room, a wound and a lie the same way.</p>"
 		}
 	},
 	"effects": [
@@ -24,9 +24,9 @@
 			"type": "base",
 			"changes": [
 				{
-					"key": "system.resources.ip.bonus",
+					"key": "system.bonuses.accuracy.openCheck",
 					"mode": 2,
-					"value": "4",
+					"value": "1",
 					"priority": null
 				}
 			],
