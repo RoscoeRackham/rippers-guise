@@ -22,8 +22,11 @@
  * audit (checkHoplosphereSockets) and a best-effort slotting guard. Stage 8c (alpha.3) adds HEROIC
  * SLOTS: the four canon slots (creation/level40/level50/earned) with level-gated 40/50, creation_banned
  * enforcement, and dormancy (the creation heroic sleeps while masked; 40/50/earned stay live).
- * HW1 (alpha.4, ratified) wires the Hunter Weapon material to its bane key (silver/cold_iron/
- * consecrated/wood; cursed = GM-authored) so the canon wpn_material engine resolves — data only.
+ * HW1 (ratified) wires the Hunter Weapon material to its bane key (silver/cold_iron/consecrated/
+ * wood; cursed = GM-authored) so the canon wpn_material engine resolves — data only. v0.4.1
+ * retargets the 8b hoplosphere hard-guard from preCreateItem to a customWeapon preUpdateItem hook
+ * (spheres slot into system.items, a PseudoDocumentCollectionField persisted via a weapon update)
+ * and returns {ok,reason} from assignHeroicSlot so a UI can show why an assignment was refused.
  *
  * FDN-7 (v0.3.0/0.3.1) adds a player-facing GUISES PANEL in PFU's character-sheet Features tab: a
  * subsection listing the actor's owned guises, each with a Bind/Dismiss button and an ACTIVE
@@ -446,28 +449,45 @@ function checkHoplosphereSockets(weapon, actor) {
 	};
 }
 
-// Best-effort HARD enforcement: refuse slotting a hoplosphere that would exceed the level capacity
-// or the two-Immunity cap. (Whether preCreateItem fires for PFU's pseudo-item slotting is the one
-// thing to confirm in Forge; the checkHoplosphereSockets audit is the fallback the sheet/GM uses.)
-Hooks.on('preCreateItem', (item) => {
+/** Pure evaluator: given the FULL incoming hoplosphere set, does it exceed the level capacity or the
+ * two-Immunity cap? Used by the weapon-update guard and unit tests. */
+function evaluateSlotting(incomingItems, capacity) {
+	const hoplos = (incomingItems ?? []).filter((o) => o?.type === 'hoplosphere');
+	const usedAfter = hoplos.reduce((a, o) => a + requiredSlotsOf(o), 0);
+	const immAfter = hoplos.reduce((a, o) => a + immunitiesOf(o), 0);
+	return { usedAfter, immAfter, capacity, overSockets: usedAfter > capacity, overImmunityCap: immAfter > 2 };
+}
+
+// HARD enforcement (v0.4.1, retargeted). Hoplospheres slot into system.items — a PFU
+// PseudoDocumentCollectionField persisted via a customWeapon UPDATE, NOT actor.createEmbeddedDocuments
+// (so preCreateItem never fired). Guard the weapon UPDATE: when the incoming system.items would seat
+// more hoplosphere slots than the level capacity, or a third Immunity, refuse the update. The
+// checkHoplosphereSockets audit remains the sheet/GM read either way.
+Hooks.on('preUpdateItem', (item, changed) => {
 	try {
-		if (item?.type !== 'hoplosphere') return;
-		const weapon = item.parent;
-		if (!weapon || weapon.documentName !== 'Item' || weapon.type !== 'customWeapon') return;
-		const actor = weapon.actor;
-		const capacity = hoplosphereSocketCapacity(weapon, actor);
-		const usedAfter = seatedSlotsUsed(weapon) + requiredSlotsOf(item);
-		const immAfter = hoplosphereImmunityCount(weapon) + immunitiesOf(item);
-		if (actor && usedAfter > capacity) {
-			ui.notifications?.warn(`"${weapon.name}" has ${capacity} hoplosphere socket(s) at this level — that sphere needs ${requiredSlotsOf(item)} more than remain.`);
+		if (item?.type !== 'customWeapon') return;
+		const incoming = changed?.system?.items;
+		if (!Array.isArray(incoming)) return; // only the full-array update form (the slotting path)
+		const capacity = hoplosphereSocketCapacity(item, item.actor);
+		const ev = evaluateSlotting(incoming, capacity);
+		if (item.actor && ev.overSockets) {
+			ui.notifications?.warn(`"${item.name}" has ${capacity} hoplosphere socket(s) at this level; that loadout needs ${ev.usedAfter}.`);
 			return false;
 		}
-		if (immAfter > 2) {
-			ui.notifications?.warn(`A weapon may carry at most two hoplosphere-granted Immunities; "${weapon.name}" would exceed that.`);
+		if (ev.overImmunityCap) {
+			ui.notifications?.warn(`A weapon may carry at most two hoplosphere-granted Immunities; "${item.name}" would have ${ev.immAfter}.`);
 			return false;
 		}
 	} catch (err) { console.error('[rippers-guise] hoplosphere socket guard failed:', err); }
 });
+
+/** Test/util: slot a hoplosphere pseudo-item onto a customWeapon via PFU's nested-collection API,
+ * so 8b enforcement is exercisable without the drag UI. */
+async function slotHoplosphere(weapon, sphereData = {}) {
+	if (!weapon || weapon.type !== 'customWeapon') { ui.notifications?.warn('Slot a hoplosphere onto a custom weapon.'); return; }
+	const obj = foundry.utils.mergeObject({ name: 'Hoplosphere', type: 'hoplosphere', system: { requiredSlots: 1, effects: [] } }, sphereData, { inplace: false });
+	return weapon.system.createEmbeddedDocuments('Item', [obj]);
+}
 
 // ---------------------------------------------------------------------------
 // FDN-8 STAGE 8c — HEROIC SLOTS (port of PHASE2-STEP0 §1.4/§2 + GUISE-v2-design §4).
@@ -487,20 +507,23 @@ function getHeroicSlots(actor) {
 }
 const heroicIsCreationBanned = (heroic) => !!(heroic?.getFlag?.('rippers-compendium', 'creationBanned') || heroic?.getFlag?.(MODULE_ID, 'creationBanned'));
 
+// Returns {ok, reason?, slots?} so a UI can tell WHY an assignment was refused (god UX note, 8c).
+// A warning is still surfaced for direct/macro callers.
 async function assignHeroicSlot(actor, slot, heroicRef) {
-	if (!actor) return;
-	if (!HEROIC_SLOTS.includes(slot)) { ui.notifications?.warn(`Unknown heroic slot "${slot}".`); return; }
+	const refuse = (reason) => { ui.notifications?.warn(reason); return { ok: false, reason }; };
+	if (!actor) return { ok: false, reason: 'No actor.' };
+	if (!HEROIC_SLOTS.includes(slot)) return refuse(`Unknown heroic slot "${slot}".`);
 	const heroic = resolveItem(actor, heroicRef);
-	if (!heroic || heroic.type !== 'heroic') { ui.notifications?.warn('Assign a heroic Item to the slot.'); return; }
+	if (!heroic || heroic.type !== 'heroic') return refuse('Assign a heroic Item to the slot.');
 	const lvl = charLevelOf(actor);
-	if (slot === 'level40' && lvl < 40) { ui.notifications?.warn('The level-40 heroic slot unlocks at character level 40.'); return; }
-	if (slot === 'level50' && lvl < 50) { ui.notifications?.warn('The level-50 heroic slot unlocks at character level 50.'); return; }
-	if (slot === 'creation' && heroicIsCreationBanned(heroic)) { ui.notifications?.warn(`"${heroic.name}" cannot be taken as a creation heroic.`); return; }
+	if (slot === 'level40' && lvl < 40) return refuse('The level-40 heroic slot unlocks at character level 40.');
+	if (slot === 'level50' && lvl < 50) return refuse('The level-50 heroic slot unlocks at character level 50.');
+	if (slot === 'creation' && heroicIsCreationBanned(heroic)) return refuse(`"${heroic.name}" cannot be taken as a creation heroic.`);
 	const slots = getHeroicSlots(actor);
 	if (slot === 'earned') { if (!slots.earned.includes(heroic.id)) slots.earned.push(heroic.id); }
 	else slots[slot] = heroic.id;
 	await actor.setFlag(MODULE_ID, 'heroicSlots', slots);
-	return slots;
+	return { ok: true, slots };
 }
 async function clearHeroicSlot(actor, slot, heroicRef) {
 	if (!actor || !HEROIC_SLOTS.includes(slot)) return;
@@ -995,7 +1018,7 @@ Hooks.once('setup', () => {
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -1006,4 +1029,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic };
