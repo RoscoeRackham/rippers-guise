@@ -211,14 +211,19 @@ async function materialiseEquipment(actor, item) {
 	return { ids, equipUpdate };
 }
 
-async function bindGuise(actor, ref) {
-	const item = resolveItem(actor, ref);
-	if (!actor || !item) { console.warn('[rippers-guise] bindGuise: no actor/item (was an id string unresolvable?).'); return; }
+// FDN-7.1 re-entrancy lock. A stacked/duplicate click (or two rapid macro calls) must NOT run
+// two binds for one actor — that would materialise a second skill set and overwrite the `owned`
+// tracking, leaving orphans. Every PUBLIC entry point takes this lock synchronously (before any
+// await) and drops if it's already held; the internal *Core functions do the work unlocked, so
+// bind's own swap-dismiss can nest without deadlocking.
+const _guiseBusy = new Set();
+
+async function _bindCore(actor, item) {
 	// Dismiss any currently-active (different) guise first — one guise at a time.
 	const prev = actor.getFlag(MODULE_ID, FLAG);
 	if (prev && prev !== item.id) {
 		const prevItem = actor.items.get(prev);
-		if (prevItem) await dismissGuise(actor, prevItem, { silent: true });
+		if (prevItem) await _dismissCore(actor, prevItem, { silent: true });
 	}
 	const preBindEquip = foundry.utils.deepClone(actor.system?.equipped ?? {});
 	// Materialise the mask's live skill set FIRST (flagged guise-origin) …
@@ -237,9 +242,7 @@ async function bindGuise(actor, ref) {
 	console.debug(`[rippers-guise] bound "${item.name}": ${skillIds.length} guise skill(s), ${equipIds.length} equipment; ${dormant} innate skill(s) dormant.`);
 }
 
-async function dismissGuise(actor, ref, { silent = false } = {}) {
-	const item = resolveItem(actor, ref);
-	if (!actor || !item) { console.warn('[rippers-guise] dismissGuise: no actor/item.'); return; }
+async function _dismissCore(actor, item, { silent = false } = {}) {
 	const owned = actor.getFlag(MODULE_ID, 'owned')?.[item.id] ?? [];
 	const preBindEquip = actor.getFlag(MODULE_ID, 'preBindEquip') ?? {};
 	const existing = owned.filter((id) => actor.items.get(id));
@@ -256,14 +259,34 @@ async function dismissGuise(actor, ref, { silent = false } = {}) {
 	if (!silent) console.debug(`[rippers-guise] dismissed "${item.name}"; innate skills restored.`);
 }
 
+async function bindGuise(actor, ref) {
+	const item = resolveItem(actor, ref);
+	if (!actor || !item) { console.warn('[rippers-guise] bindGuise: no actor/item (was an id string unresolvable?).'); return; }
+	if (_guiseBusy.has(actor.id)) { console.debug('[rippers-guise] bind ignored — a guise op is already in flight for this actor.'); return; }
+	_guiseBusy.add(actor.id);
+	try { return await _bindCore(actor, item); } finally { _guiseBusy.delete(actor.id); }
+}
+
+async function dismissGuise(actor, ref, opts = {}) {
+	const item = resolveItem(actor, ref);
+	if (!actor || !item) { console.warn('[rippers-guise] dismissGuise: no actor/item.'); return; }
+	if (_guiseBusy.has(actor.id)) { console.debug('[rippers-guise] dismiss ignored — a guise op is already in flight for this actor.'); return; }
+	_guiseBusy.add(actor.id);
+	try { return await _dismissCore(actor, item, opts); } finally { _guiseBusy.delete(actor.id); }
+}
+
 // ---------------------------------------------------------------------------
 // Public helpers (macros / other modules).
 function getActiveGuise(actor) { return actor?.getFlag(MODULE_ID, FLAG) ?? null; }
 async function setActiveGuise(actor, ref) {
 	const item = resolveItem(actor, ref);
 	if (!actor || !item) return;
-	if (getActiveGuise(actor) === item.id) return dismissGuise(actor, item);
-	return bindGuise(actor, item);
+	if (_guiseBusy.has(actor.id)) { console.debug('[rippers-guise] toggle ignored — a guise op is already in flight for this actor.'); return; }
+	_guiseBusy.add(actor.id);
+	try {
+		if (getActiveGuise(actor) === item.id) return await _dismissCore(actor, item);
+		return await _bindCore(actor, item);
+	} finally { _guiseBusy.delete(actor.id); }
 }
 async function clearActiveGuise(actor) {
 	const id = getActiveGuise(actor);
@@ -336,7 +359,10 @@ function injectGuisePanel(app) {
 		if (!actor || !root || actor.type !== 'character') return;
 		const tab = root.querySelector('[data-tab="features"]');
 		if (!tab) return; // features part not rendered (limited sheet etc.)
-		tab.querySelectorAll(':scope > .rippers-guise-panel').forEach((n) => n.remove()); // idempotent
+		// Idempotent: sweep ANY prior panel anywhere in this sheet before re-injecting, so a stale
+		// panel (and its click listeners) can never survive a re-render and stack. The panel + its
+		// buttons are freshly created below, so listeners live only on the current DOM.
+		root.querySelectorAll('.rippers-guise-panel').forEach((n) => n.remove());
 		const panel = buildGuisePanel(actor);
 		if (!panel) return;
 		const fuHeader = tab.querySelector(':scope > header.items-main-header');
@@ -702,11 +728,11 @@ async function sanitizeActorGuises(actor) {
 }
 
 // ---------------------------------------------------------------------------
-// FDN-7: inject the Guises panel whenever a character sheet renders. ApplicationV2 fires
-// render<ClassName>; we register the leaf (FUStandardActorSheet) and its parent (FUActorSheet) —
-// injection is idempotent (removes any prior panel first), so a double-fire is harmless.
+// FDN-7: inject the Guises panel whenever a character sheet renders. God's Forge verify confirmed
+// ApplicationV2 fires renderFUStandardActorSheet for the PC sheet — a SINGLE hook (no parent hook,
+// which could double-inject). Injection is idempotent (sweeps any prior panel first), and the
+// re-entrancy lock in setActiveGuise makes even a stray double-fire a no-op.
 Hooks.on('renderFUStandardActorSheet', (app) => injectGuisePanel(app));
-Hooks.on('renderFUActorSheet', (app) => injectGuisePanel(app));
 
 // ---------------------------------------------------------------------------
 // Registration + template preload.
@@ -741,4 +767,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise };
