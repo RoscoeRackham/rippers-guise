@@ -6,79 +6,25 @@
 	"system": {
 		"fuid": "guise-the-ragged-man",
 		"summary": {
-			"value": "A street-beggar cover — the city looks past you."
+			"value": "A street-beggar cover."
 		},
-		"description": "<p><strong>A nobody the city looks past.</strong></p><p>Nobody remembers a beggar, and no blow quite lands on a man already beneath notice. The mask of the overlooked.</p><p><em>While bound: +1 Defense.</em></p>",
+		"description": "<p><strong>A nobody the city looks past.</strong></p><p>Nobody remembers a beggar.</p>",
 		"featureType": "rippers-guise.guise",
 		"data": {
 			"identity": "The Ragged Man",
 			"role": "A nobody the city looks past",
-			"notes": "<p>Nobody remembers a beggar, and no blow quite lands on a man already beneath notice. The mask of the overlooked.</p>"
+			"notes": "<p>Nobody remembers a beggar.</p>",
+			"classes": [],
+			"equipment": [],
+			"affinityModifiers": []
 		}
 	},
-	"effects": [
-		{
-			"name": "The Ragged Man — guise",
-			"img": "icons/environment/people/beggar.webp",
-			"_id": "RGae000000000003",
-			"type": "base",
-			"changes": [
-				{
-					"key": "system.derived.def.bonus",
-					"mode": 2,
-					"value": "1",
-					"priority": null
-				}
-			],
-			"disabled": false,
-			"transfer": true,
-			"statuses": [],
-			"description": "<p>Applies while <strong>The Ragged Man</strong> is your bound guise.</p>",
-			"origin": "Compendium.rippers-guise.guises.Item.RGgu000000000003",
-			"duration": {
-				"rounds": null,
-				"startTime": null,
-				"combat": null
-			},
-			"system": {
-				"duration": {
-					"event": "none",
-					"interval": 1,
-					"tracking": "self",
-					"remaining": 1
-				},
-				"type": "default",
-				"predicate": {
-					"crisisInteraction": "none"
-				},
-				"rules": {
-					"elements": {},
-					"progress": {
-						"enabled": false,
-						"id": "",
-						"name": "",
-						"current": 0,
-						"max": 6,
-						"style": "bar"
-					},
-					"stacking": {
-						"progress": false,
-						"duration": false,
-						"increment": 1
-					}
-				}
-			},
-			"flags": {},
-			"sort": 0,
-			"tint": "#ffffff",
-			"_key": "!items.effects!RGgu000000000003.RGae000000000003"
-		}
-	],
+	"effects": [],
 	"folder": null,
 	"flags": {
 		"rippers-guise": {
 			"fuid": "guise-the-ragged-man",
-			"sample": true
+			"schemaVersion": 2
 		}
 	},
 	"sort": 0,

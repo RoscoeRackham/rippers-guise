@@ -1,0 +1,114 @@
+{
+	"name": "The Alienist",
+	"type": "classFeature",
+	"_id": "RGgu000000000004",
+	"img": "icons/tools/cooking/mortar-herbs-yellow.webp",
+	"system": {
+		"fuid": "guise-the-alienist",
+		"summary": {
+			"value": "Sample: a Physician mask (skills at allocated SL + an affinity trio)."
+		},
+		"description": "<p><strong>A mad-doctor with a black bag.</strong></p><p>A sample v0.2 guise. Binding it activates three <strong>Physician</strong> skills at their allocated Skill Levels — <em>without</em> granting the Physician class's innate pool — and applies an affinity trio. Dismiss to reverse.</p><p><em>Activates on bind:</em></p><ul><li><code>RCsk000000000186</code> @ SL 1</li><li><code>RCsk000000000188</code> @ SL 2</li><li><code>RCsk000000000189</code> @ SL 3</li></ul><p><em>Affinities:</em> Resistance dark · Vulnerability light · Immunity poison</p>",
+		"featureType": "rippers-guise.guise",
+		"data": {
+			"identity": "Dr. Aldous Vane, alienist",
+			"role": "A mad-doctor with a black bag",
+			"notes": "<p>A sample v0.2 guise. Binding it activates three <strong>Physician</strong> skills at their allocated Skill Levels — <em>without</em> granting the Physician class's innate pool — and applies an affinity trio. Dismiss to reverse.</p>",
+			"classes": [
+				{
+					"classUuid": "Compendium.rippers-compendium.classes.Item.RCcl000000000036",
+					"skills": [
+						{
+							"skillUuid": "Compendium.rippers-compendium.skills.Item.RCsk000000000186",
+							"sl": 1
+						},
+						{
+							"skillUuid": "Compendium.rippers-compendium.skills.Item.RCsk000000000188",
+							"sl": 2
+						},
+						{
+							"skillUuid": "Compendium.rippers-compendium.skills.Item.RCsk000000000189",
+							"sl": 3
+						}
+					]
+				}
+			],
+			"equipment": [],
+			"affinityModifiers": [
+				{
+					"type": "dark",
+					"level": 1
+				},
+				{
+					"type": "light",
+					"level": -1
+				},
+				{
+					"type": "poison",
+					"level": 2
+				}
+			]
+		}
+	},
+	"effects": [
+		{
+			"name": "Guise affinities",
+			"img": "icons/tools/cooking/mortar-herbs-yellow.webp",
+			"_id": "RGae000000000004",
+			"transfer": true,
+			"disabled": false,
+			"changes": [
+				{
+					"key": "system.affinities.dark",
+					"mode": 0,
+					"value": "upgrade",
+					"priority": null
+				},
+				{
+					"key": "system.affinities.light",
+					"mode": 0,
+					"value": "downgrade",
+					"priority": null
+				},
+				{
+					"key": "system.affinities.poison.current",
+					"mode": 4,
+					"value": "2",
+					"priority": null
+				}
+			],
+			"statuses": [],
+			"description": "<p>Resistance to dark · Vulnerability to light · Immunity to poison — while this guise is bound.</p>",
+			"origin": "Compendium.rippers-guise.guises.Item.RGgu000000000004",
+			"duration": {
+				"rounds": null,
+				"startTime": null,
+				"combat": null
+			},
+			"flags": {
+				"rippers-guise": {
+					"affinityEffect": true
+				}
+			},
+			"sort": 0,
+			"tint": "#ffffff",
+			"_key": "!items.effects!RGgu000000000004.RGae000000000004"
+		}
+	],
+	"folder": null,
+	"flags": {
+		"rippers-guise": {
+			"fuid": "guise-the-alienist",
+			"schemaVersion": 2
+		}
+	},
+	"sort": 0,
+	"ownership": {
+		"default": 0
+	},
+	"_stats": {
+		"systemId": "projectfu",
+		"coreVersion": "13.0.0"
+	},
+	"_key": "!items!RGgu000000000004"
+}
