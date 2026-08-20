@@ -19,7 +19,9 @@
  * fields on a transforming customWeapon, and a FREE once-per-turn two-form swap (no Equipment
  * Action). Stage 8b (alpha.2) adds HOPLOSPHERE SOCKETS: a level-derived socket capacity
  * (min(6, floor(lvl/5)); +1 at 40 and +1 at 50 for the Hunter Weapon) + a two-Immunity cap, an
- * audit (checkHoplosphereSockets) and a best-effort slotting guard. Both lean on PFU natives.
+ * audit (checkHoplosphereSockets) and a best-effort slotting guard. Stage 8c (alpha.3) adds HEROIC
+ * SLOTS: the four canon slots (creation/level40/level50/earned) with level-gated 40/50, creation_banned
+ * enforcement, and dormancy (the creation heroic sleeps while masked; 40/50/earned stay live).
  *
  * FDN-7 (v0.3.0/0.3.1) adds a player-facing GUISES PANEL in PFU's character-sheet Features tab: a
  * subsection listing the actor's owned guises, each with a Bind/Dismiss button and an ACTIVE
@@ -244,6 +246,8 @@ async function _bindCore(actor, item) {
 	});
 	// … THEN suppress the character's own innate skills, so exactly one 30-level set is live (Stage B).
 	const dormant = await suppressInnateSkills(actor);
+	// … and sleep the creation heroic while masked (8c); 40/50/earned stay live.
+	await suppressCreationHeroic(actor);
 	// Affinities: the guise's embedded "Guise affinities" effect now transfers (transferEffects()=true).
 	console.debug(`[rippers-guise] bound "${item.name}": ${skillIds.length} guise skill(s), ${equipIds.length} equipment; ${dormant} innate skill(s) dormant.`);
 }
@@ -253,8 +257,9 @@ async function _dismissCore(actor, item, { silent = false } = {}) {
 	const preBindEquip = actor.getFlag(MODULE_ID, 'preBindEquip') ?? {};
 	const existing = owned.filter((id) => actor.items.get(id));
 	if (existing.length) await actor.deleteEmbeddedDocuments('Item', existing);
-	// Wake the innate skill set back up (Stage B) before clearing state.
+	// Wake the innate skill set back up (Stage B) + the creation heroic (8c) before clearing state.
 	await restoreInnateSkills(actor);
+	await restoreCreationHeroic(actor);
 	const equipRestore = {};
 	for (const slot of ALL_SLOTS) equipRestore[`system.equipped.${slot}`] = preBindEquip[slot] ?? null;
 	await actor.update({
@@ -434,6 +439,70 @@ Hooks.on('preCreateItem', (item) => {
 		}
 	} catch (err) { console.error('[rippers-guise] hoplosphere socket guard failed:', err); }
 });
+
+// ---------------------------------------------------------------------------
+// FDN-8 STAGE 8c — HEROIC SLOTS (port of PHASE2-STEP0 §1.4/§2 + GUISE-v2-design §4).
+// PFU heroic Items have no slot/level accounting. This adds a character-owned record of the four
+// canon slots — creation · level40 · level50 · earned[] — pointing at owned heroic Items, with:
+//  • level40/level50 unlock only at character level 40/50,
+//  • the creation slot refuses creation_banned heroics (the flag finally enforced),
+//  • DORMANCY (Austin rulings): the CREATION heroic sleeps while a guise is worn; level40/level50
+//    and EARNED stay always-live (character-owned). Suppression disables the creation heroic's
+//    ActiveEffects while masked and restores them on dismiss (narrative heroics = a harmless no-op).
+const HEROIC_SLOTS = ['creation', 'level40', 'level50', 'earned'];
+const DORMANT_HEROIC_FLAG = 'dormantCreationHeroic';
+
+function getHeroicSlots(actor) {
+	const s = actor?.getFlag(MODULE_ID, 'heroicSlots') ?? {};
+	return { creation: s.creation ?? null, level40: s.level40 ?? null, level50: s.level50 ?? null, earned: Array.isArray(s.earned) ? [...s.earned] : [] };
+}
+const heroicIsCreationBanned = (heroic) => !!(heroic?.getFlag?.('rippers-compendium', 'creationBanned') || heroic?.getFlag?.(MODULE_ID, 'creationBanned'));
+
+async function assignHeroicSlot(actor, slot, heroicRef) {
+	if (!actor) return;
+	if (!HEROIC_SLOTS.includes(slot)) { ui.notifications?.warn(`Unknown heroic slot "${slot}".`); return; }
+	const heroic = resolveItem(actor, heroicRef);
+	if (!heroic || heroic.type !== 'heroic') { ui.notifications?.warn('Assign a heroic Item to the slot.'); return; }
+	const lvl = charLevelOf(actor);
+	if (slot === 'level40' && lvl < 40) { ui.notifications?.warn('The level-40 heroic slot unlocks at character level 40.'); return; }
+	if (slot === 'level50' && lvl < 50) { ui.notifications?.warn('The level-50 heroic slot unlocks at character level 50.'); return; }
+	if (slot === 'creation' && heroicIsCreationBanned(heroic)) { ui.notifications?.warn(`"${heroic.name}" cannot be taken as a creation heroic.`); return; }
+	const slots = getHeroicSlots(actor);
+	if (slot === 'earned') { if (!slots.earned.includes(heroic.id)) slots.earned.push(heroic.id); }
+	else slots[slot] = heroic.id;
+	await actor.setFlag(MODULE_ID, 'heroicSlots', slots);
+	return slots;
+}
+async function clearHeroicSlot(actor, slot, heroicRef) {
+	if (!actor || !HEROIC_SLOTS.includes(slot)) return;
+	const slots = getHeroicSlots(actor);
+	if (slot === 'earned') { const id = typeof heroicRef === 'string' ? heroicRef : heroicRef?.id; slots.earned = id ? slots.earned.filter((x) => x !== id) : []; }
+	else slots[slot] = null;
+	await actor.setFlag(MODULE_ID, 'heroicSlots', slots);
+	return slots;
+}
+
+/** Dormancy: sleep the creation-slot heroic (disable its effects) while masked; 40/50/earned stay live. */
+async function suppressCreationHeroic(actor) {
+	const id = getHeroicSlots(actor).creation;
+	const heroic = id && actor.items.get(id);
+	if (!heroic) return 0;
+	const toDisable = heroic.effects.filter((e) => !e.disabled);
+	await actor.setFlag(MODULE_ID, DORMANT_HEROIC_FLAG, { id, effects: toDisable.map((e) => e.id) });
+	if (toDisable.length) await heroic.updateEmbeddedDocuments('ActiveEffect', toDisable.map((e) => ({ _id: e.id, disabled: true })));
+	return toDisable.length;
+}
+async function restoreCreationHeroic(actor) {
+	const snap = actor.getFlag(MODULE_ID, DORMANT_HEROIC_FLAG);
+	if (!snap) return 0;
+	const heroic = actor.items.get(snap.id);
+	if (heroic && snap.effects?.length) {
+		const existing = snap.effects.filter((eid) => heroic.effects.get(eid));
+		if (existing.length) await heroic.updateEmbeddedDocuments('ActiveEffect', existing.map((eid) => ({ _id: eid, disabled: false })));
+	}
+	await actor.unsetFlag(MODULE_ID, DORMANT_HEROIC_FLAG);
+	return snap.effects?.length ?? 0;
+}
 
 // ---------------------------------------------------------------------------
 // FEATURES-TAB "GUISES" PANEL (FDN-7). Player-facing bind/dismiss controls injected into PFU's
@@ -897,7 +966,7 @@ Hooks.once('setup', () => {
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -908,4 +977,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic };

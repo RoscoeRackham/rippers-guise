@@ -127,3 +127,20 @@ const w = actor.items.getName('Silverpoint');
 console.log(api.checkHoplosphereSockets(w, actor));
 // -> { capacity, used, free, seated, overSockets, immunities, overImmunityCap, ok }
 ```
+
+## Heroic slots (FDN-8 Stage 8c)
+
+PFU heroic Items carry no slot accounting; this adds the four canon slots —
+**creation · level40 · level50 · earned** — pointing at owned heroic Items:
+
+- `level40` / `level50` unlock only at character level 40 / 50,
+- the **creation** slot refuses `creation_banned` heroics,
+- **dormancy**: the creation heroic sleeps while a guise is worn; level40/50 and
+  earned stay always-live (character-owned).
+
+```js
+const api = game.modules.get('rippers-guise').api;
+await api.assignHeroicSlot(actor, 'creation', actor.items.getName('Brave'));
+await api.assignHeroicSlot(actor, 'earned',   someHeroicItem);
+console.log(api.getHeroicSlots(actor)); // { creation, level40, level50, earned:[...] }
+```
