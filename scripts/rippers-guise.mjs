@@ -15,7 +15,11 @@
  * guise, synced from affinityModifiers); skills + equipment are explicit CRUD tagged
  * flags['rippers-guise'].owned[guiseId], with an equip snapshot/restore.
  *
- * FDN-7 (v0.3.0) adds a player-facing GUISES PANEL in PFU's character-sheet Features tab: a
+ * FDN-8 Stage 8a (v0.4.0-alpha) adds the HUNTER WEAPON: an isHunterWeapon mark + material/origin
+ * fields on a transforming customWeapon, and a FREE once-per-turn two-form swap (no Equipment
+ * Action) — see the Hunter Weapon section below. Leans on PFU's native customWeapon two-form.
+ *
+ * FDN-7 (v0.3.0/0.3.1) adds a player-facing GUISES PANEL in PFU's character-sheet Features tab: a
  * subsection listing the actor's owned guises, each with a Bind/Dismiss button and an ACTIVE
  * badge (one active at a time). Buttons call the EXISTING setActiveGuise — bind mechanics
  * unchanged. Injected via the renderFUStandardActorSheet / renderFUActorSheet hooks (idempotent).
@@ -292,6 +296,75 @@ async function clearActiveGuise(actor) {
 	const id = getActiveGuise(actor);
 	const item = id && actor.items.get(id);
 	if (item) return dismissGuise(actor, item);
+}
+
+// ---------------------------------------------------------------------------
+// FDN-8 STAGE 8a — HUNTER WEAPON (port of GUISE-v2-design §8 / PHASE2-STEP0 §4a).
+// PFU's `customWeapon` already ships the two-form shape (system.isTransforming / activeForm /
+// secondaryForm), and slots `hoplosphere` items natively. This layer adds only what PFU lacks:
+//  • an isHunterWeapon MARK (+ campaign material/origin fields PFU has no home for),
+//  • a FREE two-form swap that does NOT consume the Equipment Action, limited to ONCE PER TURN.
+// Toggling system.activeForm via item.update is a plain edit — FU never auto-charges the Equipment
+// action for it — so the swap is free by construction; we add only the once-per-turn guard.
+// NOTE (HW1, BLOCKED): the material five-list (wood/cold iron/silver/consecrated/cursed) ↔ bane-key
+// reconciliation is owed by Austin — material is stored as a free field here; bane interaction is
+// deferred until that ruling. HW2 (shields on a Guise) is likewise owed.
+const isHunterWeapon = (item) => !!item?.getFlag?.(MODULE_ID, 'isHunterWeapon');
+
+async function setHunterWeapon(weapon, { isHunter = true, material, origin } = {}) {
+	if (!weapon) { console.warn('[rippers-guise] setHunterWeapon: no weapon.'); return; }
+	await weapon.setFlag(MODULE_ID, 'isHunterWeapon', !!isHunter);
+	const hunter = { ...(weapon.getFlag(MODULE_ID, 'hunter') ?? {}) };
+	if (material !== undefined) hunter.material = material;
+	if (origin !== undefined) hunter.origin = origin;
+	await weapon.setFlag(MODULE_ID, 'hunter', hunter);
+	return weapon;
+}
+
+/** A signature for the current combat turn (round:turn:combatant), or null outside combat. */
+function combatTurnSig() {
+	const c = game.combat;
+	if (!c) return null;
+	return `${c.round ?? 0}:${c.turn ?? 0}:${c.combatant?.id ?? ''}`;
+}
+/** The next form for a transforming weapon (pure). */
+const nextForm = (activeForm) => (activeForm === 'secondaryForm' ? 'primaryForm' : 'secondaryForm');
+
+/**
+ * Free once-per-turn two-form swap on a transforming weapon (melee ⇄ ranged form, one sphere set).
+ * Does NOT consume the Equipment Action (it is a plain data edit). In combat, refuses a second free
+ * swap in the same turn; outside combat it is unrestricted.
+ */
+async function swapActiveForm(weapon) {
+	if (!weapon || weapon.type !== 'customWeapon') { ui.notifications?.warn('Select a custom weapon to swap forms.'); return; }
+	if (!weapon.system?.isTransforming) { ui.notifications?.warn(`"${weapon.name}" is not a transforming weapon.`); return; }
+	const sig = combatTurnSig();
+	if (sig && weapon.getFlag(MODULE_ID, 'formSwapTurn') === sig) {
+		ui.notifications?.warn(`"${weapon.name}" already changed form this turn — the free swap is once per turn.`);
+		return;
+	}
+	const to = nextForm(weapon.system.activeForm);
+	await weapon.update({ 'system.activeForm': to, [`flags.${MODULE_ID}.formSwapTurn`]: sig });
+	const formName = to === 'secondaryForm'
+		? (weapon.system.secondaryForm?.name || 'secondary form')
+		: (weapon.name || 'primary form');
+	await ChatMessage.create({
+		speaker: weapon.actor ? ChatMessage.implementation.getSpeaker({ actor: weapon.actor }) : undefined,
+		content: `<div class="rippers-guise-card"><strong>${esc(weapon.name)}</strong> shifts to its <em>${esc(formName)}</em> — a free once-per-turn change.</div>`,
+	});
+	return to;
+}
+
+/** Convenience for a macro/button: swap the actor's equipped (or first) transforming Hunter Weapon. */
+async function swapHunterWeaponForm(actor) {
+	if (!actor) { ui.notifications?.warn('No actor.'); return; }
+	const mainId = actor.system?.equipped?.mainHand;
+	const equipped = mainId && actor.items.get(mainId);
+	const hw = (equipped && isHunterWeapon(equipped) && equipped.system?.isTransforming)
+		? equipped
+		: actor.items.find((i) => isHunterWeapon(i) && i.type === 'customWeapon' && i.system?.isTransforming);
+	if (!hw) { ui.notifications?.warn('No transforming Hunter Weapon found on this actor.'); return; }
+	return swapActiveForm(hw);
 }
 
 // ---------------------------------------------------------------------------
@@ -756,7 +829,7 @@ Hooks.once('setup', () => {
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, swapActiveForm, swapHunterWeaponForm };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -767,4 +840,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm };

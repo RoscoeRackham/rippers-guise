@@ -88,3 +88,26 @@ https://github.com/RoscoeRackham/rippers-guise/releases/latest/download/module.j
 
 Enable in your Project FU v13 world (with the `projectfu` system active). Drag a guise onto
 a character; click it to bind.
+
+## Hunter Weapon — free two-form swap (FDN-8 Stage 8a)
+
+The Hunter Weapon leans on Project FU's native transforming `customWeapon`
+(`system.isTransforming` / `activeForm` / `secondaryForm`). This module adds the
+campaign layer: an `isHunterWeapon` mark, material/origin fields, and a **free**
+melee⇄ranged form swap that does **not** consume the Equipment Action and is
+limited to **once per turn** in combat.
+
+Mark a weapon and swap its form from a Macro (hotbar):
+
+```js
+const api = game.modules.get('rippers-guise').api;
+const actor = canvas.tokens.controlled[0]?.actor ?? game.user.character;
+// one-time: flag your transforming custom weapon as the Hunter Weapon
+// await api.setHunterWeapon(actor.items.getName('Silverpoint'), { material: 'silver', origin: 'A Butcher\'s prosthetic' });
+
+// the free once-per-turn two-form swap:
+await api.swapHunterWeaponForm(actor);
+```
+
+`api.swapActiveForm(weapon)` swaps a specific weapon; `api.swapHunterWeaponForm(actor)`
+finds the actor's equipped (or first) transforming Hunter Weapon and swaps it.
