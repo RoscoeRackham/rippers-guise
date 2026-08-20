@@ -28,3 +28,30 @@
 }
 .rippers-guise-sheet .guise-drop-skill { margin-left: 18px; }
 .rippers-guise-sheet .guise-drop.drop-hover { border-color: #b3122b; background: rgba(179,18,43,0.08); opacity: 1; }
+
+/* FDN-7 — Features-tab Guises panel (player bind/dismiss). Rides PFU features chrome. */
+.rippers-guise-panel { margin: 4px 0 10px; }
+.rippers-guise-panel .rippers-guise-header { margin-bottom: 4px; }
+.rippers-guise-list { display: flex; flex-direction: column; gap: 4px; }
+.rippers-guise-entry {
+	display: flex; align-items: center; gap: 8px;
+	padding: 4px 6px; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px;
+}
+.rippers-guise-entry.active { border-color: #7b2d8e; background: rgba(123,45,142,0.08); }
+.rippers-guise-entry .guise-icon { flex: 0 0 auto; object-fit: cover; border: none; border-radius: 3px; }
+.rippers-guise-entry .guise-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.rippers-guise-entry .guise-name { font-weight: 600; }
+.rippers-guise-entry .guise-sub,
+.rippers-guise-entry .guise-summary { font-size: 0.72rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rippers-guise-entry .guise-summary { opacity: 0.9; }
+.guise-active-badge {
+	font-size: 0.6rem; font-weight: 700; letter-spacing: 0.05em;
+	color: #fff; background: #7b2d8e; border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle;
+}
+.rippers-guise-entry .guise-toggle {
+	flex: 0 0 auto; cursor: pointer; padding: 3px 12px; border-radius: 4px;
+	border: 1px solid rgba(0,0,0,0.25); background: rgba(0,0,0,0.04); font-weight: 600;
+}
+.rippers-guise-entry .guise-toggle:hover { border-color: #b3122b; }
+.rippers-guise-entry .guise-toggle.is-active { border-color: #7b2d8e; color: #7b2d8e; }
+.rippers-guise-entry .guise-toggle:disabled { opacity: 0.5; cursor: wait; }

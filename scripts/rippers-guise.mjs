@@ -15,7 +15,12 @@
  * guise, synced from affinityModifiers); skills + equipment are explicit CRUD tagged
  * flags['rippers-guise'].owned[guiseId], with an equip snapshot/restore.
  *
- * Stage B (this version) adds: the two-pool DORMANCY switch (on bind, the character's own innate
+ * FDN-7 (v0.3.0) adds a player-facing GUISES PANEL in PFU's character-sheet Features tab: a
+ * subsection listing the actor's owned guises, each with a Bind/Dismiss button and an ACTIVE
+ * badge (one active at a time). Buttons call the EXISTING setActiveGuise — bind mechanics
+ * unchanged. Injected via the renderFUStandardActorSheet / renderFUActorSheet hooks (idempotent).
+ *
+ * Stage B (v0.2.0) added: the two-pool DORMANCY switch (on bind, the character's own innate
  * skills are suppressed — level.value → 0, snapshot into flags for restore — so exactly one
  * 30-level set is live), the interactive sheet-authoring UI (class/skill/equipment drop targets +
  * per-skill SL picker with live enforcement of all three caps), and derived class level (Σ SL) on
@@ -264,6 +269,81 @@ async function clearActiveGuise(actor) {
 	const id = getActiveGuise(actor);
 	const item = id && actor.items.get(id);
 	if (item) return dismissGuise(actor, item);
+}
+
+// ---------------------------------------------------------------------------
+// FEATURES-TAB "GUISES" PANEL (FDN-7). Player-facing bind/dismiss controls injected into PFU's
+// character-sheet Features tab. UI + wiring only — every button calls the EXISTING setActiveGuise
+// (bind mechanics unchanged). One guise active at a time; the active mask is badged and, cheaply,
+// summarised (allocated SL + affinity words — no async UUID resolution, so the panel renders sync).
+const esc = (s) => (foundry.utils?.escapeHTML ? foundry.utils.escapeHTML(String(s ?? '')) : String(s ?? ''));
+
+function guiseSummary(item) {
+	const data = item.system?.data ?? {};
+	const classes = data.classes ?? [];
+	const totalSl = classes.reduce((a, c) => a + (c.skills ?? []).reduce((x, s) => x + (Number(s.sl) || 0), 0), 0);
+	const affTxt = (data.affinityModifiers ?? []).map((m) => `${affinityWordOf(m.level)} ${m.type}`).join(' · ');
+	const bits = [];
+	if (classes.length) bits.push(`${totalSl} SL across ${classes.length} class${classes.length === 1 ? '' : 'es'}`);
+	if (affTxt) bits.push(affTxt);
+	return bits.join(' — ');
+}
+
+function buildGuisePanel(actor) {
+	const guises = actor.items.filter(isGuiseItem);
+	if (!guises.length) return null;
+	const activeId = getActiveGuise(actor);
+	const panel = document.createElement('div');
+	panel.className = 'rippers-guise-panel';
+	const rows = guises.map((g) => {
+		const active = g.id === activeId;
+		const sub = [g.system?.data?.identity, g.system?.data?.role].filter(Boolean).map(esc).join(' — ');
+		const summary = active ? guiseSummary(g) : '';
+		return `<div class="rippers-guise-entry${active ? ' active' : ''}" data-guise-id="${g.id}">
+			<img class="guise-icon" src="${esc(g.img || 'icons/svg/mystery-man.svg')}" width="26" height="26" />
+			<div class="guise-meta">
+				<span class="guise-name">${esc(g.name)}${active ? ' <span class="guise-active-badge">' + game.i18n.localize('RIPPERS.Guise.Active') + '</span>' : ''}</span>
+				${sub ? `<span class="guise-sub">${sub}</span>` : ''}
+				${summary ? `<span class="guise-summary">${esc(summary)}</span>` : ''}
+			</div>
+			<button type="button" class="guise-toggle${active ? ' is-active' : ''}" data-guise-id="${g.id}">
+				${game.i18n.localize(active ? 'RIPPERS.Guise.Dismiss' : 'RIPPERS.Guise.Bind')}
+			</button>
+		</div>`;
+	}).join('');
+	panel.innerHTML = `<header class="items-main-header rippers-guise-header">
+			<span class="items-main"><label class="items-label">${game.i18n.localize('RIPPERS.Guise.PanelTitle')}</label></span>
+		</header>
+		<div class="rippers-guise-list">${rows}</div>`;
+	// Wire each button to the EXISTING setActiveGuise (bind/dismiss/swap).
+	panel.querySelectorAll('.guise-toggle').forEach((btn) => {
+		btn.addEventListener('click', async (ev) => {
+			ev.preventDefault();
+			btn.disabled = true;
+			try { await setActiveGuise(actor, btn.dataset.guiseId); }
+			catch (err) { console.error('[rippers-guise] panel toggle failed:', err); btn.disabled = false; }
+			// The actor update re-renders the sheet, which re-injects the panel with fresh state.
+		});
+	});
+	return panel;
+}
+
+/** Inject (or refresh) the Guises panel into a freshly-rendered character sheet's Features tab. */
+function injectGuisePanel(app) {
+	try {
+		const actor = app?.actor;
+		const root = app?.element;
+		if (!actor || !root || actor.type !== 'character') return;
+		const tab = root.querySelector('[data-tab="features"]');
+		if (!tab) return; // features part not rendered (limited sheet etc.)
+		tab.querySelectorAll(':scope > .rippers-guise-panel').forEach((n) => n.remove()); // idempotent
+		const panel = buildGuisePanel(actor);
+		if (!panel) return;
+		const fuHeader = tab.querySelector(':scope > header.items-main-header');
+		if (fuHeader) fuHeader.after(panel); else tab.prepend(panel);
+	} catch (err) {
+		console.error('[rippers-guise] injectGuisePanel failed:', err);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +702,13 @@ async function sanitizeActorGuises(actor) {
 }
 
 // ---------------------------------------------------------------------------
+// FDN-7: inject the Guises panel whenever a character sheet renders. ApplicationV2 fires
+// render<ClassName>; we register the leaf (FUStandardActorSheet) and its parent (FUActorSheet) —
+// injection is idempotent (removes any prior panel first), so a double-fire is harmless.
+Hooks.on('renderFUStandardActorSheet', (app) => injectGuisePanel(app));
+Hooks.on('renderFUActorSheet', (app) => injectGuisePanel(app));
+
+// ---------------------------------------------------------------------------
 // Registration + template preload.
 Hooks.once('setup', () => {
 	const registry = CONFIG.FU?.classFeatureRegistry ?? globalThis.projectfu?.ClassFeatureRegistry;
@@ -654,4 +741,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary };

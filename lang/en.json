@@ -18,6 +18,10 @@
 	"RIPPERS.Guise.RemoveEquip": "Remove this item",
 	"RIPPERS.Guise.AddAffinity": "Add an affinity row",
 	"RIPPERS.Guise.RemoveAffinity": "Remove this affinity",
+	"RIPPERS.Guise.PanelTitle": "Guises",
+	"RIPPERS.Guise.Active": "ACTIVE",
+	"RIPPERS.Guise.Bind": "Bind",
+	"RIPPERS.Guise.Dismiss": "Dismiss",
 	"RIPPERS.Guise.SwapHint": "Click this guise on the character sheet to bind it (dismissing any other). Exactly one guise is active at a time; its skills, equipment and affinities apply only while it is bound.",
 	"RIPPERS.Guise.DormancyHint": "While this guise is bound, your own innate skills sleep — only the mask's allocated skills are live (one 30-level set at a time). Dismiss the guise to wake them."
 }
