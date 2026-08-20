@@ -15,10 +15,12 @@
  * guise, synced from affinityModifiers); skills + equipment are explicit CRUD tagged
  * flags['rippers-guise'].owned[guiseId], with an equip snapshot/restore.
  *
- * NOT in Stage A (later alphas): the two-pool DORMANCY switch (suppressing the character's own
- * innate skills while masked), the interactive sheet-authoring UI (drop targets + SL picker),
- * and the §10 progression layer (lent vitals, IP satchel, hoplosphere, Hunter Weapon, heroic
- * slots). The v0.1.1 innate-pool guard stays.
+ * Stage B (this version) adds: the two-pool DORMANCY switch (on bind, the character's own innate
+ * skills are suppressed — level.value → 0, snapshot into flags for restore — so exactly one
+ * 30-level set is live), the interactive sheet-authoring UI (class/skill/equipment drop targets +
+ * per-skill SL picker with live enforcement of all three caps), and derived class level (Σ SL) on
+ * the sheet. NOT yet: the §10 progression layer (lent vitals, IP satchel, hoplosphere, Hunter
+ * Weapon, heroic slots) — a separate later track. The v0.1.1 innate-pool guard stays.
  *
  * @see globalThis.projectfu.RollableClassFeatureDataModel
  */
@@ -97,6 +99,52 @@ async function syncAffinityEffect(item) {
 // ---------------------------------------------------------------------------
 // BIND / DISMISS / SWAP engine.
 const charLevelOf = (actor) => Number(actor?.system?.level?.value ?? actor?.system?.level ?? 1) || 1;
+const budgetOf = (actor) => (actor ? Math.min(charLevelOf(actor), SKILL_BUDGET_CAP) : SKILL_BUDGET_CAP);
+
+// N1 (god, Stage A): bind/dismiss/setActive must accept an Item, but a sheet action may hand us
+// an id string. Resolve leniently so a string can never write flags.owned['undefined'] and no-op.
+function resolveItem(actor, ref) {
+	if (ref && typeof ref === 'object') return ref;
+	if (typeof ref === 'string' && actor?.items?.get) return actor.items.get(ref) ?? null;
+	return null;
+}
+
+// ---------------------------------------------------------------------------
+// DORMANCY (Stage B, D-DORM(i)). While a guise is bound, exactly one 30-level skill set is
+// live: the guise's materialised skills. The character's OWN innate skill Items are suppressed
+// by zeroing level.value (reversible, keeps the item + its history); their real SLs are snapshot
+// into flags.rippers-guise.dormant so dismiss restores them untouched. Guise-created skills carry
+// flags.rippers-guise.origin and are never touched here (they ARE the live set).
+const DORMANT_FLAG = 'dormant';
+const isInnateSkill = (i) => i?.type === 'skill' && !i?.getFlag?.(MODULE_ID, 'origin');
+
+async function suppressInnateSkills(actor) {
+	const innate = actor.items.filter(isInnateSkill);
+	const snapshot = {};
+	const updates = [];
+	for (const skill of innate) {
+		const sl = Number(skill.system?.level?.value ?? 0) || 0;
+		snapshot[skill.id] = sl;
+		if (sl !== 0) updates.push({ _id: skill.id, 'system.level.value': 0 });
+	}
+	await actor.setFlag(MODULE_ID, DORMANT_FLAG, snapshot);
+	if (updates.length) await actor.updateEmbeddedDocuments('Item', updates);
+	return updates.length;
+}
+
+async function restoreInnateSkills(actor) {
+	const snapshot = actor.getFlag(MODULE_ID, DORMANT_FLAG) ?? {};
+	const updates = [];
+	for (const [id, sl] of Object.entries(snapshot)) {
+		const skill = actor.items.get(id);
+		if (skill && Number(skill.system?.level?.value ?? 0) !== Number(sl)) {
+			updates.push({ _id: id, 'system.level.value': Number(sl) });
+		}
+	}
+	if (updates.length) await actor.updateEmbeddedDocuments('Item', updates);
+	await actor.unsetFlag(MODULE_ID, DORMANT_FLAG);
+	return updates.length;
+}
 
 /** Materialise the guise's allocated skills as owned skill Items, honouring the three caps. */
 async function materialiseSkills(actor, item) {
@@ -158,7 +206,9 @@ async function materialiseEquipment(actor, item) {
 	return { ids, equipUpdate };
 }
 
-async function bindGuise(actor, item) {
+async function bindGuise(actor, ref) {
+	const item = resolveItem(actor, ref);
+	if (!actor || !item) { console.warn('[rippers-guise] bindGuise: no actor/item (was an id string unresolvable?).'); return; }
 	// Dismiss any currently-active (different) guise first — one guise at a time.
 	const prev = actor.getFlag(MODULE_ID, FLAG);
 	if (prev && prev !== item.id) {
@@ -166,6 +216,7 @@ async function bindGuise(actor, item) {
 		if (prevItem) await dismissGuise(actor, prevItem, { silent: true });
 	}
 	const preBindEquip = foundry.utils.deepClone(actor.system?.equipped ?? {});
+	// Materialise the mask's live skill set FIRST (flagged guise-origin) …
 	const skillIds = await materialiseSkills(actor, item);
 	const { ids: equipIds, equipUpdate } = await materialiseEquipment(actor, item);
 	const owned = [...skillIds, ...equipIds];
@@ -175,15 +226,21 @@ async function bindGuise(actor, item) {
 		[`flags.${MODULE_ID}.owned.${item.id}`]: owned,
 		...equipUpdate,
 	});
+	// … THEN suppress the character's own innate skills, so exactly one 30-level set is live (Stage B).
+	const dormant = await suppressInnateSkills(actor);
 	// Affinities: the guise's embedded "Guise affinities" effect now transfers (transferEffects()=true).
-	console.debug(`[rippers-guise] bound "${item.name}": ${skillIds.length} skill(s), ${equipIds.length} equipment.`);
+	console.debug(`[rippers-guise] bound "${item.name}": ${skillIds.length} guise skill(s), ${equipIds.length} equipment; ${dormant} innate skill(s) dormant.`);
 }
 
-async function dismissGuise(actor, item, { silent = false } = {}) {
+async function dismissGuise(actor, ref, { silent = false } = {}) {
+	const item = resolveItem(actor, ref);
+	if (!actor || !item) { console.warn('[rippers-guise] dismissGuise: no actor/item.'); return; }
 	const owned = actor.getFlag(MODULE_ID, 'owned')?.[item.id] ?? [];
 	const preBindEquip = actor.getFlag(MODULE_ID, 'preBindEquip') ?? {};
 	const existing = owned.filter((id) => actor.items.get(id));
 	if (existing.length) await actor.deleteEmbeddedDocuments('Item', existing);
+	// Wake the innate skill set back up (Stage B) before clearing state.
+	await restoreInnateSkills(actor);
 	const equipRestore = {};
 	for (const slot of ALL_SLOTS) equipRestore[`system.equipped.${slot}`] = preBindEquip[slot] ?? null;
 	await actor.update({
@@ -191,13 +248,14 @@ async function dismissGuise(actor, item, { silent = false } = {}) {
 		[`flags.${MODULE_ID}.owned.-=${item.id}`]: null,
 		...equipRestore,
 	});
-	if (!silent) console.debug(`[rippers-guise] dismissed "${item.name}".`);
+	if (!silent) console.debug(`[rippers-guise] dismissed "${item.name}"; innate skills restored.`);
 }
 
 // ---------------------------------------------------------------------------
 // Public helpers (macros / other modules).
 function getActiveGuise(actor) { return actor?.getFlag(MODULE_ID, FLAG) ?? null; }
-async function setActiveGuise(actor, item) {
+async function setActiveGuise(actor, ref) {
+	const item = resolveItem(actor, ref);
 	if (!actor || !item) return;
 	if (getActiveGuise(actor) === item.id) return dismissGuise(actor, item);
 	return bindGuise(actor, item);
@@ -206,6 +264,94 @@ async function clearActiveGuise(actor) {
 	const id = getActiveGuise(actor);
 	const item = id && actor.items.get(id);
 	if (item) return dismissGuise(actor, item);
+}
+
+// ---------------------------------------------------------------------------
+// Author-time UI helpers (Stage B sheet). Names/caps resolved for display; all three caps are
+// enforced live in the sheet (below) and again, authoritatively, at bind (materialiseSkills).
+const AFFINITY_LEVELS = [
+	{ value: -1, label: 'Vulnerability' },
+	{ value: 1, label: 'Resistance' },
+	{ value: 2, label: 'Immunity' },
+	{ value: 3, label: 'Absorption' },
+];
+const affinityWordOf = (n) => (AFFINITY_LEVELS.find((l) => l.value === Number(n))?.label ?? '—');
+
+async function safeFromUuid(uuid) {
+	if (!uuid) return null;
+	try { return await fromUuid(uuid); } catch { return null; }
+}
+
+/** Build the enriched view-model the guise sheet renders (async; names + caps resolved). */
+async function enrichGuiseData(model) {
+	const item = model?.item ?? null;
+	const actor = model?.actor ?? null;
+	const data = model ?? {};
+	const activeId = actor?.getFlag(MODULE_ID, FLAG) ?? null;
+	const budget = budgetOf(actor);
+
+	let totalSl = 0;
+	const classes = [];
+	for (const [i, cls] of (data.classes ?? []).entries()) {
+		const cdoc = await safeFromUuid(cls.classUuid);
+		let sumSl = 0;
+		const skills = [];
+		for (const [j, sk] of (cls.skills ?? []).entries()) {
+			const sdoc = await safeFromUuid(sk.skillUuid);
+			const maxSl = sdoc?.system?.level?.max ?? 10;
+			const sl = Math.max(0, Number(sk.sl ?? 0) || 0);
+			sumSl += sl;
+			skills.push({ j, uuid: sk.skillUuid, name: sdoc?.name ?? '(missing skill)', img: sdoc?.img ?? 'icons/svg/book.svg', sl, maxSl, missing: !sdoc });
+		}
+		totalSl += sumSl;
+		classes.push({ i, uuid: cls.classUuid, name: cdoc?.name ?? '(missing class)', img: cdoc?.img ?? 'icons/svg/book.svg', missing: !cdoc, sumSl, mastery: sumSl >= PER_CLASS_CAP, over: sumSl > PER_CLASS_CAP, skills });
+	}
+
+	const equipment = [];
+	for (const [i, eq] of (data.equipment ?? []).entries()) {
+		const edoc = await safeFromUuid(eq.itemUuid);
+		equipment.push({ i, uuid: eq.itemUuid, name: edoc?.name ?? '(missing item)', img: edoc?.img ?? 'icons/svg/item-bag.svg', slot: eq.slot ?? 'mainHand', missing: !edoc });
+	}
+
+	const affinities = (data.affinityModifiers ?? []).map((m, i) => ({ i, type: m.type, level: m.level, word: affinityWordOf(m.level) }));
+
+	const slotChoices = Object.fromEntries(EQUIP_SLOTS.map((s) => [s, s]));
+	const typeChoices = Object.fromEntries(AFFINITY_TYPES.map((t) => [t, t]));
+	const levelChoices = Object.fromEntries(AFFINITY_LEVELS.map((l) => [String(l.value), l.label]));
+
+	return {
+		active: !!item && item.id === activeId,
+		budget, totalSl, overBudget: totalSl > budget, perClassCap: PER_CLASS_CAP,
+		classes, equipment, affinities,
+		slotChoices, typeChoices, levelChoices,
+		hasActor: !!actor,
+	};
+}
+
+/** Read a Foundry drag payload off a drop event. */
+function readDropData(event) {
+	try { return JSON.parse(event.dataTransfer.getData('text/plain')); } catch { return null; }
+}
+
+/** Live cap enforcement on the SL inputs (per-class ≤10, per-skill ≤max_sl, total ≤budget). */
+function clampAllocationInputs(html, budget) {
+	const inputs = Array.from(html.querySelectorAll('input.guise-sl'));
+	// per-skill max
+	for (const el of inputs) {
+		const max = Number(el.dataset.maxsl ?? 10);
+		if (Number(el.value) > max) el.value = String(max);
+		if (Number(el.value) < 0) el.value = '0';
+	}
+	// per-class ≤ 10
+	const byClass = {};
+	for (const el of inputs) (byClass[el.dataset.cls] ??= []).push(el);
+	for (const group of Object.values(byClass)) {
+		let sum = 0;
+		for (const el of group) { const v = Number(el.value) || 0; if (sum + v > PER_CLASS_CAP) el.value = String(Math.max(0, PER_CLASS_CAP - sum)); sum += Number(el.value) || 0; }
+	}
+	// total ≤ budget
+	let total = 0;
+	for (const el of inputs) { const v = Number(el.value) || 0; if (total + v > budget) el.value = String(Math.max(0, budget - total)); total += Number(el.value) || 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -249,8 +395,97 @@ function defineGuiseModel() {
 		static get translation() { return 'RIPPERS.Guise.Feature'; }
 
 		static async getAdditionalData(model) {
-			const activeId = model.actor?.getFlag(MODULE_ID, FLAG) ?? null;
-			return { active: !!model.item && model.item.id === activeId };
+			return enrichGuiseData(model);
+		}
+
+		/** Sync backstop clamp of the caps that need no async UUID lookup (per-class Σ≤10, total≤budget). */
+		static processUpdateData(data, model) {
+			const budget = budgetOf(model?.actor);
+			let total = 0;
+			for (const cls of data?.classes ?? []) {
+				let sum = 0;
+				for (const sk of cls.skills ?? []) {
+					let sl = Math.max(0, Math.floor(Number(sk.sl ?? 0)) || 0);
+					if (sum + sl > PER_CLASS_CAP) sl = Math.max(0, PER_CLASS_CAP - sum);
+					if (total + sl > budget) sl = Math.max(0, budget - total);
+					sk.sl = sl; sum += sl; total += sl;
+				}
+			}
+			return data;
+		}
+
+		/** Author-time interactivity: drop targets, add/remove rows, live cap clamp. */
+		static activateListeners(html, item, sheet) {
+			if (!item) return;
+			const cur = () => foundry.utils.deepClone(item.system?.data ?? {});
+			const setData = (patch) => item.update({ 'system.data': { ...cur(), ...patch } });
+			const budget = budgetOf(item.actor);
+
+			// --- drop targets (class / per-class skill / equipment) -----------------
+			html.querySelectorAll('[data-guise-drop]').forEach((zone) => {
+				zone.addEventListener('dragover', (ev) => { ev.preventDefault(); zone.classList.add('drop-hover'); });
+				zone.addEventListener('dragleave', () => zone.classList.remove('drop-hover'));
+				zone.addEventListener('drop', async (ev) => {
+					ev.preventDefault(); zone.classList.remove('drop-hover');
+					const payload = readDropData(ev);
+					if (!payload || payload.type !== 'Item' || !payload.uuid) return;
+					const doc = await safeFromUuid(payload.uuid);
+					if (!doc) return ui.notifications?.warn('That item could not be resolved.');
+					const kind = zone.dataset.guiseDrop;
+					const data = cur();
+					if (kind === 'class') {
+						if (doc.type !== 'class') return ui.notifications?.warn('Drop a class Item here.');
+						const classes = data.classes ?? [];
+						if (classes.some((c) => c.classUuid === payload.uuid)) return;
+						classes.push({ classUuid: payload.uuid, skills: [] });
+						await setData({ classes });
+					} else if (kind === 'skill') {
+						if (doc.type !== 'skill') return ui.notifications?.warn('Drop a skill Item here.');
+						const ci = Number(zone.dataset.cls);
+						const classes = data.classes ?? [];
+						if (!classes[ci]) return;
+						classes[ci].skills = classes[ci].skills ?? [];
+						if (classes[ci].skills.some((s) => s.skillUuid === payload.uuid)) return;
+						classes[ci].skills.push({ skillUuid: payload.uuid, sl: 1 });
+						await setData({ classes });
+					} else if (kind === 'equipment') {
+						const equipment = data.equipment ?? [];
+						if (equipment.some((e) => e.itemUuid === payload.uuid)) return;
+						equipment.push({ itemUuid: payload.uuid, slot: 'mainHand' });
+						await setData({ equipment });
+					}
+				});
+			});
+
+			// --- remove buttons -----------------------------------------------------
+			html.querySelectorAll('[data-guise-action]').forEach((btn) => {
+				btn.addEventListener('click', async (ev) => {
+					ev.preventDefault();
+					const action = btn.dataset.guiseAction;
+					const data = cur();
+					if (action === 'remove-class') {
+						(data.classes ??= []).splice(Number(btn.dataset.cls), 1);
+						await setData({ classes: data.classes });
+					} else if (action === 'remove-skill') {
+						const c = (data.classes ??= [])[Number(btn.dataset.cls)];
+						if (c) { (c.skills ??= []).splice(Number(btn.dataset.skill), 1); await setData({ classes: data.classes }); }
+					} else if (action === 'remove-equip') {
+						(data.equipment ??= []).splice(Number(btn.dataset.equip), 1);
+						await setData({ equipment: data.equipment });
+					} else if (action === 'add-affinity') {
+						(data.affinityModifiers ??= []).push({ type: 'dark', level: 1 });
+						await setData({ affinityModifiers: data.affinityModifiers });
+					} else if (action === 'remove-affinity') {
+						(data.affinityModifiers ??= []).splice(Number(btn.dataset.aff), 1);
+						await setData({ affinityModifiers: data.affinityModifiers });
+					}
+				});
+			});
+
+			// --- live cap clamp on SL inputs (before the form auto-submits) ---------
+			html.querySelectorAll('input.guise-sl').forEach((el) => {
+				el.addEventListener('change', () => clampAllocationInputs(html, budget));
+			});
 		}
 
 		/** Project FU transfers this item's embedded effects only when true → gate on "active guise". */
@@ -338,6 +573,40 @@ async function migrateWorldGuises() {
 	return n;
 }
 
+/**
+ * N2 (god, Stage A): the module NEVER auto-seeds guises onto actors — nothing in it re-creates a
+ * guise on load, so it cannot itself accumulate copies across reloads. The duplicates god saw came
+ * from repeated manual pack-imports. This is an OPT-IN GM tool (not run automatically — auto-deleting
+ * player items would be destructive) that collapses guise Items sharing a fuid on one actor, keeping
+ * the ACTIVE one (or the first), never touching the currently-bound guise. Idempotent.
+ */
+async function dedupeActorGuises(actor) {
+	if (!actor) return 0;
+	const activeId = actor.getFlag(MODULE_ID, FLAG) ?? null;
+	const byFuid = new Map();
+	for (const item of actor.items) {
+		if (!isGuiseItem(item)) continue;
+		const fuid = item.system?.fuid ?? item.getFlag(MODULE_ID, 'fuid') ?? `_id:${item.id}`;
+		(byFuid.get(fuid) ?? byFuid.set(fuid, []).get(fuid)).push(item);
+	}
+	const toDelete = [];
+	for (const group of byFuid.values()) {
+		if (group.length < 2) continue;
+		const keep = group.find((it) => it.id === activeId) ?? group[0];
+		for (const it of group) if (it.id !== keep.id) toDelete.push(it.id);
+	}
+	if (toDelete.length) {
+		await actor.deleteEmbeddedDocuments('Item', toDelete);
+		console.log(`[rippers-guise] dedupeActorGuises("${actor.name}"): removed ${toDelete.length} duplicate guise(s).`);
+	}
+	return toDelete.length;
+}
+async function dedupeWorldGuises() {
+	let n = 0;
+	for (const actor of game.actors ?? []) n += await dedupeActorGuises(actor);
+	return n;
+}
+
 /** One-shot cleanup for guises saved before the guard existed. */
 async function sanitizeActorGuises(actor) {
 	if (!actor) return 0;
@@ -364,7 +633,7 @@ Hooks.once('setup', () => {
 		const GuiseDataModel = defineGuiseModel();
 		CONFIG.FU.classFeatures ??= {};
 		CONFIG.FU.classFeatures.guise = registry.register(MODULE_ID, 'guise', GuiseDataModel);
-		console.log(`[rippers-guise] registered classFeature "${MODULE_ID}.guise" (v0.2 Stage A).`);
+		console.log(`[rippers-guise] registered classFeature "${MODULE_ID}.guise" (v0.2 Stage B — dormancy + authoring UI).`);
 	} catch (err) {
 		console.error('[rippers-guise] failed to register the guise classFeature:', err);
 	}
@@ -374,7 +643,7 @@ Hooks.once('setup', () => {
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -385,4 +654,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf };

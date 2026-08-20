@@ -1,4 +1,6 @@
-<div class="flexcol flexgrow-1">
+<div class="flexcol flexgrow-1 rippers-guise-sheet">
+
+	{{!-- ── Narrative ─────────────────────────────────────────────── --}}
 	<fieldset class="title-fieldset section-container desc resource-content">
 		<legend class="resource-label-m">{{localize 'RIPPERS.Guise.Identity'}}</legend>
 		<input type="text" name="system.data.identity" value="{{system.data.identity}}"
@@ -11,11 +13,96 @@
 			   placeholder="{{localize 'RIPPERS.Guise.RoleHint'}}"
 			   class="resource-inputs select-dropdown-full resource-text-m" />
 	</fieldset>
-	<fieldset class="title-fieldset section-container desc resource-content flexgrow-1">
+	<fieldset class="title-fieldset section-container desc resource-content">
 		<legend class="resource-label-m">{{localize 'RIPPERS.Guise.Notes'}}</legend>
 		<prose-mirror name="system.data.notes" value="{{system.data.notes}}" toggled>
 			{{{enrichedHtml.notes}}}
 		</prose-mirror>
 	</fieldset>
+
+	{{!-- ── Classes + skill allocation (D4 SL picker, three caps) ──── --}}
+	<fieldset class="title-fieldset section-container desc resource-content">
+		<legend class="resource-label-m">
+			{{localize 'RIPPERS.Guise.Classes'}}
+			<span class="guise-budget {{#if additionalData.overBudget}}guise-over{{/if}}">
+				{{additionalData.totalSl}} / {{additionalData.budget}} {{localize 'RIPPERS.Guise.SL'}}
+			</span>
+		</legend>
+
+		{{#each additionalData.classes as |cls|}}
+			<div class="guise-class-row" data-cls="{{cls.i}}">
+				<header class="guise-row-head">
+					<img class="guise-icon" src="{{cls.img}}" width="20" height="20" />
+					<span class="guise-name {{#if cls.missing}}guise-missing{{/if}}">{{cls.name}}</span>
+					<span class="guise-classlvl {{#if cls.over}}guise-over{{/if}}">
+						{{localize 'RIPPERS.Guise.Lvl'}} {{cls.sumSl}}/{{../additionalData.perClassCap}}{{#if cls.mastery}} ★{{/if}}
+					</span>
+					<a class="guise-del" data-guise-action="remove-class" data-cls="{{cls.i}}" title="{{localize 'RIPPERS.Guise.RemoveClass'}}"><i class="fas fa-trash"></i></a>
+				</header>
+				<input type="hidden" name="system.data.classes.{{cls.i}}.classUuid" value="{{cls.uuid}}" />
+
+				{{#each cls.skills as |sk|}}
+					<div class="guise-skill-row">
+						<img class="guise-icon" src="{{sk.img}}" width="16" height="16" />
+						<span class="guise-name {{#if sk.missing}}guise-missing{{/if}}">{{sk.name}}</span>
+						<input type="hidden" name="system.data.classes.{{cls.i}}.skills.{{sk.j}}.skillUuid" value="{{sk.uuid}}" />
+						<input type="number" class="guise-sl" min="0" max="{{sk.maxSl}}"
+							   data-cls="{{cls.i}}" data-maxsl="{{sk.maxSl}}"
+							   name="system.data.classes.{{cls.i}}.skills.{{sk.j}}.sl" value="{{sk.sl}}" />
+						<span class="guise-maxsl">/ {{sk.maxSl}}</span>
+						<a class="guise-del" data-guise-action="remove-skill" data-cls="{{cls.i}}" data-skill="{{sk.j}}" title="{{localize 'RIPPERS.Guise.RemoveSkill'}}"><i class="fas fa-times"></i></a>
+					</div>
+				{{/each}}
+
+				<div class="guise-drop guise-drop-skill" data-guise-drop="skill" data-cls="{{cls.i}}">
+					{{localize 'RIPPERS.Guise.DropSkill'}}
+				</div>
+			</div>
+		{{/each}}
+
+		<div class="guise-drop guise-drop-class" data-guise-drop="class">
+			{{localize 'RIPPERS.Guise.DropClass'}}
+		</div>
+	</fieldset>
+
+	{{!-- ── Equipment (guise loadout, D3) ─────────────────────────── --}}
+	<fieldset class="title-fieldset section-container desc resource-content">
+		<legend class="resource-label-m">{{localize 'RIPPERS.Guise.Equipment'}}</legend>
+		{{#each additionalData.equipment as |eq|}}
+			<div class="guise-equip-row">
+				<img class="guise-icon" src="{{eq.img}}" width="18" height="18" />
+				<span class="guise-name {{#if eq.missing}}guise-missing{{/if}}">{{eq.name}}</span>
+				<input type="hidden" name="system.data.equipment.{{eq.i}}.itemUuid" value="{{eq.uuid}}" />
+				<select name="system.data.equipment.{{eq.i}}.slot">
+					{{selectOptions ../additionalData.slotChoices selected=eq.slot}}
+				</select>
+				<a class="guise-del" data-guise-action="remove-equip" data-equip="{{eq.i}}" title="{{localize 'RIPPERS.Guise.RemoveEquip'}}"><i class="fas fa-times"></i></a>
+			</div>
+		{{/each}}
+		<div class="guise-drop guise-drop-equip" data-guise-drop="equipment">
+			{{localize 'RIPPERS.Guise.DropEquip'}}
+		</div>
+	</fieldset>
+
+	{{!-- ── Affinities ────────────────────────────────────────────── --}}
+	<fieldset class="title-fieldset section-container desc resource-content">
+		<legend class="resource-label-m">
+			{{localize 'RIPPERS.Guise.Affinities'}}
+			<a class="guise-add" data-guise-action="add-affinity" title="{{localize 'RIPPERS.Guise.AddAffinity'}}"><i class="fas fa-plus"></i></a>
+		</legend>
+		{{#each additionalData.affinities as |aff|}}
+			<div class="guise-aff-row">
+				<select name="system.data.affinityModifiers.{{aff.i}}.type">
+					{{selectOptions ../additionalData.typeChoices selected=aff.type}}
+				</select>
+				<select name="system.data.affinityModifiers.{{aff.i}}.level">
+					{{selectOptions ../additionalData.levelChoices selected=aff.level}}
+				</select>
+				<a class="guise-del" data-guise-action="remove-affinity" data-aff="{{aff.i}}" title="{{localize 'RIPPERS.Guise.RemoveAffinity'}}"><i class="fas fa-times"></i></a>
+			</div>
+		{{/each}}
+	</fieldset>
+
 	<p class="hint">{{localize 'RIPPERS.Guise.SwapHint'}}</p>
+	<p class="hint">{{localize 'RIPPERS.Guise.DormancyHint'}}</p>
 </div>

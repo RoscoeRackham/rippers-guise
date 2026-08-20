@@ -1,0 +1,30 @@
+/* rippers-guise — authoring sheet (Stage B). Minimal, rides PFU's feature-sheet chrome. */
+.rippers-guise-sheet .guise-budget,
+.rippers-guise-sheet .guise-classlvl { font-size: 0.75rem; opacity: 0.8; margin-left: 0.5rem; }
+.rippers-guise-sheet .guise-over { color: #b3122b; font-weight: 700; opacity: 1; }
+.rippers-guise-sheet .guise-missing { color: #b3122b; font-style: italic; }
+
+.rippers-guise-sheet .guise-class-row { border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; padding: 4px 6px; margin-bottom: 6px; }
+.rippers-guise-sheet .guise-row-head { display: flex; align-items: center; gap: 6px; }
+.rippers-guise-sheet .guise-row-head .guise-name { flex: 1; font-weight: 600; }
+.rippers-guise-sheet .guise-skill-row,
+.rippers-guise-sheet .guise-equip-row,
+.rippers-guise-sheet .guise-aff-row { display: flex; align-items: center; gap: 6px; margin: 3px 0 3px 18px; }
+.rippers-guise-sheet .guise-skill-row .guise-name,
+.rippers-guise-sheet .guise-equip-row .guise-name { flex: 1; }
+.rippers-guise-sheet .guise-icon { flex: 0 0 auto; object-fit: cover; border: none; }
+.rippers-guise-sheet input.guise-sl { width: 3em; text-align: center; }
+.rippers-guise-sheet .guise-maxsl { font-size: 0.7rem; opacity: 0.6; }
+.rippers-guise-sheet .guise-del,
+.rippers-guise-sheet .guise-add { cursor: pointer; opacity: 0.6; flex: 0 0 auto; }
+.rippers-guise-sheet .guise-del:hover,
+.rippers-guise-sheet .guise-add:hover { opacity: 1; color: #b3122b; }
+.rippers-guise-sheet .guise-aff-row select { flex: 1; }
+
+.rippers-guise-sheet .guise-drop {
+	border: 1px dashed rgba(0,0,0,0.35); border-radius: 4px;
+	padding: 6px; margin: 4px 0; text-align: center;
+	font-size: 0.75rem; opacity: 0.7; cursor: copy;
+}
+.rippers-guise-sheet .guise-drop-skill { margin-left: 18px; }
+.rippers-guise-sheet .guise-drop.drop-hover { border-color: #b3122b; background: rgba(179,18,43,0.08); opacity: 1; }
