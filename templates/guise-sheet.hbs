@@ -1,0 +1,21 @@
+<div class="flexcol flexgrow-1">
+	<fieldset class="title-fieldset section-container desc resource-content">
+		<legend class="resource-label-m">{{localize 'RIPPERS.Guise.Identity'}}</legend>
+		<input type="text" name="system.data.identity" value="{{system.data.identity}}"
+			   placeholder="{{localize 'RIPPERS.Guise.IdentityHint'}}"
+			   class="resource-inputs select-dropdown-full resource-text-m" />
+	</fieldset>
+	<fieldset class="title-fieldset section-container desc resource-content">
+		<legend class="resource-label-m">{{localize 'RIPPERS.Guise.Role'}}</legend>
+		<input type="text" name="system.data.role" value="{{system.data.role}}"
+			   placeholder="{{localize 'RIPPERS.Guise.RoleHint'}}"
+			   class="resource-inputs select-dropdown-full resource-text-m" />
+	</fieldset>
+	<fieldset class="title-fieldset section-container desc resource-content flexgrow-1">
+		<legend class="resource-label-m">{{localize 'RIPPERS.Guise.Notes'}}</legend>
+		<prose-mirror name="system.data.notes" value="{{system.data.notes}}" toggled>
+			{{{enrichedHtml.notes}}}
+		</prose-mirror>
+	</fieldset>
+	<p class="hint">{{localize 'RIPPERS.Guise.SwapHint'}}</p>
+</div>

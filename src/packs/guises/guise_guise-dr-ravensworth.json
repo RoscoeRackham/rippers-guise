@@ -1,0 +1,93 @@
+{
+	"name": "Dr. Ravensworth",
+	"type": "classFeature",
+	"_id": "RGgu000000000002",
+	"img": "icons/tools/cooking/mortar-herbs-yellow.webp",
+	"system": {
+		"fuid": "guise-dr-ravensworth",
+		"summary": {
+			"value": "A Harley Street physician cover — a fuller bag."
+		},
+		"description": "<p><strong>Harley Street consulting physician.</strong></p><p>A respectable practice and a well-stocked bag. The mask of medicine — carries more of everything useful.</p><p><em>While bound: +4 max IP.</em></p>",
+		"featureType": "rippers-guise.guise",
+		"data": {
+			"identity": "Dr. Ravensworth",
+			"role": "Harley Street consulting physician",
+			"notes": "<p>A respectable practice and a well-stocked bag. The mask of medicine — carries more of everything useful.</p>"
+		}
+	},
+	"effects": [
+		{
+			"name": "Dr. Ravensworth — guise",
+			"img": "icons/tools/cooking/mortar-herbs-yellow.webp",
+			"_id": "RGae000000000002",
+			"type": "base",
+			"changes": [
+				{
+					"key": "system.resources.ip.bonus",
+					"mode": 2,
+					"value": "4",
+					"priority": null
+				}
+			],
+			"disabled": false,
+			"transfer": true,
+			"statuses": [],
+			"description": "<p>Applies while <strong>Dr. Ravensworth</strong> is your bound guise.</p>",
+			"origin": "Compendium.rippers-guise.guises.Item.RGgu000000000002",
+			"duration": {
+				"rounds": null,
+				"startTime": null,
+				"combat": null
+			},
+			"system": {
+				"duration": {
+					"event": "none",
+					"interval": 1,
+					"tracking": "self",
+					"remaining": 1
+				},
+				"type": "default",
+				"predicate": {
+					"crisisInteraction": "none"
+				},
+				"rules": {
+					"elements": {},
+					"progress": {
+						"enabled": false,
+						"id": "",
+						"name": "",
+						"current": 0,
+						"max": 6,
+						"style": "bar"
+					},
+					"stacking": {
+						"progress": false,
+						"duration": false,
+						"increment": 1
+					}
+				}
+			},
+			"flags": {},
+			"sort": 0,
+			"tint": "#ffffff",
+			"_key": "!items.effects!RGgu000000000002.RGae000000000002"
+		}
+	],
+	"folder": null,
+	"flags": {
+		"rippers-guise": {
+			"fuid": "guise-dr-ravensworth",
+			"sample": true
+		}
+	},
+	"sort": 0,
+	"ownership": {
+		"default": 0
+	},
+	"_stats": {
+		"systemId": "projectfu",
+		"coreVersion": "13.0.0"
+	},
+	"_key": "!items!RGgu000000000002"
+}

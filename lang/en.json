@@ -1,0 +1,9 @@
+{
+	"RIPPERS.Guise.Feature": "Guise",
+	"RIPPERS.Guise.Identity": "Identity",
+	"RIPPERS.Guise.IdentityHint": "The persona behind the mask (e.g. Inspector Grange)",
+	"RIPPERS.Guise.Role": "Role",
+	"RIPPERS.Guise.RoleHint": "One-line cover / how it reads on the street",
+	"RIPPERS.Guise.Notes": "The Mask",
+	"RIPPERS.Guise.SwapHint": "Click this guise on the character sheet to bind it (dismissing any other). Exactly one guise is active at a time; its deltas apply only while it is bound."
+}

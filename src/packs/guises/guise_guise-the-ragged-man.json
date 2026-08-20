@@ -1,0 +1,93 @@
+{
+	"name": "The Ragged Man",
+	"type": "classFeature",
+	"_id": "RGgu000000000003",
+	"img": "icons/environment/people/beggar.webp",
+	"system": {
+		"fuid": "guise-the-ragged-man",
+		"summary": {
+			"value": "A street-beggar cover — the city looks past you."
+		},
+		"description": "<p><strong>A nobody the city looks past.</strong></p><p>Nobody remembers a beggar. The mask of the overlooked — you endure what the streets throw.</p><p><em>While bound: +2 max HP.</em></p>",
+		"featureType": "rippers-guise.guise",
+		"data": {
+			"identity": "The Ragged Man",
+			"role": "A nobody the city looks past",
+			"notes": "<p>Nobody remembers a beggar. The mask of the overlooked — you endure what the streets throw.</p>"
+		}
+	},
+	"effects": [
+		{
+			"name": "The Ragged Man — guise",
+			"img": "icons/environment/people/beggar.webp",
+			"_id": "RGae000000000003",
+			"type": "base",
+			"changes": [
+				{
+					"key": "system.resources.hp.bonus",
+					"mode": 2,
+					"value": "2",
+					"priority": null
+				}
+			],
+			"disabled": false,
+			"transfer": true,
+			"statuses": [],
+			"description": "<p>Applies while <strong>The Ragged Man</strong> is your bound guise.</p>",
+			"origin": "Compendium.rippers-guise.guises.Item.RGgu000000000003",
+			"duration": {
+				"rounds": null,
+				"startTime": null,
+				"combat": null
+			},
+			"system": {
+				"duration": {
+					"event": "none",
+					"interval": 1,
+					"tracking": "self",
+					"remaining": 1
+				},
+				"type": "default",
+				"predicate": {
+					"crisisInteraction": "none"
+				},
+				"rules": {
+					"elements": {},
+					"progress": {
+						"enabled": false,
+						"id": "",
+						"name": "",
+						"current": 0,
+						"max": 6,
+						"style": "bar"
+					},
+					"stacking": {
+						"progress": false,
+						"duration": false,
+						"increment": 1
+					}
+				}
+			},
+			"flags": {},
+			"sort": 0,
+			"tint": "#ffffff",
+			"_key": "!items.effects!RGgu000000000003.RGae000000000003"
+		}
+	],
+	"folder": null,
+	"flags": {
+		"rippers-guise": {
+			"fuid": "guise-the-ragged-man",
+			"sample": true
+		}
+	},
+	"sort": 0,
+	"ownership": {
+		"default": 0
+	},
+	"_stats": {
+		"systemId": "projectfu",
+		"coreVersion": "13.0.0"
+	},
+	"_key": "!items!RGgu000000000003"
+}

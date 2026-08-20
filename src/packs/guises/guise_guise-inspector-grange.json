@@ -1,0 +1,93 @@
+{
+	"name": "Inspector Grange",
+	"type": "classFeature",
+	"_id": "RGgu000000000001",
+	"img": "icons/environment/people/commoner.webp",
+	"system": {
+		"fuid": "guise-inspector-grange",
+		"summary": {
+			"value": "A Scotland Yard inspector cover — steadier aim."
+		},
+		"description": "<p><strong>Scotland Yard, plainclothes.</strong></p><p>A warrant card and a level stare. Doors open; questions get answered. The mask of the law — steadier aim, sharper attention.</p><p><em>While bound: +1 Accuracy.</em></p>",
+		"featureType": "rippers-guise.guise",
+		"data": {
+			"identity": "Inspector Grange",
+			"role": "Scotland Yard, plainclothes",
+			"notes": "<p>A warrant card and a level stare. Doors open; questions get answered. The mask of the law — steadier aim, sharper attention.</p>"
+		}
+	},
+	"effects": [
+		{
+			"name": "Inspector Grange — guise",
+			"img": "icons/environment/people/commoner.webp",
+			"_id": "RGae000000000001",
+			"type": "base",
+			"changes": [
+				{
+					"key": "system.bonuses.accuracy.accuracyCheck",
+					"mode": 2,
+					"value": "1",
+					"priority": null
+				}
+			],
+			"disabled": false,
+			"transfer": true,
+			"statuses": [],
+			"description": "<p>Applies while <strong>Inspector Grange</strong> is your bound guise.</p>",
+			"origin": "Compendium.rippers-guise.guises.Item.RGgu000000000001",
+			"duration": {
+				"rounds": null,
+				"startTime": null,
+				"combat": null
+			},
+			"system": {
+				"duration": {
+					"event": "none",
+					"interval": 1,
+					"tracking": "self",
+					"remaining": 1
+				},
+				"type": "default",
+				"predicate": {
+					"crisisInteraction": "none"
+				},
+				"rules": {
+					"elements": {},
+					"progress": {
+						"enabled": false,
+						"id": "",
+						"name": "",
+						"current": 0,
+						"max": 6,
+						"style": "bar"
+					},
+					"stacking": {
+						"progress": false,
+						"duration": false,
+						"increment": 1
+					}
+				}
+			},
+			"flags": {},
+			"sort": 0,
+			"tint": "#ffffff",
+			"_key": "!items.effects!RGgu000000000001.RGae000000000001"
+		}
+	],
+	"folder": null,
+	"flags": {
+		"rippers-guise": {
+			"fuid": "guise-inspector-grange",
+			"sample": true
+		}
+	},
+	"sort": 0,
+	"ownership": {
+		"default": 0
+	},
+	"_stats": {
+		"systemId": "projectfu",
+		"coreVersion": "13.0.0"
+	},
+	"_key": "!items!RGgu000000000001"
+}
