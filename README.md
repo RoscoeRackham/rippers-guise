@@ -111,3 +111,19 @@ await api.swapHunterWeaponForm(actor);
 
 `api.swapActiveForm(weapon)` swaps a specific weapon; `api.swapHunterWeaponForm(actor)`
 finds the actor's equipped (or first) transforming Hunter Weapon and swaps it.
+
+## Hoplosphere sockets (FDN-8 Stage 8b)
+
+PFU already slots hoplospheres into custom weapons; this module adds the campaign
+socket-count-by-level rule (**one socket per five levels to six at thirty; the
+Hunter Weapon gains one more at 40 and 50 → eight by fifty**) and the **two-Immunity
+cap**. Slotting a sphere that would exceed the level capacity or the cap is refused.
+
+Audit any weapon from a macro:
+
+```js
+const api = game.modules.get('rippers-guise').api;
+const w = actor.items.getName('Silverpoint');
+console.log(api.checkHoplosphereSockets(w, actor));
+// -> { capacity, used, free, seated, overSockets, immunities, overImmunityCap, ok }
+```

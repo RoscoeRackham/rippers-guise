@@ -15,9 +15,11 @@
  * guise, synced from affinityModifiers); skills + equipment are explicit CRUD tagged
  * flags['rippers-guise'].owned[guiseId], with an equip snapshot/restore.
  *
- * FDN-8 Stage 8a (v0.4.0-alpha) adds the HUNTER WEAPON: an isHunterWeapon mark + material/origin
+ * FDN-8 Stage 8a (v0.4.0-alpha.1) adds the HUNTER WEAPON: an isHunterWeapon mark + material/origin
  * fields on a transforming customWeapon, and a FREE once-per-turn two-form swap (no Equipment
- * Action) — see the Hunter Weapon section below. Leans on PFU's native customWeapon two-form.
+ * Action). Stage 8b (alpha.2) adds HOPLOSPHERE SOCKETS: a level-derived socket capacity
+ * (min(6, floor(lvl/5)); +1 at 40 and +1 at 50 for the Hunter Weapon) + a two-Immunity cap, an
+ * audit (checkHoplosphereSockets) and a best-effort slotting guard. Both lean on PFU natives.
  *
  * FDN-7 (v0.3.0/0.3.1) adds a player-facing GUISES PANEL in PFU's character-sheet Features tab: a
  * subsection listing the actor's owned guises, each with a Bind/Dismiss button and an ACTIVE
@@ -366,6 +368,72 @@ async function swapHunterWeaponForm(actor) {
 	if (!hw) { ui.notifications?.warn('No transforming Hunter Weapon found on this actor.'); return; }
 	return swapActiveForm(hw);
 }
+
+// ---------------------------------------------------------------------------
+// FDN-8 STAGE 8b — HOPLOSPHERE SOCKETS (port of GUISE-v2-design §7 / lent-vitals §7).
+// PFU ships hoplospheres as embedded pseudo-items on a customWeapon (system.slotted) with a
+// quality-tier slot count. What PFU lacks is the CAMPAIGN socket-count-BY-LEVEL rule and the
+// two-Immunity cap. Canon: one socket per five levels to SIX at thirty; the Hunter Weapon's own
+// two more open at 40 and 50 (→ 8 by 50); other weapons cap at 6. A hoplosphere costs its
+// requiredSlots (1 or 2). Cap: at most TWO hoplosphere-granted Immunities per weapon.
+// D-SPHERE (Austin, approved): adopt PFU's native hoplosphere change-set as the sphere vocabulary.
+const IMMUNITY_EFFECT_TYPES = new Set(['gainImmunity', 'gainStatusImmunity']);
+
+function charLevelForWeapon(weapon, actor) {
+	const a = actor ?? weapon?.actor;
+	return Number(a?.system?.level?.value ?? a?.system?.level ?? 0) || 0;
+}
+/** Level-derived socket capacity: min(6, floor(level/5)); the Hunter Weapon gains +1 at 40 and +1 at 50. */
+function hoplosphereSocketCapacity(weapon, actor) {
+	const lvl = charLevelForWeapon(weapon, actor);
+	const base = Math.min(6, Math.floor(lvl / 5));
+	const hunterBonus = isHunterWeapon(weapon) ? ((lvl >= 40 ? 1 : 0) + (lvl >= 50 ? 1 : 0)) : 0;
+	return base + hunterBonus;
+}
+function seatedHoplospheres(weapon) {
+	const src = weapon?.system?.slotted;
+	const arr = Array.isArray(src) ? src : (src ? Array.from(src) : Array.from(weapon?.items ?? []));
+	return arr.filter((i) => i?.type === 'hoplosphere');
+}
+const requiredSlotsOf = (sphere) => Number(sphere?.system?.requiredSlots ?? 1) || 1;
+const immunitiesOf = (sphere) => (sphere?.system?.effects ?? []).filter((e) => IMMUNITY_EFFECT_TYPES.has(e?.type)).length;
+const seatedSlotsUsed = (weapon) => seatedHoplospheres(weapon).reduce((a, s) => a + requiredSlotsOf(s), 0);
+const hoplosphereImmunityCount = (weapon) => seatedHoplospheres(weapon).reduce((a, s) => a + immunitiesOf(s), 0);
+
+/** Audit a weapon's hoplosphere loadout against the level capacity + two-Immunity cap (UI/GM/macro). */
+function checkHoplosphereSockets(weapon, actor) {
+	const capacity = hoplosphereSocketCapacity(weapon, actor);
+	const used = seatedSlotsUsed(weapon);
+	const immunities = hoplosphereImmunityCount(weapon);
+	return {
+		capacity, used, free: Math.max(0, capacity - used), seated: seatedHoplospheres(weapon).length,
+		overSockets: used > capacity, immunities, overImmunityCap: immunities > 2,
+		ok: used <= capacity && immunities <= 2,
+	};
+}
+
+// Best-effort HARD enforcement: refuse slotting a hoplosphere that would exceed the level capacity
+// or the two-Immunity cap. (Whether preCreateItem fires for PFU's pseudo-item slotting is the one
+// thing to confirm in Forge; the checkHoplosphereSockets audit is the fallback the sheet/GM uses.)
+Hooks.on('preCreateItem', (item) => {
+	try {
+		if (item?.type !== 'hoplosphere') return;
+		const weapon = item.parent;
+		if (!weapon || weapon.documentName !== 'Item' || weapon.type !== 'customWeapon') return;
+		const actor = weapon.actor;
+		const capacity = hoplosphereSocketCapacity(weapon, actor);
+		const usedAfter = seatedSlotsUsed(weapon) + requiredSlotsOf(item);
+		const immAfter = hoplosphereImmunityCount(weapon) + immunitiesOf(item);
+		if (actor && usedAfter > capacity) {
+			ui.notifications?.warn(`"${weapon.name}" has ${capacity} hoplosphere socket(s) at this level — that sphere needs ${requiredSlotsOf(item)} more than remain.`);
+			return false;
+		}
+		if (immAfter > 2) {
+			ui.notifications?.warn(`A weapon may carry at most two hoplosphere-granted Immunities; "${weapon.name}" would exceed that.`);
+			return false;
+		}
+	} catch (err) { console.error('[rippers-guise] hoplosphere socket guard failed:', err); }
+});
 
 // ---------------------------------------------------------------------------
 // FEATURES-TAB "GUISES" PANEL (FDN-7). Player-facing bind/dismiss controls injected into PFU's
@@ -829,7 +897,7 @@ Hooks.once('setup', () => {
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, swapActiveForm, swapHunterWeaponForm };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -840,4 +908,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres };
