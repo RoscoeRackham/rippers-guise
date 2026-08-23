@@ -778,7 +778,6 @@ function guiseSummary(item) {
 
 function buildGuisePanel(actor) {
 	const guises = actor.items.filter(isGuiseItem);
-	if (!guises.length) return null;
 	const activeId = getActiveGuise(actor);
 	const panel = document.createElement('div');
 	panel.className = 'rippers-guise-panel';
@@ -800,8 +799,11 @@ function buildGuisePanel(actor) {
 	}).join('');
 	panel.innerHTML = `<header class="items-main-header rippers-guise-header">
 			<span class="items-main"><label class="items-label">${game.i18n.localize('RIPPERS.Guise.PanelTitle')}</label></span>
+			<button type="button" class="guise-build">${game.i18n.localize('RIPPERS.Builder.Build')}</button>
 		</header>
-		<div class="rippers-guise-list">${rows}</div>`;
+		<div class="rippers-guise-list">${rows || `<p class="rippers-guise-empty">${game.i18n.localize('RIPPERS.Guise.NoGuises')}</p>`}</div>`;
+	// The Build button opens the player-facing Guise Builder wizard.
+	panel.querySelector('.guise-build')?.addEventListener('click', (ev) => { ev.preventDefault(); openGuiseBuilder(actor); });
 	// Wire each button to the EXISTING setActiveGuise (bind/dismiss/swap).
 	panel.querySelectorAll('.guise-toggle').forEach((btn) => {
 		btn.addEventListener('click', async (ev) => {
@@ -964,6 +966,167 @@ function buildBenefitPanel(actor) {
 		</div>`;
 	panel.querySelector('.benefit-edit').addEventListener('click', (ev) => { ev.preventDefault(); openBenefitPicker(actor); });
 	return panel;
+}
+
+// ---------------------------------------------------------------------------
+// GUISE BUILDER (v0.5.0). A player-facing ApplicationV2 wizard to ASSEMBLE a mask: up to 3 classes
+// granting SKILLS only (no benefits — a guise never materialises the class Item), a theme, and
+// create/bind. Reuses the verified engine (GuiseDataModel shape + the three SL caps + bindGuise +
+// dormancy). NO benefit-picking (that's the character-level picker). Affinities / equipment / §10 gear
+// are deferred to the authoring sheet / Builder v2. Pure helpers below are unit-tested; the app is thin.
+const DRAFT_SEP = '␟'; // separates the sl-map key "classUuid␟skillUuid"
+const draftKey = (classUuid, skillUuid) => `${classUuid}${DRAFT_SEP}${skillUuid}`;
+
+function emptyGuiseDraft() {
+	return { name: '', role: '', notes: '', img: 'icons/svg/mystery-man.svg', color: '', classUuids: [], sl: {} };
+}
+
+/** Parse a compendium class Item's description HTML into its skill list. Pure.
+ *  Matches @UUID[...]{Name} optionally followed by a 【Max SL N】 badge. */
+function parseClassSkills(descHtml) {
+	const out = [];
+	const re = /@UUID\[([^\]]+)\]\{([^}]+)\}(?:\s*<strong>【Max SL (\d+)】<\/strong>)?/g;
+	let m;
+	while ((m = re.exec(String(descHtml ?? '')))) {
+		out.push({ uuid: m[1], name: m[2], maxSl: m[3] ? Math.max(1, parseInt(m[3], 10)) : 10 });
+	}
+	return out;
+}
+
+/** Resolve a class ref (uuid or doc) to its skills [{uuid,name,maxSl}]. Async. */
+async function skillsForClass(classRef) {
+	const doc = (classRef && typeof classRef === 'object') ? classRef : await safeFromUuid(classRef);
+	if (!doc) return [];
+	return parseClassSkills(doc.system?.description ?? '');
+}
+
+/** Build GuiseDataModel data from a builder draft, applying the three SL caps (per-skill maxSl,
+ *  per-class <=10, total <= budget). Pure. skillMax: {skillUuid: maxSl}. Caps mirror materialiseSkills. */
+function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
+	const classes = [];
+	let spent = 0;
+	for (const classUuid of (draft.classUuids ?? []).filter(Boolean).slice(0, 3)) { // exactly three classes max
+		let perClass = 0;
+		const skills = [];
+		for (const [key, rawSl] of Object.entries(draft.sl ?? {})) {
+			const [cU, sU] = key.split(DRAFT_SEP);
+			if (cU !== classUuid || !sU) continue;
+			let sl = Math.max(0, Math.floor(Number(rawSl) || 0));
+			if (sl <= 0) continue;
+			sl = Math.min(sl, Number(skillMax[sU] ?? 10), PER_CLASS_CAP - perClass, budget - spent);
+			if (sl <= 0) continue;
+			perClass += sl; spent += sl;
+			skills.push({ skillUuid: sU, sl });
+		}
+		classes.push({ classUuid, skills });
+	}
+	return { identity: draft.name ?? '', role: draft.role ?? '', notes: draft.notes ?? '', classes, equipment: [], affinityModifiers: [] };
+}
+
+/** Create the guise classFeature Item on the actor from a draft; optionally bind it. Async. */
+async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false } = {}) {
+	if (!actor) return null;
+	const data = guiseDraftToData(draft, skillMax, budgetOf(actor));
+	const [item] = await actor.createEmbeddedDocuments('Item', [{
+		type: 'classFeature',
+		name: data.identity || 'New Guise',
+		img: draft.img || 'icons/svg/mystery-man.svg',
+		system: { featureType: FEATURE_TYPE, data },
+		flags: { [MODULE_ID]: { schemaVersion: 2, ...(draft.color ? { color: draft.color } : {}) } },
+	}]);
+	if (item && bind) await bindGuise(actor, item);
+	return item;
+}
+
+// Lazily define the wizard — foundry.applications.api is only live at runtime.
+let _GuiseBuilderApp = null;
+function getGuiseBuilderApp() {
+	if (_GuiseBuilderApp) return _GuiseBuilderApp;
+	const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+	class GuiseBuilderApp extends HandlebarsApplicationMixin(ApplicationV2) {
+		constructor(actor, options = {}) {
+			super({ ...options, id: `rippers-guise-builder-${actor?.id ?? 'x'}` });
+			this.actor = actor;
+			this._draft = emptyGuiseDraft();
+			this._classSkills = {}; // classUuid -> [{uuid,name,maxSl}]
+		}
+		static DEFAULT_OPTIONS = {
+			classes: ['rippers-guise', 'guise-builder'],
+			tag: 'form',
+			window: { title: 'RIPPERS.Builder.Title', icon: 'fas fa-mask' },
+			position: { width: 540, height: 'auto' },
+			actions: { create: GuiseBuilderApp.onCreate, createBind: GuiseBuilderApp.onCreateBind },
+		};
+		static PARTS = { form: { template: `modules/${MODULE_ID}/templates/guise-builder.hbs` } };
+		get title() { return `${game.i18n.localize('RIPPERS.Builder.Title')} — ${this.actor?.name ?? ''}`; }
+
+		async _prepareContext() {
+			const pack = game.packs?.get('rippers-compendium.classes');
+			const index = pack ? [...(await pack.getIndex())] : [];
+			const classOptions = index
+				.map((e) => ({ uuid: `Compendium.rippers-compendium.classes.Item.${e._id}`, name: e.name }))
+				.sort((a, b) => a.name.localeCompare(b.name));
+			const chosen = this._draft.classUuids.filter(Boolean);
+			for (const cU of chosen) if (!this._classSkills[cU]) this._classSkills[cU] = await skillsForClass(cU);
+			const budget = budgetOf(this.actor);
+			const skillMax = this._skillMax();
+			const data = guiseDraftToData(this._draft, skillMax, budget);
+			const spent = data.classes.reduce((a, c) => a + c.skills.reduce((x, s) => x + s.sl, 0), 0);
+			const none = game.i18n.localize('RIPPERS.Builder.NoClass');
+			const slots = [0, 1, 2].map((i) => ({
+				i,
+				options: [{ uuid: '', name: none, selected: !chosen[i] }]
+					.concat(classOptions.map((o) => ({ ...o, selected: o.uuid === (chosen[i] ?? '') }))),
+			}));
+			const classBlocks = chosen.map((cU) => ({
+				name: classOptions.find((o) => o.uuid === cU)?.name ?? '(class)',
+				skills: (this._classSkills[cU] ?? []).map((s) => {
+					const sl = Math.max(0, Math.floor(Number(this._draft.sl[draftKey(cU, s.uuid)]) || 0));
+					return { ...s, sl, key: draftKey(cU, s.uuid), checked: sl > 0 };
+				}),
+			}));
+			return { draft: this._draft, slots, classBlocks, budget, spent, canCreate: chosen.length > 0 && spent > 0 };
+		}
+
+		_skillMax() { const m = {}; for (const arr of Object.values(this._classSkills)) for (const s of arr) m[s.uuid] = s.maxSl; return m; }
+
+		_onRender() {
+			const root = this.element;
+			root.querySelectorAll('[data-draft]').forEach((el) => el.addEventListener('change', () => { this._draft[el.dataset.draft] = el.value; }));
+			root.querySelectorAll('select.guise-class-slot').forEach((sel) => sel.addEventListener('change', () => {
+				const arr = [...this._draft.classUuids];
+				arr[Number(sel.dataset.slot)] = sel.value || undefined;
+				this._draft.classUuids = arr.filter(Boolean);
+				this.render();
+			}));
+			root.querySelectorAll('input.guise-skill-check').forEach((cb) => cb.addEventListener('change', () => {
+				const key = cb.dataset.key;
+				if (cb.checked) { if (!(Number(this._draft.sl[key]) > 0)) this._draft.sl[key] = 1; } else delete this._draft.sl[key];
+				this.render();
+			}));
+			root.querySelectorAll('input.guise-skill-sl').forEach((inp) => inp.addEventListener('change', () => {
+				const v = Math.max(0, Math.floor(Number(inp.value) || 0));
+				if (v > 0) this._draft.sl[inp.dataset.key] = v; else delete this._draft.sl[inp.dataset.key];
+				this.render();
+			}));
+		}
+
+		static async onCreate(event) { event.preventDefault(); await this._doCreate(false); }
+		static async onCreateBind(event) { event.preventDefault(); await this._doCreate(true); }
+		async _doCreate(bind) {
+			if (!this._draft.classUuids.filter(Boolean).length) { ui.notifications?.warn('Pick at least one class for the guise.'); return; }
+			const item = await createGuiseFromDraft(this.actor, this._draft, { skillMax: this._skillMax(), bind });
+			if (item) { ui.notifications?.info(`Guise "${item.name}" created${bind ? ' and bound' : ''}.`); this.close(); }
+		}
+	}
+	_GuiseBuilderApp = GuiseBuilderApp;
+	return GuiseBuilderApp;
+}
+/** Open the Guise Builder wizard for an actor (panel button / macro). */
+function openGuiseBuilder(actor) {
+	if (!actor) return;
+	try { new (getGuiseBuilderApp())(actor).render(true); }
+	catch (err) { console.error('[rippers-guise] openGuiseBuilder failed:', err); }
 }
 
 // ---------------------------------------------------------------------------
@@ -1345,12 +1508,12 @@ Hooks.once('setup', () => {
 		console.error('[rippers-guise] failed to register the guise classFeature:', err);
 	}
 	const loader = foundry.applications?.handlebars?.loadTemplates ?? loadTemplates;
-	loader([`modules/${MODULE_ID}/templates/guise-sheet.hbs`, `modules/${MODULE_ID}/templates/benefit-picker.hbs`]);
+	loader([`modules/${MODULE_ID}/templates/guise-sheet.hbs`, `modules/${MODULE_ID}/templates/benefit-picker.hbs`, `modules/${MODULE_ID}/templates/guise-builder.hbs`]);
 });
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -1361,4 +1524,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder };

@@ -158,6 +158,25 @@ await api.setHunterWeapon(weapon, { material: 'cursed', baneKey: 'the_hollow_kin
 api.hunterWeaponBaneKey(weapon); // -> the resolved bane key
 ```
 
+## Guise Builder (v0.5.0)
+
+A player-facing wizard to assemble a mask: from the **Guises** panel on the
+character's Features tab, **Build a Guise** opens an ApplicationV2 dialog —
+
+1. **Identity & theme** — name, role, notes, icon, colour.
+2. **Classes** — pick up to **three** classes (skills only; a guise grants **no**
+   benefits, by construction).
+3. **Skills** — per chosen class, tick the class skills to include and set SL,
+   with the three caps live (per-skill max SL, per-class ≤ 10, total ≤
+   `min(level, 30)` — the same caps `bindGuise` enforces).
+4. **Create** / **Create & Bind** — writes the guise `classFeature` Item (and, if
+   binding, runs the verified `bindGuise` → dormancy + skill materialisation).
+
+`api.openGuiseBuilder(actor)` opens it from a macro. Benefit-picking is **not**
+here — that's the character-level [Benefit-pick pool](#benefit-pick-pool-case-b-guises-core-rulesmd-1)
+picker. Affinities, equipment loadout and §10 gear are set on the advanced
+authoring sheet (or a later Builder revision).
+
 ## Benefit-pick pool (Case B, `GUISES-core-rules.md` §1)
 
 Austin's ruleset: **classes grant no innate benefits** — not the character's own

@@ -1,0 +1,41 @@
+<div class="guise-builder-body">
+	<fieldset class="gb-identity">
+		<legend>{{localize "RIPPERS.Builder.Identity"}}</legend>
+		<label>{{localize "RIPPERS.Builder.Name"}} <input type="text" data-draft="name" value="{{draft.name}}" /></label>
+		<label>{{localize "RIPPERS.Builder.Role"}} <input type="text" data-draft="role" value="{{draft.role}}" /></label>
+		<label>{{localize "RIPPERS.Builder.Icon"}} <input type="text" data-draft="img" value="{{draft.img}}" /></label>
+		<label>{{localize "RIPPERS.Builder.Color"}} <input type="color" data-draft="color" value="{{#if draft.color}}{{draft.color}}{{else}}#7b2d8e{{/if}}" /></label>
+		<label class="gb-notes">{{localize "RIPPERS.Builder.Notes"}} <textarea data-draft="notes" rows="2">{{draft.notes}}</textarea></label>
+	</fieldset>
+
+	<fieldset class="gb-classes">
+		<legend>{{localize "RIPPERS.Builder.Classes"}} — {{localize "RIPPERS.Builder.UpTo3"}}</legend>
+		{{#each slots}}
+			<select class="guise-class-slot" data-slot="{{i}}">
+				{{#each options}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+			</select>
+		{{/each}}
+	</fieldset>
+
+	{{#each classBlocks}}
+		<fieldset class="gb-skills">
+			<legend>{{name}} — {{localize "RIPPERS.Builder.Skills"}}</legend>
+			{{#each skills}}
+				<div class="gb-skill">
+					<label class="gb-skill-name"><input type="checkbox" class="guise-skill-check" data-key="{{key}}" {{#if checked}}checked{{/if}} /> {{name}}</label>
+					<input type="number" class="guise-skill-sl" data-key="{{key}}" value="{{sl}}" min="0" max="{{maxSl}}" title="Max SL {{maxSl}}" />
+					<span class="gb-maxsl">/ {{maxSl}}</span>
+				</div>
+			{{else}}
+				<p class="gb-empty">{{localize "RIPPERS.Builder.NoSkills"}}</p>
+			{{/each}}
+		</fieldset>
+	{{/each}}
+
+	<div class="gb-budget">{{localize "RIPPERS.Builder.Budget"}}: <strong>{{spent}} / {{budget}}</strong> SL</div>
+
+	<footer class="gb-footer">
+		<button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-mask"></i> {{localize "RIPPERS.Builder.Create"}}</button>
+		<button type="button" data-action="createBind" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-user-secret"></i> {{localize "RIPPERS.Builder.CreateBind"}}</button>
+	</footer>
+</div>

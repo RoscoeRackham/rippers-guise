@@ -33,5 +33,22 @@
 	"RIPPERS.Benefit.Contested": "Contested — one character in the party may take this.",
 	"RIPPERS.Benefit.BothPicks": "(both picks)",
 	"RIPPERS.Benefit.Summary": "Summary",
-	"RIPPERS.Benefit.Save": "Save"
+	"RIPPERS.Benefit.Save": "Save",
+	"RIPPERS.Guise.NoGuises": "No guises yet — build one.",
+	"RIPPERS.Builder.Title": "Guise Builder",
+	"RIPPERS.Builder.Build": "Build a Guise",
+	"RIPPERS.Builder.Identity": "Identity & theme",
+	"RIPPERS.Builder.Name": "Name",
+	"RIPPERS.Builder.Role": "Role",
+	"RIPPERS.Builder.Icon": "Icon path",
+	"RIPPERS.Builder.Color": "Colour",
+	"RIPPERS.Builder.Notes": "Notes",
+	"RIPPERS.Builder.Classes": "Classes",
+	"RIPPERS.Builder.UpTo3": "up to three, skills only",
+	"RIPPERS.Builder.NoClass": "— none —",
+	"RIPPERS.Builder.Skills": "skills",
+	"RIPPERS.Builder.NoSkills": "No skills recorded for this class.",
+	"RIPPERS.Builder.Budget": "SL budget",
+	"RIPPERS.Builder.Create": "Create",
+	"RIPPERS.Builder.CreateBind": "Create & Bind"
 }
