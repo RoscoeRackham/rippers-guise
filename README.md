@@ -157,3 +157,60 @@ await api.setHunterWeapon(weapon, { material: 'silver' });   // -> bane key 'sil
 await api.setHunterWeapon(weapon, { material: 'cursed', baneKey: 'the_hollow_king' }); // GM-authored
 api.hunterWeaponBaneKey(weapon); // -> the resolved bane key
 ```
+
+## Benefit-pick pool (Case B, `GUISES-core-rules.md` §1)
+
+Austin's ruleset: **classes grant no innate benefits** — not the character's own
+classes, not guise-worn ones. Every benefit comes from the character's **two
+creation picks** (permanent, unbuyable). This module is the source of truth for
+those picks and makes the mechanically-live ones real.
+
+The pool (`api.BENEFIT_POOL`), verbatim from §1:
+
+- **Stat picks** (uncontested — any number of characters): `hp10` (+10 HP),
+  `mp10` (+10 MP), `hpmp5` (+5 HP and +5 MP), `ip4` (+4 IP).
+- **Capability picks** (contested — one character in the party): `projects`,
+  `rituals` (Ritualism universal + one named contested discipline),
+  `see_you_later`, `unexpected_ally`, `personal_vehicle`, and `familiar`
+  (**trades both picks**).
+
+**Proficiency is universal** (`GUISES-core-rules.md` §3) — there are no
+martial/armor/shield picks; "martial" is only a tag on equipment.
+
+```js
+const api = game.modules.get('rippers-guise').api;
+await api.setBenefitPicks(actor, { picks: ['hp10', 'ip4'] });                 // stat picks
+await api.setBenefitPicks(actor, { picks: ['rituals', 'mp10'], ritualDiscipline: 'Elementalism' });
+api.getBenefitPicks(actor);      // { picks:[...], ritualDiscipline:'...' }
+api.benefitPickSummary(actor);   // 'Rituals (Ritualism + Elementalism) · +10 MP'
+```
+
+- Stat picks land on `system.resources.{hp,mp,ip}.bonus` via a single on-actor
+  **"Benefit Picks"** ActiveEffect (rebuilt idempotently on every set).
+  Capability picks are display / honor-system (contested-overlap is enforced at
+  the table, not cross-actor in code).
+- **Always-live**: the picks are the character's, never a mask's — dormancy never
+  touches them; the effect persists through bind and dismiss.
+- The record is a per-character flag singleton (`flags.rippers-guise.benefitPicks`).
+
+**Ritual disciplines (three routes, display-only).** PFU does not gate ritual
+casting on any actor field (a ritual is a `ritual` Item; casting is a check on
+it), so ritual-granting is tracked for display / the contested-discipline rule /
+the Guise Builder — not as a mechanical gate. `api.characterRitualDisciplines(actor)`
+aggregates all three canon routes: (a) the `rituals` benefit pick (Ritualism +
+the named discipline), (b) a ritual-granting **class skill**, and (c) a granting
+**keystone** — where (b)/(c) carry `flags.<ns>.grantsRitual = "<discipline>"` (or
+an array). The class-level ritualism boolean is inert and stays neutralized by the
+compendium delta; the grant lives on the skill/keystone that actually confers it.
+Projects follow the same shape: `api.characterCanInitiateProjects(actor)` ORs the
+`projects` pick with any Item carrying `flags.<ns>.grantsProject === true`.
+
+**Companion compendium delta (ships together):** because a class Item's benefit
+booleans are its own intrinsic data (not ActiveEffect changes the guard can see),
+the class-side reconciliation lives in **rippers-compendium** — its generator sets
+every class's benefit booleans to `false` (printed values kept as a display-only
+`flags.rippers-compendium.printedBenefits` catalog) so the pool is the sole source
+and PFU doesn't double-count. Neutralization and this engine **must ship in the
+same drop** — neutralizing class benefits without the pool live would strip every
+character's HP/MP/IP. For legacy actors imported before the delta,
+`api.stripClassBenefits(actor)` neutralizes their own class Items' booleans.

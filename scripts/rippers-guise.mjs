@@ -557,6 +557,196 @@ async function restoreCreationHeroic(actor) {
 }
 
 // ---------------------------------------------------------------------------
+// BENEFIT-PICK POOL (Case B — god 2026-08-23; source: GUISES-core-rules.md §1 "Innate Benefits").
+// Austin's ruleset: classes grant NO innate benefits (own OR guise-worn) — every benefit comes from
+// the character's TWO creation picks (permanent, unbuyable). This SUPERSEDES the 2026-08-20 "benefits
+// TRUE on class Items" ruling. The class-side reconciliation is a COMPILER delta (all benefit
+// booleans → false, printed values kept as a display-only catalog) so PFU's HP/MP/IP calc
+// (character-data-model.mjs) and AdvancementTracker read NOTHING from classes and the pool is the
+// sole source. The engine can't neutralise a class Item's intrinsic system.benefits (they aren't
+// ActiveEffect changes the POOL_BLOCK guard sees), so the fix belongs in the compendium generator;
+// stripClassBenefits() below is only an opt-in repair for actors imported before that delta lands.
+//
+// PROFICIENCY NOTE (GUISES-core-rules.md §3, ruled 17 Aug 2026): martial proficiency does NOT exist
+// in this ruleset — it is UNIVERSAL (everyone can equip anything; "martial" is only a tag on the
+// item some skills read). So there are NO martial/armor/shield picks; the honor-system "martial
+// display" the dispatch asked for is moot. The pool is the §1 list below and nothing else.
+//
+// The record is an actor-flag singleton — per-character, ALWAYS-LIVE, never a mask's, so dormancy
+// never touches it. Only the four STAT picks are mechanically live; they land on
+// system.resources.{hp,mp,ip}.bonus through ONE on-actor "Benefit Picks" ActiveEffect (the
+// rippers-automation .bonus idiom). Capability picks (Projects/Rituals/…) are display-only.
+const BENEFIT_FLAG = 'benefitPicks';
+const BENEFIT_EFFECT_FLAG = 'benefitPickEffect';
+const RESOURCE_KEYS = ['hp', 'mp', 'ip'];
+
+// The §1 pool, verbatim. `stat` picks carry resource deltas (mechanically live); `capability` picks
+// carry none (display/honor-system). `contested:true` = one character in the party (enforced at the
+// table; surfaced here for the UI). Stat picks are uncontested. `both:true` = costs BOTH picks.
+const BENEFIT_POOL = {
+	hp10:  { label: '+10 HP',           kind: 'stat', delta: { hp: 10 },       contested: false },
+	mp10:  { label: '+10 MP',           kind: 'stat', delta: { mp: 10 },       contested: false },
+	hpmp5: { label: '+5 HP and +5 MP',  kind: 'stat', delta: { hp: 5, mp: 5 }, contested: false },
+	ip4:   { label: '+4 IP',            kind: 'stat', delta: { ip: 4 },        contested: false },
+	projects:         { label: 'Projects',            kind: 'capability', contested: true },
+	rituals:          { label: 'Rituals',             kind: 'capability', contested: true, namedDiscipline: true },
+	see_you_later:    { label: 'See You Later',       kind: 'capability', contested: true },
+	unexpected_ally:  { label: 'Unexpected Ally',     kind: 'capability', contested: true },
+	personal_vehicle: { label: 'Personal Vehicle',    kind: 'capability', contested: true },
+	familiar:         { label: "Diabolist's familiar", kind: 'capability', contested: true, both: true },
+};
+
+/** Pure validator: enforce the 2-pick rule (familiar trades BOTH), known keys, no duplicates. */
+function validateBenefitPicks(picks) {
+	if (!Array.isArray(picks)) return { ok: false, reason: 'picks must be an array' };
+	if (new Set(picks).size !== picks.length) return { ok: false, reason: 'duplicate pick' };
+	for (const p of picks) if (!BENEFIT_POOL[p]) return { ok: false, reason: `unknown pick "${p}"` };
+	if (picks.includes('familiar')) {
+		return picks.length === 1 ? { ok: true } : { ok: false, reason: 'the familiar trades BOTH picks — it must be the only pick' };
+	}
+	if (picks.length > 2) return { ok: false, reason: 'at most two benefit picks' };
+	return { ok: true };
+}
+
+/** Aggregate the resource-bonus deltas for a set of picks. Pure. */
+function benefitResourceDeltas(picks) {
+	const out = { hp: 0, mp: 0, ip: 0 };
+	for (const p of picks ?? []) {
+		const d = BENEFIT_POOL[p]?.delta;
+		if (d) for (const k of RESOURCE_KEYS) if (d[k]) out[k] += d[k];
+	}
+	return out;
+}
+
+/** Build the ActiveEffect `changes` (system.resources.{k}.bonus ADD) for the stat picks. Pure. */
+function benefitEffectChanges(picks) {
+	const deltas = benefitResourceDeltas(picks);
+	return RESOURCE_KEYS
+		.filter((k) => deltas[k])
+		.map((k) => ({ key: `system.resources.${k}.bonus`, mode: 2, value: String(deltas[k]), priority: null }));
+}
+
+function getBenefitPicks(actor) {
+	const rec = actor?.getFlag?.(MODULE_ID, BENEFIT_FLAG);
+	return { picks: rec?.picks ?? [], ritualDiscipline: rec?.ritualDiscipline ?? '' };
+}
+
+/** Rebuild the single on-actor "Benefit Picks" ActiveEffect from the record. Idempotent. */
+async function rebuildBenefitEffect(actor) {
+	if (!actor) return;
+	const { picks } = getBenefitPicks(actor);
+	const changes = benefitEffectChanges(picks);
+	const existing = actor.effects.find((e) => e.getFlag(MODULE_ID, BENEFIT_EFFECT_FLAG));
+	if (!changes.length) { if (existing) await existing.delete(); return; }
+	if (existing) { await existing.update({ changes }); return; }
+	await actor.createEmbeddedDocuments('ActiveEffect', [{
+		name: 'Benefit Picks',
+		img: 'icons/svg/upgrade.svg',
+		changes,
+		transfer: false,
+		flags: { [MODULE_ID]: { [BENEFIT_EFFECT_FLAG]: true } },
+	}]);
+}
+
+/** Set a character's creation benefit picks (validated), then rebuild the live effect. */
+async function setBenefitPicks(actor, { picks = [], ritualDiscipline = '' } = {}) {
+	if (!actor) return { ok: false, reason: 'no actor' };
+	const v = validateBenefitPicks(picks);
+	if (!v.ok) { console.warn(`[rippers-guise] setBenefitPicks: ${v.reason}`); return v; }
+	const rec = { picks: [...new Set(picks)] };
+	if (picks.includes('rituals') && ritualDiscipline) rec.ritualDiscipline = String(ritualDiscipline);
+	await actor.setFlag(MODULE_ID, BENEFIT_FLAG, rec);
+	await rebuildBenefitEffect(actor);
+	return { ok: true, picks: rec.picks };
+}
+
+/** Human summary of a character's picks (panel / sheet). Sync. */
+function benefitPickSummary(actor) {
+	const { picks, ritualDiscipline } = getBenefitPicks(actor);
+	if (!picks.length) return 'No benefit picks chosen.';
+	return picks.map((p) => {
+		const b = BENEFIT_POOL[p];
+		if (!b) return p;
+		if (p === 'rituals' && ritualDiscipline) return `Rituals (Ritualism + ${ritualDiscipline})`;
+		return b.label;
+	}).join(' · ');
+}
+
+// ---------------------------------------------------------------------------
+// RITUAL DISCIPLINES — the three canon routes, tracked for DISPLAY (not a mechanical gate).
+// Verified in FU source: PFU does NOT gate ritual casting on any actor field — a ritual is a
+// `ritual` Item and casting is a ritualCheck on it; nothing reads benefits.rituals/disciplines. So
+// the class ritualism BOOLEAN is inert (safe for the compendium delta to neutralize uniformly), and
+// ritual-granting is a display/contested-tracking concern, expressed at the SKILL / KEYSTONE level
+// via `flags.<ns>.grantsRitual = <discipline | [disciplines]>` — NOT via a class boolean (inert, and
+// the wrong doc: Keeper grants Ritualism through its Bind/Haunt skills, not the class itself).
+// The three routes:
+//   a) the benefit-pick pool — the 'rituals' pick grants Ritualism (universal) + the named 2nd discipline;
+//   b) a ritual-granting CLASS SKILL carrying flags.<ns>.grantsRitual;
+//   c) a granting KEYSTONE Item carrying the same flag.
+const GRANTS_RITUAL_KEY = 'grantsRitual';
+function normalizeDisciplines(v) {
+	if (!v) return [];
+	return (Array.isArray(v) ? v : [v]).map((d) => String(d).toLowerCase().trim()).filter(Boolean);
+}
+/** Aggregate a character's ritual disciplines across all three routes (display / Guise Builder). Sync. */
+function characterRitualDisciplines(actor) {
+	const out = new Set();
+	const { picks, ritualDiscipline } = getBenefitPicks(actor);
+	if (picks.includes('rituals')) { out.add('ritualism'); for (const d of normalizeDisciplines(ritualDiscipline)) out.add(d); }
+	for (const it of actor?.items ?? []) {
+		for (const ns of Object.keys(it?.flags ?? {})) {
+			for (const d of normalizeDisciplines(it.flags[ns]?.[GRANTS_RITUAL_KEY])) out.add(d);
+		}
+	}
+	return [...out];
+}
+
+// Projects — the parallel capability route (same three-route model). FU gates nothing on it either;
+// this is display / Guise Builder tracking. Route a) the 'projects' benefit pick; route b/c) an Item
+// carrying flags.<ns>.grantsProject === true (a project-granting class skill or keystone).
+const GRANTS_PROJECT_KEY = 'grantsProject';
+function characterCanInitiateProjects(actor) {
+	if (getBenefitPicks(actor).picks.includes('projects')) return true;
+	for (const it of actor?.items ?? []) {
+		for (const ns of Object.keys(it?.flags ?? {})) if (it.flags[ns]?.[GRANTS_PROJECT_KEY] === true) return true;
+	}
+	return false;
+}
+
+/**
+ * Opt-in GM repair (NOT automatic): neutralise benefit booleans on a character's OWN class Items —
+ * for actors imported before the Case-B compendium delta — so PFU stops granting class HP/MP/IP and
+ * double-counting against the pool. The compendium generator is the real fix; this patches live
+ * actors. Idempotent (skips class Items that already grant nothing).
+ */
+async function stripClassBenefits(actor) {
+	if (!actor) return 0;
+	const updates = [];
+	for (const cls of actor.items.filter((i) => i.type === 'class')) {
+		const b = cls.system?.benefits ?? {};
+		const anyTrue = RESOURCE_KEYS.some((k) => b.resources?.[k]?.value)
+			|| ['melee', 'ranged', 'armor', 'shields'].some((k) => b.martials?.[k]?.value)
+			|| Object.values(b.rituals ?? {}).some((r) => r?.value);
+		if (!anyTrue) continue;
+		const u = {
+			_id: cls.id,
+			'system.benefits.resources.hp.value': false,
+			'system.benefits.resources.mp.value': false,
+			'system.benefits.resources.ip.value': false,
+			'system.benefits.martials.melee.value': false,
+			'system.benefits.martials.ranged.value': false,
+			'system.benefits.martials.armor.value': false,
+			'system.benefits.martials.shields.value': false,
+		};
+		for (const rk of Object.keys(b.rituals ?? {})) u[`system.benefits.rituals.${rk}.value`] = false;
+		updates.push(u);
+	}
+	if (updates.length) await actor.updateEmbeddedDocuments('Item', updates);
+	return updates.length;
+}
+
+// ---------------------------------------------------------------------------
 // FEATURES-TAB "GUISES" PANEL (FDN-7). Player-facing bind/dismiss controls injected into PFU's
 // character-sheet Features tab. UI + wiring only — every button calls the EXISTING setActiveGuise
 // (bind mechanics unchanged). One guise active at a time; the active mask is badged and, cheaply,
@@ -1018,7 +1208,7 @@ Hooks.once('setup', () => {
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -1029,4 +1219,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects };
