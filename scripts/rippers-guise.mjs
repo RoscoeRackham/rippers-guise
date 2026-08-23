@@ -823,7 +823,12 @@ function injectGuisePanel(app) {
 		const actor = app?.actor;
 		const root = app?.element;
 		if (!actor || !root || actor.type !== 'character') return;
-		const tab = root.querySelector('[data-tab="features"]');
+		// Target the Features CONTENT pane — `<div class="tab" data-tab="features">` — NOT the nav
+		// link `<a class="item button-style" data-action="tab" data-tab="features">`, which carries the
+		// SAME data-tab. A bare [data-tab] match hits the nav <a> first, dropping the panels into the
+		// tab strip where they inherit the orange tab-pill styling. The content pane has class "tab".
+		const tab = root.querySelector('.tab[data-tab="features"]')
+			|| root.querySelector('[data-tab="features"]:not(a):not([data-action="tab"])');
 		if (!tab) return; // features part not rendered (limited sheet etc.)
 		// Idempotent: sweep ANY prior panels anywhere in this sheet before re-injecting, so a stale
 		// panel (and its click listeners) can never survive a re-render and stack. The panels + their

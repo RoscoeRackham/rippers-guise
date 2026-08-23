@@ -155,3 +155,38 @@
 	margin: 0;
 	white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------------------
+   v0.5.2 defense-in-depth: comprehensive typography cap on both injected panels,
+   so even if a panel element ever picks up host chrome it can't inherit the huge
+   sheet-title/button font. (Primary fix is the injection target — panels now live
+   in the Features CONTENT pane, not the tab nav.) No FA <i> icons live in these
+   panels, so a universal font-family cap is safe. */
+.rippers-benefit-panel *,
+.rippers-guise-panel * {
+	font-family: inherit !important;
+	font-size: 0.85rem !important;
+	line-height: 1.4 !important;
+	text-transform: none !important;
+	letter-spacing: normal !important;
+}
+.rippers-benefit-panel .rippers-guise-header .items-main,
+.rippers-benefit-panel .rippers-guise-header .items-label,
+.rippers-guise-panel .rippers-guise-header .items-main,
+.rippers-guise-panel .rippers-guise-header .items-label {
+	font-size: 1rem !important;
+	font-weight: 700 !important;
+}
+.rippers-benefit-panel button,
+.rippers-benefit-panel .benefit-edit,
+.rippers-guise-panel button,
+.rippers-guise-panel .guise-build,
+.rippers-guise-panel .guise-toggle {
+	font-size: 0.8rem !important;
+	line-height: 1.4 !important;
+	padding: 0.2rem 0.6rem !important;
+	height: auto !important;
+	min-height: 0 !important;
+	width: auto !important;
+	flex: 0 0 auto !important;
+}
