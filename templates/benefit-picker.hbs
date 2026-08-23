@@ -1,0 +1,34 @@
+<div class="benefit-picker-body">
+	<p class="benefit-hint">{{localize "RIPPERS.Benefit.ChooseUpTo2"}}</p>
+
+	<fieldset class="benefit-grid">
+		<legend>{{localize "RIPPERS.Benefit.StatPicks"}}</legend>
+		{{#each statOptions}}
+			<label class="benefit-opt">
+				<input type="checkbox" name="picks" value="{{key}}" {{#if checked}}checked{{/if}} />
+				<span>{{label}}</span>
+			</label>
+		{{/each}}
+	</fieldset>
+
+	<fieldset class="benefit-grid benefit-grid-cap">
+		<legend>{{localize "RIPPERS.Benefit.Capabilities"}}</legend>
+		{{#each capOptions}}
+			<label class="benefit-opt">
+				<input type="checkbox" name="picks" value="{{key}}" {{#if checked}}checked{{/if}} />
+				<span>{{label}}{{#if both}} <em class="benefit-both">{{localize "RIPPERS.Benefit.BothPicks"}}</em>{{/if}}{{#if contested}} <span class="benefit-contested" title="{{localize "RIPPERS.Benefit.Contested"}}">◆</span>{{/if}}</span>
+				{{#if namedDiscipline}}
+					<select name="ritualDiscipline" class="benefit-discipline">
+						{{#each ../disciplines}}<option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+					</select>
+				{{/if}}
+			</label>
+		{{/each}}
+	</fieldset>
+
+	<div class="benefit-summary"><strong>{{localize "RIPPERS.Benefit.Summary"}}:</strong> <span class="benefit-summary-live">{{summary}}</span></div>
+
+	<footer class="benefit-footer">
+		<button type="submit" class="benefit-save"><i class="fas fa-save"></i> {{localize "RIPPERS.Benefit.Save"}}</button>
+	</footer>
+</div>

@@ -177,6 +177,12 @@ The pool (`api.BENEFIT_POOL`), verbatim from §1:
 **Proficiency is universal** (`GUISES-core-rules.md` §3) — there are no
 martial/armor/shield picks; "martial" is only a tag on equipment.
 
+**Picker UI.** A player sets their picks from a **Benefit Picks** panel on their own
+character's Features tab — an *Edit* button opens an ApplicationV2 dialog (choose up
+to 2; the `rituals` pick reveals a discipline sub-selector; the familiar trades both;
+live summary; Save writes through `setBenefitPicks`). `api.openBenefitPicker(actor)`
+opens it from a macro. No console step needed.
+
 ```js
 const api = game.modules.get('rippers-guise').api;
 await api.setBenefitPicks(actor, { picks: ['hp10', 'ip4'] });                 // stat picks

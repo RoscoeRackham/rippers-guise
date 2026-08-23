@@ -803,7 +803,7 @@ function buildGuisePanel(actor) {
 	return panel;
 }
 
-/** Inject (or refresh) the Guises panel into a freshly-rendered character sheet's Features tab. */
+/** Inject (or refresh) the Benefit-Picks + Guises panels into a character sheet's Features tab. */
 function injectGuisePanel(app) {
 	try {
 		const actor = app?.actor;
@@ -811,17 +811,139 @@ function injectGuisePanel(app) {
 		if (!actor || !root || actor.type !== 'character') return;
 		const tab = root.querySelector('[data-tab="features"]');
 		if (!tab) return; // features part not rendered (limited sheet etc.)
-		// Idempotent: sweep ANY prior panel anywhere in this sheet before re-injecting, so a stale
-		// panel (and its click listeners) can never survive a re-render and stack. The panel + its
+		// Idempotent: sweep ANY prior panels anywhere in this sheet before re-injecting, so a stale
+		// panel (and its click listeners) can never survive a re-render and stack. The panels + their
 		// buttons are freshly created below, so listeners live only on the current DOM.
-		root.querySelectorAll('.rippers-guise-panel').forEach((n) => n.remove());
-		const panel = buildGuisePanel(actor);
-		if (!panel) return;
+		root.querySelectorAll('.rippers-guise-panel, .rippers-benefit-panel').forEach((n) => n.remove());
+		const benefit = buildBenefitPanel(actor);   // always present (picks exist even with no guises)
+		const guise = buildGuisePanel(actor);       // null when the character holds no guises
 		const fuHeader = tab.querySelector(':scope > header.items-main-header');
-		if (fuHeader) fuHeader.after(panel); else tab.prepend(panel);
+		if (fuHeader) { fuHeader.after(benefit); if (guise) benefit.after(guise); }
+		else { tab.prepend(benefit); if (guise) benefit.after(guise); }
 	} catch (err) {
 		console.error('[rippers-guise] injectGuisePanel failed:', err);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// BENEFIT-PICK PICKER UI (v0.4.3). A player-facing ApplicationV2 dialog over the verified engine
+// api (BENEFIT_POOL / getBenefitPicks / setBenefitPicks) — replaces the console setBenefitPicks step.
+// UI LAYER ONLY: no AE/engine changes. The pure helpers below are unit-tested headless; the
+// Application is thin (context + form-submit + client max-2 enforcement) and QA'd live in Foundry.
+const RITUAL_DISCIPLINES = ['ritualism', 'arcanism', 'chimerism', 'elementalism', 'entropism', 'spiritism'];
+const capWord = (s) => (s ? String(s)[0].toUpperCase() + String(s).slice(1) : String(s ?? ''));
+
+/** Live summary over a SELECTION (mirrors benefitPickSummary, which reads a saved actor). Pure. */
+function benefitSelectionSummary(picks, ritualDiscipline) {
+	if (!picks || !picks.length) return 'No benefit picks chosen.';
+	return picks.map((p) => {
+		const b = BENEFIT_POOL[p];
+		if (!b) return p;
+		if (p === 'rituals' && ritualDiscipline) return `Rituals (Ritualism + ${capWord(ritualDiscipline)})`;
+		return b.label;
+	}).join(' · ');
+}
+
+/** Build the picker's render context from the actor's current picks + the pool. Pure (needs getFlag). */
+function benefitPickerContext(actor) {
+	const { picks, ritualDiscipline } = getBenefitPicks(actor);
+	const sel = new Set(picks);
+	const disc = (ritualDiscipline || 'ritualism').toLowerCase();
+	const toOpt = (key) => ({
+		key, label: BENEFIT_POOL[key].label, checked: sel.has(key),
+		contested: !!BENEFIT_POOL[key].contested, both: !!BENEFIT_POOL[key].both,
+		namedDiscipline: !!BENEFIT_POOL[key].namedDiscipline,
+	});
+	const keys = (kind) => Object.keys(BENEFIT_POOL).filter((k) => BENEFIT_POOL[k].kind === kind);
+	return {
+		statOptions: keys('stat').map(toOpt),
+		capOptions: keys('capability').map(toOpt),
+		disciplines: RITUAL_DISCIPLINES.map((d) => ({ key: d, label: capWord(d), selected: disc === d })),
+		ritualDiscipline: disc,
+		summary: benefitSelectionSummary(picks, ritualDiscipline),
+		max: 2,
+	};
+}
+
+/** Parse the submitted form object into a {picks, ritualDiscipline}. Pure. familiar is exclusive. */
+function parseBenefitForm(obj) {
+	let picks = obj?.picks ?? [];
+	if (typeof picks === 'string') picks = picks ? [picks] : [];
+	picks = [...new Set((Array.isArray(picks) ? picks : []).filter(Boolean))];
+	if (picks.includes('familiar')) picks = ['familiar']; // trades both — the only pick
+	const ritualDiscipline = picks.includes('rituals') ? (obj?.ritualDiscipline || 'ritualism') : '';
+	return { picks, ritualDiscipline };
+}
+
+// Lazily define the ApplicationV2 subclass — foundry.applications.api is only live at runtime.
+let _BenefitPickerApp = null;
+function getBenefitPickerApp() {
+	if (_BenefitPickerApp) return _BenefitPickerApp;
+	const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+	class BenefitPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
+		constructor(actor, options = {}) {
+			super({ ...options, id: `rippers-benefit-picker-${actor?.id ?? 'x'}` });
+			this.actor = actor;
+		}
+		static DEFAULT_OPTIONS = {
+			classes: ['rippers-guise', 'benefit-picker'],
+			tag: 'form',
+			window: { title: 'RIPPERS.Benefit.PickerTitle', icon: 'fas fa-star' },
+			position: { width: 440, height: 'auto' },
+			form: { handler: BenefitPickerApp.onSubmit, submitOnChange: false, closeOnSubmit: true },
+		};
+		static PARTS = { form: { template: `modules/${MODULE_ID}/templates/benefit-picker.hbs` } };
+		get title() { return `${game.i18n.localize('RIPPERS.Benefit.PickerTitle')} — ${this.actor?.name ?? ''}`; }
+		async _prepareContext() { return benefitPickerContext(this.actor); }
+		_onRender() {
+			const root = this.element;
+			const checks = [...root.querySelectorAll('input[name="picks"]')];
+			const disciplineSel = root.querySelector('select[name="ritualDiscipline"]');
+			const summaryEl = root.querySelector('.benefit-summary-live');
+			const refresh = () => {
+				const familiar = checks.some((c) => c.value === 'familiar' && c.checked);
+				if (familiar) checks.forEach((c) => { if (c.value !== 'familiar') c.checked = false; });
+				const chosen = checks.filter((c) => c.checked).map((c) => c.value);
+				const atMax = familiar || chosen.length >= 2;
+				checks.forEach((c) => { c.disabled = (familiar && c.value !== 'familiar') || (atMax && !c.checked); });
+				const ritualsOn = chosen.includes('rituals');
+				if (disciplineSel) disciplineSel.disabled = !ritualsOn;
+				if (summaryEl) summaryEl.textContent = benefitSelectionSummary(chosen, ritualsOn ? (disciplineSel?.value || 'ritualism') : '');
+			};
+			checks.forEach((c) => c.addEventListener('change', refresh));
+			if (disciplineSel) disciplineSel.addEventListener('change', refresh);
+			refresh();
+		}
+		static async onSubmit(event, form, formData) {
+			const { picks, ritualDiscipline } = parseBenefitForm(formData.object);
+			const res = await setBenefitPicks(this.actor, { picks, ritualDiscipline });
+			if (!res?.ok) { ui.notifications?.warn(`Benefit picks not saved: ${res?.reason ?? 'invalid'}`); throw new Error(res?.reason ?? 'invalid'); }
+			ui.notifications?.info(`Benefit picks saved: ${benefitSelectionSummary(res.picks, ritualDiscipline)}`);
+		}
+	}
+	_BenefitPickerApp = BenefitPickerApp;
+	return BenefitPickerApp;
+}
+/** Open the picker for an actor (panel button / macro). */
+function openBenefitPicker(actor) {
+	if (!actor) return;
+	try { new (getBenefitPickerApp())(actor).render(true); }
+	catch (err) { console.error('[rippers-guise] openBenefitPicker failed:', err); }
+}
+
+/** The always-present Benefit-Picks panel: current summary + an Edit button that opens the picker. */
+function buildBenefitPanel(actor) {
+	const panel = document.createElement('div');
+	panel.className = 'rippers-benefit-panel';
+	panel.innerHTML = `<header class="items-main-header rippers-guise-header">
+			<span class="items-main"><label class="items-label">${game.i18n.localize('RIPPERS.Benefit.PanelTitle')}</label></span>
+		</header>
+		<div class="rippers-benefit-body">
+			<span class="benefit-current">${esc(benefitPickSummary(actor))}</span>
+			<button type="button" class="benefit-edit">${game.i18n.localize('RIPPERS.Benefit.Edit')}</button>
+		</div>`;
+	panel.querySelector('.benefit-edit').addEventListener('click', (ev) => { ev.preventDefault(); openBenefitPicker(actor); });
+	return panel;
 }
 
 // ---------------------------------------------------------------------------
@@ -1203,12 +1325,12 @@ Hooks.once('setup', () => {
 		console.error('[rippers-guise] failed to register the guise classFeature:', err);
 	}
 	const loader = foundry.applications?.handlebars?.loadTemplates ?? loadTemplates;
-	loader([`modules/${MODULE_ID}/templates/guise-sheet.hbs`]);
+	loader([`modules/${MODULE_ID}/templates/guise-sheet.hbs`, `modules/${MODULE_ID}/templates/benefit-picker.hbs`]);
 });
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -1219,4 +1341,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, openBenefitPicker };

@@ -55,3 +55,38 @@
 .rippers-guise-entry .guise-toggle:hover { border-color: #b3122b; }
 .rippers-guise-entry .guise-toggle.is-active { border-color: #7b2d8e; color: #7b2d8e; }
 .rippers-guise-entry .guise-toggle:disabled { opacity: 0.5; cursor: wait; }
+
+/* ---------------------------------------------------------------------------
+   Benefit-Picks panel (Features tab) + the picker dialog (v0.4.3). */
+.rippers-benefit-panel { margin: 0.5rem 0; }
+.rippers-benefit-panel .rippers-benefit-body {
+	display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem;
+}
+.rippers-benefit-panel .benefit-current { flex: 1; font-style: italic; opacity: 0.9; }
+.rippers-benefit-panel .benefit-edit {
+	flex: 0 0 auto; padding: 0.15rem 0.6rem; border-radius: 3px;
+	border: 1px solid rgba(0,0,0,0.25); background: rgba(0,0,0,0.04); font-weight: 600; cursor: pointer;
+}
+.rippers-benefit-panel .benefit-edit:hover { border-color: #7b2d8e; color: #7b2d8e; }
+
+.application.benefit-picker .benefit-picker-body { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.4rem; }
+.application.benefit-picker .benefit-hint { margin: 0; font-size: 0.85rem; opacity: 0.8; }
+.application.benefit-picker fieldset.benefit-grid {
+	display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem 0.8rem;
+	border: 1px solid rgba(123,45,142,0.35); border-radius: 4px; padding: 0.4rem 0.6rem;
+}
+.application.benefit-picker fieldset.benefit-grid-cap { grid-template-columns: 1fr; }
+.application.benefit-picker fieldset.benefit-grid legend { font-weight: 700; padding: 0 0.35rem; color: #7b2d8e; }
+.application.benefit-picker .benefit-opt { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
+.application.benefit-picker .benefit-opt input:disabled { cursor: not-allowed; }
+.application.benefit-picker .benefit-opt input:disabled + span { opacity: 0.45; }
+.application.benefit-picker .benefit-both { font-size: 0.75rem; opacity: 0.7; }
+.application.benefit-picker .benefit-contested { color: #7b2d8e; font-size: 0.8rem; }
+.application.benefit-picker .benefit-discipline { margin-left: 0.35rem; }
+.application.benefit-picker .benefit-summary { padding: 0.3rem 0.2rem; border-top: 1px solid rgba(0,0,0,0.15); }
+.application.benefit-picker .benefit-footer { display: flex; justify-content: flex-end; }
+.application.benefit-picker .benefit-save {
+	padding: 0.25rem 0.9rem; border-radius: 3px; border: 1px solid #7b2d8e; background: #7b2d8e;
+	color: #fff; font-weight: 700; cursor: pointer;
+}
+.application.benefit-picker .benefit-save:hover { filter: brightness(1.1); }

@@ -23,5 +23,15 @@
 	"RIPPERS.Guise.Bind": "Bind",
 	"RIPPERS.Guise.Dismiss": "Dismiss",
 	"RIPPERS.Guise.SwapHint": "Click this guise on the character sheet to bind it (dismissing any other). Exactly one guise is active at a time; its skills, equipment and affinities apply only while it is bound.",
-	"RIPPERS.Guise.DormancyHint": "While this guise is bound, your own innate skills sleep — only the mask's allocated skills are live (one 30-level set at a time). Dismiss the guise to wake them."
+	"RIPPERS.Guise.DormancyHint": "While this guise is bound, your own innate skills sleep — only the mask's allocated skills are live (one 30-level set at a time). Dismiss the guise to wake them.",
+	"RIPPERS.Benefit.PanelTitle": "Benefit Picks",
+	"RIPPERS.Benefit.Edit": "Edit",
+	"RIPPERS.Benefit.PickerTitle": "Benefit Picks",
+	"RIPPERS.Benefit.ChooseUpTo2": "Choose up to two — your two permanent creation benefits. (The familiar trades both.)",
+	"RIPPERS.Benefit.StatPicks": "Stat picks",
+	"RIPPERS.Benefit.Capabilities": "Capabilities",
+	"RIPPERS.Benefit.Contested": "Contested — one character in the party may take this.",
+	"RIPPERS.Benefit.BothPicks": "(both picks)",
+	"RIPPERS.Benefit.Summary": "Summary",
+	"RIPPERS.Benefit.Save": "Save"
 }
