@@ -123,3 +123,35 @@
 }
 .application.guise-builder .gb-footer button:disabled { opacity: 0.5; cursor: not-allowed; }
 .application.guise-builder .gb-footer button:not(:disabled):hover { filter: brightness(1.1); }
+
+/* ---------------------------------------------------------------------------
+   v0.5.1 fix: the injected panel headers reuse PFU's .items-main-header / .items-label
+   chrome and were inheriting the huge sheet-TITLE font (serif), overflowing the tab
+   strip and the Identity/Theme row. Cap the header typography to a normal section-header
+   size and contain the panels within the Features-tab body. CSS/layout only. */
+.rippers-benefit-panel,
+.rippers-guise-panel {
+	max-width: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+}
+.rippers-benefit-panel .rippers-guise-header,
+.rippers-guise-panel .rippers-guise-header {
+	width: 100%;
+	box-sizing: border-box;
+	min-height: 0;
+	flex-wrap: nowrap;
+}
+.rippers-benefit-panel .rippers-guise-header .items-main,
+.rippers-guise-panel .rippers-guise-header .items-main,
+.rippers-benefit-panel .rippers-guise-header .items-label,
+.rippers-guise-panel .rippers-guise-header .items-label {
+	font-family: inherit !important;
+	font-size: 1rem !important;
+	line-height: 1.4 !important;
+	font-weight: 700 !important;
+	text-transform: none !important;
+	letter-spacing: normal !important;
+	margin: 0;
+	white-space: nowrap;
+}
