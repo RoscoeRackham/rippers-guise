@@ -660,6 +660,18 @@ async function setBenefitPicks(actor, { picks = [], ritualDiscipline = '' } = {}
 	return { ok: true, picks: rec.picks };
 }
 
+const capWord = (s) => (s ? String(s)[0].toUpperCase() + String(s).slice(1) : String(s ?? ''));
+
+/**
+ * The Rituals pick grants Ritualism (universal, always) PLUS one NAMED second discipline (contested).
+ * Ritualism is never the named second — so a named discipline of 'ritualism' (or empty) collapses to
+ * just "Rituals (Ritualism)" rather than the "Ritualism + Ritualism" dupe. (POLISH-picker-ritualism-dupe.)
+ */
+function ritualsLabel(disc) {
+	const named = disc && String(disc).toLowerCase() !== 'ritualism' ? disc : '';
+	return named ? `Rituals (Ritualism + ${capWord(named)})` : 'Rituals (Ritualism)';
+}
+
 /** Human summary of a character's picks (panel / sheet). Sync. */
 function benefitPickSummary(actor) {
 	const { picks, ritualDiscipline } = getBenefitPicks(actor);
@@ -667,7 +679,7 @@ function benefitPickSummary(actor) {
 	return picks.map((p) => {
 		const b = BENEFIT_POOL[p];
 		if (!b) return p;
-		if (p === 'rituals' && ritualDiscipline) return `Rituals (Ritualism + ${ritualDiscipline})`;
+		if (p === 'rituals') return ritualsLabel(ritualDiscipline);
 		return b.label;
 	}).join(' · ');
 }
@@ -831,7 +843,9 @@ function injectGuisePanel(app) {
 // UI LAYER ONLY: no AE/engine changes. The pure helpers below are unit-tested headless; the
 // Application is thin (context + form-submit + client max-2 enforcement) and QA'd live in Foundry.
 const RITUAL_DISCIPLINES = ['ritualism', 'arcanism', 'chimerism', 'elementalism', 'entropism', 'spiritism'];
-const capWord = (s) => (s ? String(s)[0].toUpperCase() + String(s).slice(1) : String(s ?? ''));
+// The NAMED second discipline the Rituals pick lets you claim (contested). Ritualism is universal and
+// always granted, so it's excluded here — it's implied, never the named second (POLISH-picker-ritualism-dupe).
+const RITUAL_SECOND_DISCIPLINES = RITUAL_DISCIPLINES.filter((d) => d !== 'ritualism');
 
 /** Live summary over a SELECTION (mirrors benefitPickSummary, which reads a saved actor). Pure. */
 function benefitSelectionSummary(picks, ritualDiscipline) {
@@ -839,7 +853,7 @@ function benefitSelectionSummary(picks, ritualDiscipline) {
 	return picks.map((p) => {
 		const b = BENEFIT_POOL[p];
 		if (!b) return p;
-		if (p === 'rituals' && ritualDiscipline) return `Rituals (Ritualism + ${capWord(ritualDiscipline)})`;
+		if (p === 'rituals') return ritualsLabel(ritualDiscipline);
 		return b.label;
 	}).join(' · ');
 }
@@ -848,7 +862,10 @@ function benefitSelectionSummary(picks, ritualDiscipline) {
 function benefitPickerContext(actor) {
 	const { picks, ritualDiscipline } = getBenefitPicks(actor);
 	const sel = new Set(picks);
-	const disc = (ritualDiscipline || 'ritualism').toLowerCase();
+	// The named SECOND discipline (contested) — never ritualism, which is universal/implied. Default to
+	// the first real second-discipline when nothing valid is saved.
+	const saved = (ritualDiscipline || '').toLowerCase();
+	const disc = RITUAL_SECOND_DISCIPLINES.includes(saved) ? saved : RITUAL_SECOND_DISCIPLINES[0];
 	const toOpt = (key) => ({
 		key, label: BENEFIT_POOL[key].label, checked: sel.has(key),
 		contested: !!BENEFIT_POOL[key].contested, both: !!BENEFIT_POOL[key].both,
@@ -858,7 +875,7 @@ function benefitPickerContext(actor) {
 	return {
 		statOptions: keys('stat').map(toOpt),
 		capOptions: keys('capability').map(toOpt),
-		disciplines: RITUAL_DISCIPLINES.map((d) => ({ key: d, label: capWord(d), selected: disc === d })),
+		disciplines: RITUAL_SECOND_DISCIPLINES.map((d) => ({ key: d, label: capWord(d), selected: disc === d })),
 		ritualDiscipline: disc,
 		summary: benefitSelectionSummary(picks, ritualDiscipline),
 		max: 2,
@@ -871,7 +888,10 @@ function parseBenefitForm(obj) {
 	if (typeof picks === 'string') picks = picks ? [picks] : [];
 	picks = [...new Set((Array.isArray(picks) ? picks : []).filter(Boolean))];
 	if (picks.includes('familiar')) picks = ['familiar']; // trades both — the only pick
-	const ritualDiscipline = picks.includes('rituals') ? (obj?.ritualDiscipline || 'ritualism') : '';
+	// The named second discipline is whatever the (ritualism-excluded) selector sent; empty is fine
+	// (just Ritualism). Never force 'ritualism' — it's the universal art, not the named second.
+	const raw = picks.includes('rituals') ? String(obj?.ritualDiscipline || '').toLowerCase() : '';
+	const ritualDiscipline = raw === 'ritualism' ? '' : raw;
 	return { picks, ritualDiscipline };
 }
 
@@ -1341,4 +1361,4 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, openBenefitPicker };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker };
