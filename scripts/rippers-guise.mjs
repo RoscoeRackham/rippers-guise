@@ -40,6 +40,16 @@
  * the sheet. NOT yet: the §10 progression layer (lent vitals, IP satchel, hoplosphere, Hunter
  * Weapon, heroic slots) — a separate later track. The v0.1.1 innate-pool guard stays.
  *
+ * FDN-9 (v0.6.0) adds MONSTROUS-FORM AFFINITIES as a general Guise capability: a guise may declare
+ * one or more affinity-SETS (system.data.affinitySets, authored in the Builder) and/or COLLECT them in
+ * play (flags.rippers-guise.affinityLibrary). While such a guise is worn, its ACTIVE set REPLACES the
+ * wearer's entire affinity array — a nine-element true-OVERRIDE (AE mode 5) on system.affinities.<el>
+ * .current (incl. 0=none, so a form can LOWER a native affinity), restored automatically on dismiss
+ * because only .current (derived) is written, never .base. A free once-per-turn swapAffinitySet re-points
+ * the active set and live-rebuilds the transferred effect. Legacy guises (no set / affinityMode!='replace')
+ * keep the additive affinityModifiers MODIFY path unchanged — the two never mix. (This began as the cut
+ * Diabolist "pact" mechanic; the pact-* API survives as thin back-compat aliases.)
+ *
  * @see globalThis.projectfu.RollableClassFeatureDataModel
  */
 
@@ -88,14 +98,146 @@ function affinityChange(type, level) {
 	return null;
 }
 
+// ---------------------------------------------------------------------------
+// MONSTROUS-FORM AFFINITIES — affinity-set REPLACEMENT, a GENERAL Guise capability (FDN-9, v0.6.0).
+// Austin: "adopting monstrous forms is what Guises are for." Any guise may OPTIONALLY carry an
+// affinity-SET (or a small LIBRARY of them). While such a guise is worn, its ACTIVE affinity-set
+// REPLACES the wearer's entire affinity array (not merely modifies it); the originals return on
+// removal. The set lives in the MASK (transferable — a second wearer inherits it) and, where a guise
+// holds several forms, exactly one is active, swapped as a free once-per-turn action. This is a
+// REPLACE FORK of the legacy additive path (affinityModifiers); the two never mix — a guise is
+// replace-mode iff it declares an affinity-set / library or system.data.affinityMode === 'replace' (C3).
+//
+//   C1: replacement writes a TRUE OVERRIDE (Foundry AE mode 5) to system.affinities.<el>.current for
+//     ALL NINE elements at the set's ABSOLUTE value (incl. 0=none), so a form can LOWER a native
+//     affinity, not only raise it (the legacy mode-4 UPGRADE cannot).
+//   C2: only .current is ever written (derived, persisted:false) — never .base — so dropping the AE
+//     restores the character's real affinities untouched, with no snapshot (mirrors dismiss-restore).
+//
+// (History: this began as the cut Diabolist "pact" mechanic; the pact-* API is retained as thin
+//  back-compat aliases at the export site. It was never released, so no live data carries pact flags —
+//  the old flag KEYS are still read as a fallback purely for safety.)
+const AE_OVERRIDE = 5; // CONST.ACTIVE_EFFECT_MODES.OVERRIDE
+const AFFINITY_LIBRARY_FLAG = 'affinityLibrary';       // sets COLLECTED in play (GM-gated); merges with authored
+const ACTIVE_AFFINITY_SET_FLAG = 'activeAffinitySetId';
+const AFFINITY_SWAP_TURN_FLAG = 'affinitySwapTurn';
+const LEGACY_LIBRARY_FLAG = 'pactLibrary';             // pre-release name — read-only fallback
+const LEGACY_ACTIVE_FLAG = 'activePactId';             // pre-release name — read-only fallback
+const AFFINITY_VALUES = new Set([-1, 0, 1, 2, 3]);     // vulnerable / none / resistant / immune / absorb
+
 /**
- * Rebuild the guise Item's single embedded "Guise affinities" ActiveEffect from its
- * affinityModifiers, so the transferEffects() gate applies/removes it on bind/dismiss.
+ * Build the full nine-element OVERRIDE change-set that REPLACES an actor's affinity array with an
+ * affinity-set. Every element is written to its absolute value; elements the set omits become 0 (none),
+ * which is what wipes the character's native affinities while the mask is worn. Pure.
+ * @param {{type:string, level:number}[]} setAffinities
+ */
+function buildReplaceChanges(setAffinities) {
+	const byType = new Map();
+	for (const a of setAffinities ?? []) {
+		if (!AFFINITY_TYPES.includes(a?.type)) continue;
+		const n = Number(a.level);
+		if (AFFINITY_VALUES.has(n)) byType.set(a.type, n); // last write wins on a duplicate type
+	}
+	return AFFINITY_TYPES.map((t) => ({
+		key: `system.affinities.${t}.current`,
+		mode: AE_OVERRIDE,
+		value: String(byType.get(t) ?? 0),
+		priority: null,
+	}));
+}
+
+/** Validate one affinity-set: {id, name?, affinities:[{type,level}]}, known types, legal values, no dup type. Pure. */
+function validateAffinitySet(set) {
+	if (!set || typeof set !== 'object') return { ok: false, reason: 'affinity-set must be an object' };
+	if (!set.id || typeof set.id !== 'string') return { ok: false, reason: 'affinity-set needs a string id' };
+	if (!Array.isArray(set.affinities)) return { ok: false, reason: 'affinity-set.affinities must be an array' };
+	const seen = new Set();
+	for (const a of set.affinities) {
+		if (!AFFINITY_TYPES.includes(a?.type)) return { ok: false, reason: `unknown affinity type "${a?.type}"` };
+		if (!AFFINITY_VALUES.has(Number(a?.level))) return { ok: false, reason: `illegal affinity level "${a?.level}"` };
+		if (seen.has(a.type)) return { ok: false, reason: `duplicate affinity type "${a.type}" in one set` };
+		seen.add(a.type);
+	}
+	return { ok: true };
+}
+
+/** Validate a whole affinity library: array, unique ids, each valid, length ≤ cap. Pure. */
+function validateAffinityLibrary(library, cap = Infinity) {
+	if (!Array.isArray(library)) return { ok: false, reason: 'library must be an array' };
+	const ids = new Set();
+	for (const s of library) {
+		const v = validateAffinitySet(s);
+		if (!v.ok) return v;
+		if (ids.has(s.id)) return { ok: false, reason: `duplicate affinity-set id "${s.id}"` };
+		ids.add(s.id);
+	}
+	if (Number.isFinite(cap) && library.length > cap) {
+		return { ok: false, reason: `guise holds ${library.length} affinity-set(s); the cap is ${cap}` };
+	}
+	return { ok: true };
+}
+
+/**
+ * A guise's full affinity library = its AUTHORED sets (system.data.affinitySets, declared in the
+ * Guise Builder / on the sheet) UNIONed with any COLLECTED in play (flags.affinityLibrary), deduped by
+ * id (authored wins). The pre-release pact flag is read as a last-resort fallback. Never throws.
+ */
+function getAffinityLibrary(item) {
+	const authored = Array.isArray(item?.system?.data?.affinitySets) ? item.system.data.affinitySets : [];
+	const collected = item?.getFlag?.(MODULE_ID, AFFINITY_LIBRARY_FLAG);
+	const legacy = item?.getFlag?.(MODULE_ID, LEGACY_LIBRARY_FLAG);
+	const merged = [];
+	const ids = new Set();
+	for (const s of [...authored, ...(Array.isArray(collected) ? collected : []), ...(Array.isArray(legacy) ? legacy : [])]) {
+		if (s && typeof s.id === 'string' && !ids.has(s.id)) { ids.add(s.id); merged.push(s); }
+	}
+	return merged;
+}
+const getActiveAffinitySetId = (item) => item?.getFlag?.(MODULE_ID, ACTIVE_AFFINITY_SET_FLAG) ?? item?.getFlag?.(MODULE_ID, LEGACY_ACTIVE_FLAG) ?? null;
+function getActiveAffinitySet(item) {
+	const lib = getAffinityLibrary(item);
+	const id = getActiveAffinitySetId(item);
+	if (id) { const hit = lib.find((s) => s.id === id); if (hit) return hit; }
+	return lib[0] ?? null; // a single-form guise needs no explicit active pointer
+}
+/** A guise is REPLACE-mode iff it declares an affinity-set/library (authored or collected) or affinityMode='replace' (C3). */
+const isReplaceModeGuise = (item) => isGuiseItem(item) && (getAffinityLibrary(item).length > 0 || item.system?.data?.affinityMode === 'replace');
+
+/** A character's SL in a named skill (case-insensitive). A guise may govern its library cap by this. 0 if absent. */
+function namedSkillSL(actor, name) {
+	if (!actor || !name) return 0;
+	const re = new RegExp(`^${String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+	const skill = actor.items?.find?.((i) => i?.type === 'skill' && re.test(i.name ?? ''));
+	return Number(skill?.system?.level?.value ?? 0) || 0;
+}
+/** The cap on how many affinity-sets a guise may hold: an explicit numeric cap, else a governing-skill
+ *  SL if the guise names one (system.data.affinityCapSkill), else unbounded. */
+function affinitySetCapOf(actor, item) {
+	const explicit = item?.system?.data?.affinitySetCap;
+	if (Number.isFinite(explicit) && explicit >= 0) return explicit;
+	const skillName = item?.system?.data?.affinityCapSkill;
+	if (skillName) return namedSkillSL(actor, skillName);
+	return Infinity;
+}
+
+/** The affinity AE change-set for a guise: REPLACE (active affinity-set, all nine) or legacy MODIFY (affinityModifiers). */
+function buildGuiseAffinityChanges(item) {
+	if (isReplaceModeGuise(item)) {
+		const set = getActiveAffinitySet(item);
+		return set ? buildReplaceChanges(set.affinities) : [];
+	}
+	const mods = item.system?.data?.affinityModifiers ?? [];
+	return mods.map((m) => affinityChange(m.type, m.level)).filter(Boolean);
+}
+
+/**
+ * Rebuild the guise Item's single embedded "Guise affinities" ActiveEffect from its affinity source
+ * (the active affinity-set for a monstrous-form guise, else its affinityModifiers), so the
+ * transferEffects() gate applies/removes it on bind/dismiss.
  */
 async function syncAffinityEffect(item) {
 	if (!isGuiseItem(item)) return;
-	const mods = item.system?.data?.affinityModifiers ?? [];
-	const changes = mods.map((m) => affinityChange(m.type, m.level)).filter(Boolean);
+	const changes = buildGuiseAffinityChanges(item);
 	const existing = item.effects.find((e) => e.getFlag(MODULE_ID, 'affinityEffect'));
 	if (!changes.length) {
 		if (existing) await existing.delete();
@@ -407,45 +549,182 @@ async function swapHunterWeaponForm(actor) {
 }
 
 // ---------------------------------------------------------------------------
-// FDN-8 STAGE 8b — HOPLOSPHERE SOCKETS (port of GUISE-v2-design §7 / lent-vitals §7).
-// PFU ships hoplospheres as embedded pseudo-items on a customWeapon (system.slotted) with a
-// quality-tier slot count. What PFU lacks is the CAMPAIGN socket-count-BY-LEVEL rule and the
-// two-Immunity cap. Canon: one socket per five levels to SIX at thirty; the Hunter Weapon's own
-// two more open at 40 and 50 (→ 8 by 50); other weapons cap at 6. A hoplosphere costs its
-// requiredSlots (1 or 2). Cap: at most TWO hoplosphere-granted Immunities per weapon.
-// D-SPHERE (Austin, approved): adopt PFU's native hoplosphere change-set as the sphere vocabulary.
-const IMMUNITY_EFFECT_TYPES = new Set(['gainImmunity', 'gainStatusImmunity']);
+// FDN-9 — AFFINITY-SET SWAP (a monstrous-form guise with several forms). Free once-per-turn: change
+// which affinity-set is active on the worn guise. Because the mask's "Guise affinities" effect already
+// transfers (the mask is bound), rebuilding it from the new active set LIVE-updates the actor's
+// affinities via the normal prepareData cycle — no rebind, no re-materialising skills/equipment (only
+// affinities change between forms). Guards mirror swapActiveForm: outside combat unrestricted; in
+// combat, one free swap per turn.
 
-function charLevelForWeapon(weapon, actor) {
-	const a = actor ?? weapon?.actor;
+/** Pure guard: outside combat (sig null) unrestricted; in combat, one free swap per turn. */
+const affinitySwapAllowed = (lastSwapSig, currentSig) => currentSig == null || lastSwapSig !== currentSig;
+
+/**
+ * Set/replace a guise's COLLECTED affinity library (sets gained in play) and optionally the active set,
+ * validated against the guise's cap (explicit or governing-skill SL) when an actor is supplied. Rebuilds
+ * the affinity effect (a no-op transfer-wise unless the mask is worn). Note authored sets live in
+ * system.data.affinitySets (the Builder); this writes the runtime-collected library flag. GM-facing —
+ * collection triggers are narrative (Austin).
+ */
+async function setAffinityLibrary(actor, ref, library, { activeAffinitySetId } = {}) {
+	const item = resolveItem(actor, ref);
+	if (!item || !isGuiseItem(item)) { ui.notifications?.warn('Set an affinity library on a guise.'); return { ok: false, reason: 'no guise' }; }
+	const cap = actor ? affinitySetCapOf(actor, item) : Infinity;
+	const v = validateAffinityLibrary(library, cap);
+	if (!v.ok) { ui.notifications?.warn(`Affinity library rejected: ${v.reason}`); return v; }
+	await item.setFlag(MODULE_ID, AFFINITY_LIBRARY_FLAG, library);
+	// Reconcile the active pointer against the FULL (authored + collected) library.
+	let active = activeAffinitySetId ?? getActiveAffinitySetId(item);
+	if (!getAffinityLibrary(item).some((s) => s.id === active)) active = getAffinityLibrary(item)[0]?.id ?? null;
+	await item.setFlag(MODULE_ID, ACTIVE_AFFINITY_SET_FLAG, active);
+	await syncAffinityEffect(item);
+	return { ok: true, activeAffinitySetId: active };
+}
+
+/** Free once-per-turn swap of the worn guise's active affinity-set. */
+async function swapAffinitySet(actor, ref, setId) {
+	const item = resolveItem(actor, ref);
+	if (!actor || !item || !isReplaceModeGuise(item)) { ui.notifications?.warn('Swap an affinity-set on a guise that carries a form library.'); return { ok: false, reason: 'not a replace-mode guise' }; }
+	if (getActiveGuise(actor) !== item.id) { ui.notifications?.warn('You can only shift forms while wearing the mask.'); return { ok: false, reason: 'guise not worn' }; }
+	const set = getAffinityLibrary(item).find((s) => s.id === setId);
+	if (!set) { ui.notifications?.warn('That affinity-set is not in this guise.'); return { ok: false, reason: 'unknown affinity-set' }; }
+	const sig = combatTurnSig();
+	if (!affinitySwapAllowed(item.getFlag(MODULE_ID, AFFINITY_SWAP_TURN_FLAG), sig)) {
+		ui.notifications?.warn(`"${item.name}" already shifted its form this turn — the free swap is once per turn.`);
+		return { ok: false, reason: 'already swapped this turn' };
+	}
+	await item.update({ [`flags.${MODULE_ID}.${ACTIVE_AFFINITY_SET_FLAG}`]: setId, [`flags.${MODULE_ID}.${AFFINITY_SWAP_TURN_FLAG}`]: sig });
+	await syncAffinityEffect(item);
+	const words = set.affinities.map((a) => `${affinityWordOf(a.level)} ${a.type}`).join(' · ') || 'no affinities';
+	await ChatMessage.create({
+		speaker: ChatMessage.implementation.getSpeaker({ actor }),
+		content: `<div class="rippers-guise-card"><strong>${esc(actor.name)}</strong> shifts form to <em>${esc(set.name || setId)}</em> — ${esc(words)}. A free once-per-turn change.</div>`,
+	});
+	return { ok: true, activeAffinitySetId: setId };
+}
+
+// Back-compat aliases (pre-release Diabolist "pact" names — the class was cut; no live data uses these).
+const pactSwapAllowed = affinitySwapAllowed;
+const getPactLibrary = getAffinityLibrary;
+const getActivePactId = getActiveAffinitySetId;
+const getActivePact = getActiveAffinitySet;
+const miasmicFormsSL = (actor) => namedSkillSL(actor, 'Miasmic Forms');
+const validatePactSet = validateAffinitySet;
+const validatePactLibrary = validateAffinityLibrary;
+const setPactLibrary = (actor, ref, library, opts = {}) => setAffinityLibrary(actor, ref, library, { activeAffinitySetId: opts.activePactId });
+const swapPactSet = swapAffinitySet;
+
+// ---------------------------------------------------------------------------
+// FDN-8 STAGE 8b — HOPLOSPHERE SOCKETS (port of GUISE-v2-design §7 / lent-vitals §7).
+// PFU ships hoplospheres as embedded pseudo-items on a customWeapon OR armor (system.slotted /
+// system.items) with a quality-tier slot count. What PFU lacks is the CAMPAIGN socket-count-BY-LEVEL
+// rule and the Immunity cap. Canon (Austin ruling, 2026-08-25 — RULE-hoplosphere-sockets):
+//   • WEAPON sockets: 1 at level 1; +1 at 10/20/30 → cap 4 (= TFA published weapon limit).
+//   • ARMOR  sockets: 0 at start;  +1 at 10/20/30 → cap 3 (= TFA published armor limit).
+//   • PERSISTENT: 2 floating sockets for the CHARACTER — 1 at level 40, 1 at level 50 —
+//     mask-independent, seatable on EITHER a weapon or an armor host. A given host's effective
+//     capacity = its base + whatever of the 2-slot pool is not already spent as overflow on the
+//     actor's OTHER hosts, so the pool can never be double-spent across weapon+armor.
+//   • Two-Immunity cap: CHARACTER-WIDE — at most TWO hoplosphere-granted Immunities summed across
+//     ALL of the actor's weapon + armor hosts (not per host).
+// This deliberately REPLACES PFU's quality-tier capacity for our campaign, and supersedes 8b's
+// original min(6,floor(lvl/5)) weapon rule + the Hunter-Weapon-exclusive 40/50 bonus (now floating).
+// A hoplosphere costs its requiredSlots (1 or 2). D-SPHERE (Austin, approved): adopt PFU's native
+// hoplosphere change-set as the sphere vocabulary.
+// CLOT (Austin, 2026-08-25): "Clot" is the campaign-facing NAME for the sphere — a label/vocabulary
+// rename only (display strings + our lang/en.json TYPES.Item.hoplosphere override). The base PFU
+// item-type KEY stays 'hoplosphere' (vendored upstream, no fork), so every type:'hoplosphere' check
+// and all code identifiers below keep the engine name; only what a player reads says "Clot".
+const IMMUNITY_EFFECT_TYPES = new Set(['gainImmunity', 'gainStatusImmunity']);
+const HOPLO_HOST_TYPES = new Set(['customWeapon', 'armor']);
+
+/** 'weapon' | 'armor' | null — the campaign socket-cadence family a host belongs to. */
+function hoplosphereHostKind(host) {
+	if (host?.type === 'customWeapon') return 'weapon';
+	if (host?.type === 'armor') return 'armor';
+	return null;
+}
+function charLevelForHost(host, actor) {
+	const a = actor ?? host?.actor;
 	return Number(a?.system?.level?.value ?? a?.system?.level ?? 0) || 0;
 }
-/** Level-derived socket capacity: min(6, floor(level/5)); the Hunter Weapon gains +1 at 40 and +1 at 50. */
-function hoplosphereSocketCapacity(weapon, actor) {
-	const lvl = charLevelForWeapon(weapon, actor);
-	const base = Math.min(6, Math.floor(lvl / 5));
-	const hunterBonus = isHunterWeapon(weapon) ? ((lvl >= 40 ? 1 : 0) + (lvl >= 50 ? 1 : 0)) : 0;
-	return base + hunterBonus;
+/** Every one of an actor's hoplosphere-hosting items (customWeapon + armor). */
+function hoplosphereHosts(actor) {
+	return Array.from(actor?.items ?? []).filter((i) => HOPLO_HOST_TYPES.has(i?.type));
 }
-function seatedHoplospheres(weapon) {
-	const src = weapon?.system?.slotted;
-	const arr = Array.isArray(src) ? src : (src ? Array.from(src) : Array.from(weapon?.items ?? []));
+/** Base sockets from the level cadence, by host kind. WEAPON: 1 + (≥10)+(≥20)+(≥30) → cap 4.
+ *  ARMOR: (≥10)+(≥20)+(≥30) → cap 3. Unknown host → 0. Excludes the floating persistent pool. */
+function baseSocketCapacity(host, actor) {
+	const lvl = charLevelForHost(host, actor);
+	const steps = (lvl >= 10 ? 1 : 0) + (lvl >= 20 ? 1 : 0) + (lvl >= 30 ? 1 : 0);
+	const kind = hoplosphereHostKind(host);
+	if (kind === 'weapon') return 1 + steps; // 1/2/3/4
+	if (kind === 'armor') return steps;      // 0/1/2/3
+	return 0;
+}
+/** The character-wide floating persistent sockets: 1 at level 40, 1 at level 50 (0..2).
+ *  Mask-independent; seatable on any weapon or armor host. */
+function persistentSlotsUnlocked(actor) {
+	const lvl = Number(actor?.system?.level?.value ?? actor?.system?.level ?? 0) || 0;
+	return (lvl >= 40 ? 1 : 0) + (lvl >= 50 ? 1 : 0);
+}
+/** How many persistent (floating) slots are already spent as over-base overflow on the actor's
+ *  OTHER hosts — so a host may only borrow what the pool still has free. */
+function persistentUsedElsewhere(host, actor) {
+	const a = actor ?? host?.actor;
+	if (!a) return 0;
+	return hoplosphereHosts(a)
+		.filter((h) => h?.id !== host?.id)
+		.reduce((sum, h) => sum + Math.max(0, seatedSlotsUsed(h) - baseSocketCapacity(h, a)), 0);
+}
+/** Effective socket capacity for a host = its level base + whatever of the 2-slot character-wide
+ *  persistent pool is not already overflowing onto the actor's other hosts. */
+function hoplosphereSocketCapacity(host, actor) {
+	const a = actor ?? host?.actor;
+	const base = baseSocketCapacity(host, a);
+	const persistentAvail = Math.max(0, persistentSlotsUnlocked(a) - persistentUsedElsewhere(host, a));
+	return base + persistentAvail;
+}
+function seatedHoplospheres(host) {
+	const src = host?.system?.slotted;
+	const arr = Array.isArray(src) ? src : (src ? Array.from(src) : Array.from(host?.items ?? []));
 	return arr.filter((i) => i?.type === 'hoplosphere');
 }
 const requiredSlotsOf = (sphere) => Number(sphere?.system?.requiredSlots ?? 1) || 1;
 const immunitiesOf = (sphere) => (sphere?.system?.effects ?? []).filter((e) => IMMUNITY_EFFECT_TYPES.has(e?.type)).length;
-const seatedSlotsUsed = (weapon) => seatedHoplospheres(weapon).reduce((a, s) => a + requiredSlotsOf(s), 0);
-const hoplosphereImmunityCount = (weapon) => seatedHoplospheres(weapon).reduce((a, s) => a + immunitiesOf(s), 0);
+const seatedSlotsUsed = (host) => seatedHoplospheres(host).reduce((a, s) => a + requiredSlotsOf(s), 0);
+const hoplosphereImmunityCount = (host) => seatedHoplospheres(host).reduce((a, s) => a + immunitiesOf(s), 0);
+/** Character-wide hoplosphere Immunity total across every weapon + armor host (for the global cap). */
+function characterHoplosphereImmunityCount(actor) {
+	return hoplosphereHosts(actor).reduce((sum, h) => sum + hoplosphereImmunityCount(h), 0);
+}
+/** Immunities seated on the actor's hosts OTHER than this one — the fixed floor a pending host
+ *  update must be added to when checking the two-Immunity character-wide cap. */
+function otherHostsImmunityCount(host, actor) {
+	const a = actor ?? host?.actor;
+	if (!a) return 0;
+	return hoplosphereHosts(a)
+		.filter((h) => h?.id !== host?.id)
+		.reduce((sum, h) => sum + hoplosphereImmunityCount(h), 0);
+}
 
-/** Audit a weapon's hoplosphere loadout against the level capacity + two-Immunity cap (UI/GM/macro). */
-function checkHoplosphereSockets(weapon, actor) {
-	const capacity = hoplosphereSocketCapacity(weapon, actor);
-	const used = seatedSlotsUsed(weapon);
-	const immunities = hoplosphereImmunityCount(weapon);
+/** Audit a host's hoplosphere loadout against the level+persistent capacity and the CHARACTER-WIDE
+ *  two-Immunity cap (UI/GM/macro). `immunities` stays this host's own count for back-compat;
+ *  `immunitiesCharacterWide` and the overImmunityCap/ok verdicts are the character-wide totals. */
+function checkHoplosphereSockets(host, actor) {
+	const a = actor ?? host?.actor;
+	const capacity = hoplosphereSocketCapacity(host, a);
+	const used = seatedSlotsUsed(host);
+	const immunities = hoplosphereImmunityCount(host);
+	const immunitiesChar = a ? characterHoplosphereImmunityCount(a) : immunities;
 	return {
-		capacity, used, free: Math.max(0, capacity - used), seated: seatedHoplospheres(weapon).length,
-		overSockets: used > capacity, immunities, overImmunityCap: immunities > 2,
-		ok: used <= capacity && immunities <= 2,
+		capacity,
+		baseCapacity: baseSocketCapacity(host, a),
+		persistentAvailable: Math.max(0, persistentSlotsUnlocked(a) - persistentUsedElsewhere(host, a)),
+		used, free: Math.max(0, capacity - used), seated: seatedHoplospheres(host).length,
+		overSockets: used > capacity,
+		immunities, immunitiesCharacterWide: immunitiesChar, overImmunityCap: immunitiesChar > 2,
+		ok: used <= capacity && immunitiesChar <= 2,
 	};
 }
 
@@ -458,35 +737,43 @@ function evaluateSlotting(incomingItems, capacity) {
 	return { usedAfter, immAfter, capacity, overSockets: usedAfter > capacity, overImmunityCap: immAfter > 2 };
 }
 
-// HARD enforcement (v0.4.1, retargeted). Hoplospheres slot into system.items — a PFU
-// PseudoDocumentCollectionField persisted via a customWeapon UPDATE, NOT actor.createEmbeddedDocuments
-// (so preCreateItem never fired). Guard the weapon UPDATE: when the incoming system.items would seat
-// more hoplosphere slots than the level capacity, or a third Immunity, refuse the update. The
+// HARD enforcement (v0.4.1, retargeted; extended to armor + character-wide immunities 2026-08-25).
+// Hoplospheres slot into system.items — a PFU PseudoDocumentCollectionField persisted via a HOST
+// UPDATE (customWeapon OR armor), NOT actor.createEmbeddedDocuments (so preCreateItem never fired).
+// Guard the host UPDATE: refuse the incoming system.items if it seats more hoplosphere slots than the
+// host's effective (base + persistent) capacity, or if it would push the actor's TOTAL hoplosphere
+// Immunities — this host's incoming set plus every other host's seated set — past two. The
 // checkHoplosphereSockets audit remains the sheet/GM read either way.
 Hooks.on('preUpdateItem', (item, changed) => {
 	try {
-		if (item?.type !== 'customWeapon') return;
+		if (!HOPLO_HOST_TYPES.has(item?.type)) return;
 		const incoming = changed?.system?.items;
 		if (!Array.isArray(incoming)) return; // only the full-array update form (the slotting path)
 		const capacity = hoplosphereSocketCapacity(item, item.actor);
 		const ev = evaluateSlotting(incoming, capacity);
 		if (item.actor && ev.overSockets) {
-			ui.notifications?.warn(`"${item.name}" has ${capacity} hoplosphere socket(s) at this level; that loadout needs ${ev.usedAfter}.`);
+			// "Clot" is the campaign-facing name for the base PFU hoplosphere (label-only; type key unchanged).
+			ui.notifications?.warn(game.i18n?.format?.('RIPPERS.Clot.OverSockets', { name: item.name, capacity, needed: ev.usedAfter })
+				?? `"${item.name}" has ${capacity} Clot socket(s) at this level; that loadout needs ${ev.usedAfter}.`);
 			return false;
 		}
-		if (ev.overImmunityCap) {
-			ui.notifications?.warn(`A weapon may carry at most two hoplosphere-granted Immunities; "${item.name}" would have ${ev.immAfter}.`);
+		// Character-wide two-Immunity cap: this host's incoming immunities + every OTHER host's seated.
+		const immTotal = ev.immAfter + otherHostsImmunityCount(item, item.actor);
+		if (immTotal > 2) {
+			ui.notifications?.warn(game.i18n?.format?.('RIPPERS.Clot.OverImmunity', { total: immTotal })
+				?? `A character may carry at most two Clot-granted Immunities across all weapons and armor; this loadout would make ${immTotal}.`);
 			return false;
 		}
 	} catch (err) { console.error('[rippers-guise] hoplosphere socket guard failed:', err); }
 });
 
-/** Test/util: slot a hoplosphere pseudo-item onto a customWeapon via PFU's nested-collection API,
- * so 8b enforcement is exercisable without the drag UI. */
-async function slotHoplosphere(weapon, sphereData = {}) {
-	if (!weapon || weapon.type !== 'customWeapon') { ui.notifications?.warn('Slot a hoplosphere onto a custom weapon.'); return; }
-	const obj = foundry.utils.mergeObject({ name: 'Hoplosphere', type: 'hoplosphere', system: { requiredSlots: 1, effects: [] } }, sphereData, { inplace: false });
-	return weapon.system.createEmbeddedDocuments('Item', [obj]);
+/** Test/util: slot a hoplosphere pseudo-item onto a customWeapon or armor host via PFU's
+ * nested-collection API, so 8b enforcement is exercisable without the drag UI. */
+async function slotHoplosphere(host, sphereData = {}) {
+	if (!host || !HOPLO_HOST_TYPES.has(host.type)) { ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Clot.SlotHost') ?? 'Slot a Clot onto a custom weapon or armor.'); return; }
+	// Display name reads "Clot"; the base PFU item-type key stays 'hoplosphere' (vendored, no fork).
+	const obj = foundry.utils.mergeObject({ name: (game.i18n?.localize?.('RIPPERS.Clot.DefaultName') ?? 'Clot'), type: 'hoplosphere', system: { requiredSlots: 1, effects: [] } }, sphereData, { inplace: false });
+	return host.system.createEmbeddedDocuments('Item', [obj]);
 }
 
 // ---------------------------------------------------------------------------
@@ -769,9 +1056,15 @@ function guiseSummary(item) {
 	const data = item.system?.data ?? {};
 	const classes = data.classes ?? [];
 	const totalSl = classes.reduce((a, c) => a + (c.skills ?? []).reduce((x, s) => x + (Number(s.sl) || 0), 0), 0);
-	const affTxt = (data.affinityModifiers ?? []).map((m) => `${affinityWordOf(m.level)} ${m.type}`).join(' · ');
+	// REPLACE-mode guise: show its active form's affinities; else the legacy additive modifiers.
+	const affSource = isReplaceModeGuise(item)
+		? (getActiveAffinitySet(item)?.affinities ?? [])
+		: (data.affinityModifiers ?? []);
+	const affTxt = affSource.map((m) => `${affinityWordOf(m.level)} ${m.type}`).join(' · ');
 	const bits = [];
 	if (classes.length) bits.push(`${totalSl} SL across ${classes.length} class${classes.length === 1 ? '' : 'es'}`);
+	const lib = getAffinityLibrary(item);
+	if (lib.length > 1) bits.push(`${lib.length} forms`);
 	if (affTxt) bits.push(affTxt);
 	return bits.join(' — ');
 }
@@ -1025,7 +1318,17 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 		}
 		classes.push({ classUuid, skills });
 	}
-	return { identity: draft.name ?? '', role: draft.role ?? '', notes: draft.notes ?? '', classes, equipment: [], affinityModifiers: [] };
+	// FDN-9: a draft may optionally declare monstrous-form affinity-sets (validated; invalid sets dropped).
+	const rawSets = Array.isArray(draft.affinitySets) ? draft.affinitySets : [];
+	const affinitySets = rawSets.filter((s) => validateAffinitySet(s).ok);
+	const affinityMode = draft.affinityMode === 'replace' || affinitySets.length ? 'replace' : 'modify';
+	return {
+		identity: draft.name ?? '', role: draft.role ?? '', notes: draft.notes ?? '',
+		classes, equipment: [], affinityModifiers: [],
+		affinityMode, affinitySets,
+		affinitySetCap: Number.isFinite(draft.affinitySetCap) ? draft.affinitySetCap : null,
+		affinityCapSkill: draft.affinityCapSkill ?? '',
+	};
 }
 
 /** Create the guise classFeature Item on the actor from a draft; optionally bind it. Async. */
@@ -1251,11 +1554,26 @@ function defineGuiseModel() {
 					itemUuid: new StringField({ initial: '' }),
 					slot: new StringField({ initial: 'mainHand', choices: EQUIP_SLOTS }),
 				})),
-				// affinity modifiers (via the transferEffects gate)
+				// affinity modifiers (legacy MODIFY path — additive; via the transferEffects gate)
 				affinityModifiers: new ArrayField(new SchemaField({
 					type: new StringField({ initial: 'dark', choices: AFFINITY_TYPES }),
 					level: new NumberField({ initial: 1, integer: true, nullable: false }),
 				})),
+				// FDN-9 monstrous-form affinities (REPLACE path). A guise may declare one or more
+				// affinity-SETS; the active one REPLACES the wearer's affinities while worn. Empty for an
+				// ordinary guise. affinityMode='replace' forces the fork even with no authored set (a guise
+				// that only collects forms in play). affinitySetCap / affinityCapSkill bound the library.
+				affinityMode: new StringField({ initial: 'modify', choices: ['modify', 'replace'] }),
+				affinitySets: new ArrayField(new SchemaField({
+					id: new StringField({ initial: '' }),
+					name: new StringField({ initial: '' }),
+					affinities: new ArrayField(new SchemaField({
+						type: new StringField({ initial: 'dark', choices: AFFINITY_TYPES }),
+						level: new NumberField({ initial: 1, integer: true, nullable: false }),
+					})),
+				})),
+				affinitySetCap: new NumberField({ initial: null, nullable: true, integer: true, min: 0 }),
+				affinityCapSkill: new StringField({ initial: '' }),
 			};
 		}
 
@@ -1416,7 +1734,8 @@ Hooks.on('updateItem', async (item, changed) => {
 	if (foundry.utils.hasProperty(changed, 'system.data.affinityModifiers')) await syncAffinityEffect(item);
 });
 Hooks.on('createItem', async (item) => {
-	if (isGuiseItem(item) && (item.system?.data?.affinityModifiers?.length)) await syncAffinityEffect(item);
+	if (!isGuiseItem(item)) return;
+	if (item.system?.data?.affinityModifiers?.length || isReplaceModeGuise(item)) await syncAffinityEffect(item);
 });
 
 /**
@@ -1518,7 +1837,7 @@ Hooks.once('setup', () => {
 
 Hooks.once('ready', async () => {
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
+	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -1529,4 +1848,7 @@ Hooks.once('ready', async () => {
 });
 
 // Test-only exports (Foundry ignores these on an esmodule entry point).
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder };
+export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
+// Back-compat aliases (pre-release Diabolist "pact" names).
+export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder };

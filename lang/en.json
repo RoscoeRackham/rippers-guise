@@ -50,5 +50,10 @@
 	"RIPPERS.Builder.NoSkills": "No skills recorded for this class.",
 	"RIPPERS.Builder.Budget": "SL budget",
 	"RIPPERS.Builder.Create": "Create",
-	"RIPPERS.Builder.CreateBind": "Create & Bind"
+	"RIPPERS.Builder.CreateBind": "Create & Bind",
+	"RIPPERS.Clot.DefaultName": "Clot",
+	"RIPPERS.Clot.OverSockets": "\"{name}\" has {capacity} Clot socket(s) at this level; that loadout needs {needed}.",
+	"RIPPERS.Clot.OverImmunity": "A character may carry at most two Clot-granted Immunities across all weapons and armor; this loadout would make {total}.",
+	"RIPPERS.Clot.SlotHost": "Slot a Clot onto a custom weapon or armor.",
+	"TYPES": { "Item": { "hoplosphere": "Clot" } }
 }
