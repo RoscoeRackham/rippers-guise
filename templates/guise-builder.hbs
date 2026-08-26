@@ -1,46 +1,136 @@
 <div class="guise-builder-body">
-	{{! Phase-1 viewport fix (GUISE-BUILDER-WIZARD): the identity/classes/skills/budget
-	    region scrolls within the viewport so 3 classes can never overflow the window;
-	    the action footer stays pinned below. Wizard rebuild is Phase 2. }}
-	<div class="gb-scroll">
-	<fieldset class="gb-identity">
-		<legend>{{localize "RIPPERS.Builder.Identity"}}</legend>
-		<label>{{localize "RIPPERS.Builder.Name"}} <input type="text" data-draft="name" value="{{draft.name}}" /></label>
-		<label>{{localize "RIPPERS.Builder.Role"}} <input type="text" data-draft="role" value="{{draft.role}}" /></label>
-		<label>{{localize "RIPPERS.Builder.Icon"}} <input type="text" data-draft="img" value="{{draft.img}}" /></label>
-		<label>{{localize "RIPPERS.Builder.Color"}} <input type="color" data-draft="color" value="{{#if draft.color}}{{draft.color}}{{else}}#7b2d8e{{/if}}" /></label>
-		<label class="gb-notes">{{localize "RIPPERS.Builder.Notes"}} <textarea data-draft="notes" rows="2">{{draft.notes}}</textarea></label>
-	</fieldset>
+	{{! Phase-2 stepped wizard (GUISE-BUILDER-WIZARD). One concern per screen; only the
+	    active step lives inside .gb-scroll, so no loadout can overflow the window. Back/Next
+	    below; Create / Create-and-Bind appear on the final Review step. Draft persists across
+	    steps (mutated on input change), so navigating never loses entered data. }}
 
-	<fieldset class="gb-classes">
-		<legend>{{localize "RIPPERS.Builder.Classes"}} — {{localize "RIPPERS.Builder.UpTo3"}}</legend>
-		{{#each slots}}
-			<select class="guise-class-slot" data-slot="{{i}}">
-				{{#each options}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
-			</select>
+	<nav class="gb-progress" aria-label="{{localize "RIPPERS.Builder.Steps"}}">
+		{{#each steps}}
+			<span class="gb-step{{#if active}} is-active{{/if}}{{#if done}} is-done{{/if}}">
+				<span class="gb-step-n">{{n}}</span><span class="gb-step-label">{{label}}</span>
+			</span>
 		{{/each}}
-	</fieldset>
+	</nav>
+	<div class="gb-stepline">{{localize "RIPPERS.Builder.Step"}} {{step}} / {{stepTotal}}</div>
 
-	{{#each classBlocks}}
-		<fieldset class="gb-skills">
-			<legend>{{name}} — {{localize "RIPPERS.Builder.Skills"}}</legend>
-			{{#each skills}}
-				<div class="gb-skill">
-					<label class="gb-skill-name"><input type="checkbox" class="guise-skill-check" data-key="{{key}}" {{#if checked}}checked{{/if}} /> {{name}}</label>
-					<input type="number" class="guise-skill-sl" data-key="{{key}}" value="{{sl}}" min="0" max="{{maxSl}}" title="Max SL {{maxSl}}" />
-					<span class="gb-maxsl">/ {{maxSl}}</span>
-				</div>
+	<div class="gb-scroll">
+
+		{{#if stepIdentity}}
+			<fieldset class="gb-identity">
+				<legend>{{localize "RIPPERS.Builder.Identity"}}</legend>
+				<label>{{localize "RIPPERS.Builder.Name"}} <input type="text" data-draft="name" value="{{draft.name}}" /></label>
+				<label>{{localize "RIPPERS.Builder.Role"}} <input type="text" data-draft="role" value="{{draft.role}}" /></label>
+				<label>{{localize "RIPPERS.Builder.Icon"}} <input type="text" data-draft="img" value="{{draft.img}}" /></label>
+				<label>{{localize "RIPPERS.Builder.Color"}} <input type="color" data-draft="color" value="{{#if draft.color}}{{draft.color}}{{else}}#7b2d8e{{/if}}" /></label>
+				<label class="gb-notes">{{localize "RIPPERS.Builder.Notes"}} <textarea data-draft="notes" rows="2">{{draft.notes}}</textarea></label>
+			</fieldset>
+		{{/if}}
+
+		{{#if stepClasses}}
+			<fieldset class="gb-classes">
+				<legend>{{localize "RIPPERS.Builder.Classes"}} — {{localize "RIPPERS.Builder.UpTo3"}}</legend>
+				{{#each slots}}
+					<select class="guise-class-slot" data-slot="{{i}}">
+						{{#each options}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+					</select>
+				{{/each}}
+			</fieldset>
+		{{/if}}
+
+		{{#if stepSkills}}
+			{{#each classBlocks}}
+				<fieldset class="gb-skills">
+					<legend>{{name}} — {{localize "RIPPERS.Builder.Skills"}}</legend>
+					{{#each skills}}
+						<div class="gb-skill">
+							<label class="gb-skill-name"><input type="checkbox" class="guise-skill-check" data-key="{{key}}" {{#if checked}}checked{{/if}} /> {{name}}</label>
+							<input type="number" class="guise-skill-sl" data-key="{{key}}" value="{{sl}}" min="0" max="{{maxSl}}" title="Max SL {{maxSl}}" />
+							<span class="gb-maxsl">/ {{maxSl}}</span>
+						</div>
+					{{else}}
+						<p class="gb-empty">{{localize "RIPPERS.Builder.NoSkills"}}</p>
+					{{/each}}
+				</fieldset>
 			{{else}}
-				<p class="gb-empty">{{localize "RIPPERS.Builder.NoSkills"}}</p>
+				<p class="gb-empty">{{localize "RIPPERS.Builder.PickClassFirst"}}</p>
 			{{/each}}
-		</fieldset>
-	{{/each}}
+			<div class="gb-budget">{{localize "RIPPERS.Builder.Budget"}}: <strong>{{spent}} / {{budget}}</strong> SL</div>
+		{{/if}}
 
-	<div class="gb-budget">{{localize "RIPPERS.Builder.Budget"}}: <strong>{{spent}} / {{budget}}</strong> SL</div>
+		{{#if stepAffinities}}
+			<fieldset class="gb-affinities">
+				<legend>{{localize "RIPPERS.Builder.Affinities"}}</legend>
+				<label class="gb-aff-toggle"><input type="checkbox" class="guise-aff-mode" {{#if affinity.replace}}checked{{/if}} /> {{localize "RIPPERS.Builder.AffReplace"}}</label>
+				<p class="gb-hint">{{localize "RIPPERS.Builder.AffHint"}}</p>
+
+				{{#if affinity.replace}}
+					{{#each affinity.sets}}
+						<div class="gb-aff-set" data-set-id="{{id}}">
+							<div class="gb-aff-set-head">
+								<input type="text" class="guise-aff-name" data-set-id="{{id}}" value="{{name}}" placeholder="{{localize "RIPPERS.Builder.AffSetName"}}" />
+								<button type="button" class="gb-aff-remove" data-action="removeAffinitySet" data-set-id="{{id}}" title="{{localize "RIPPERS.Builder.AffRemoveSet"}}"><i class="fas fa-trash"></i></button>
+							</div>
+							<div class="gb-aff-grid">
+								{{#each rows}}
+									<label class="gb-aff-el"><span class="gb-aff-el-name">{{label}}</span>
+										<select class="guise-aff-level" data-set-id="{{../id}}" data-type="{{type}}">
+											{{#each options}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+										</select>
+									</label>
+								{{/each}}
+							</div>
+							<div class="gb-aff-summary">{{summary}}</div>
+						</div>
+					{{/each}}
+					<button type="button" class="gb-aff-add" data-action="addAffinitySet"><i class="fas fa-plus"></i> {{localize "RIPPERS.Builder.AffAddSet"}}</button>
+					<div class="gb-aff-cap">
+						<label>{{localize "RIPPERS.Builder.AffCap"}} <input type="number" class="guise-aff-cap" min="0" value="{{affinity.cap}}" /></label>
+						<label>{{localize "RIPPERS.Builder.AffCapSkill"}} <input type="text" class="guise-aff-capskill" value="{{affinity.capSkill}}" /></label>
+					</div>
+				{{/if}}
+			</fieldset>
+		{{/if}}
+
+		{{#if stepReview}}
+			<fieldset class="gb-review">
+				<legend>{{localize "RIPPERS.Builder.Review"}}</legend>
+				<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Name"}}</span><span class="gb-review-v">{{review.name}}</span></div>
+				{{#if review.role}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Role"}}</span><span class="gb-review-v">{{review.role}}</span></div>{{/if}}
+				{{#if review.notes}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Notes"}}</span><span class="gb-review-v">{{review.notes}}</span></div>{{/if}}
+
+				<div class="gb-review-h">{{localize "RIPPERS.Builder.Classes"}}</div>
+				{{#each review.classes}}
+					<div class="gb-review-class"><strong>{{name}}</strong>
+						{{#each skills}}<span class="gb-review-skill">{{name}} <em>SL{{sl}}</em></span>{{else}}<span class="gb-empty">{{localize "RIPPERS.Builder.NoSkillsPicked"}}</span>{{/each}}
+					</div>
+				{{else}}
+					<div class="gb-empty">{{localize "RIPPERS.Builder.PickClassFirst"}}</div>
+				{{/each}}
+
+				<div class="gb-review-h">{{localize "RIPPERS.Builder.Affinities"}}</div>
+				{{#if review.replace}}
+					{{#each review.affinities}}
+						<div class="gb-review-aff"><strong>{{name}}</strong> — {{summary}}</div>
+					{{/each}}
+					{{#if review.capSkill}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.AffCapSkill"}}</span><span class="gb-review-v">{{review.capSkill}}</span></div>{{/if}}
+				{{else}}
+					<div class="gb-empty">{{localize "RIPPERS.Builder.AffNoneReview"}}</div>
+				{{/if}}
+
+				<div class="gb-budget">{{localize "RIPPERS.Builder.Budget"}}: <strong>{{review.spent}} / {{review.budget}}</strong> SL</div>
+			</fieldset>
+		{{/if}}
+
 	</div>{{! /.gb-scroll }}
 
 	<footer class="gb-footer">
-		<button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-mask"></i> {{localize "RIPPERS.Builder.Create"}}</button>
-		<button type="button" data-action="createBind" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-user-secret"></i> {{localize "RIPPERS.Builder.CreateBind"}}</button>
+		{{#unless isFirst}}<button type="button" class="gb-nav-back" data-action="back"><i class="fas fa-arrow-left"></i> {{localize "RIPPERS.Builder.Back"}}</button>{{/unless}}
+		<span class="gb-nav-spacer"></span>
+		{{#if isLast}}
+			<button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-mask"></i> {{localize "RIPPERS.Builder.Create"}}</button>
+			<button type="button" data-action="createBind" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-user-secret"></i> {{localize "RIPPERS.Builder.CreateBind"}}</button>
+		{{else}}
+			<button type="button" class="gb-nav-next" data-action="next">{{localize "RIPPERS.Builder.Next"}} <i class="fas fa-arrow-right"></i></button>
+		{{/if}}
 	</footer>
 </div>

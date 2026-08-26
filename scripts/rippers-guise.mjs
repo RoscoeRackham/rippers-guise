@@ -1276,7 +1276,11 @@ const DRAFT_SEP = '␟'; // separates the sl-map key "classUuid␟skillUuid"
 const draftKey = (classUuid, skillUuid) => `${classUuid}${DRAFT_SEP}${skillUuid}`;
 
 function emptyGuiseDraft() {
-	return { name: '', role: '', notes: '', img: 'icons/svg/mystery-man.svg', color: '', classUuids: [], sl: {} };
+	return {
+		name: '', role: '', notes: '', img: 'icons/svg/mystery-man.svg', color: '', classUuids: [], sl: {},
+		// FDN-9 monstrous-form affinities (Phase-2 wizard step 4). Empty = ordinary guise (mode 'modify').
+		affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
+	};
 }
 
 /** Parse a compendium class Item's description HTML into its skill list. Pure.
@@ -1346,6 +1350,37 @@ async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false 
 	return item;
 }
 
+// ---------------------------------------------------------------------------
+// Guise Builder WIZARD (Phase 2, GUISE-BUILDER-WIZARD). One concern per screen;
+// only the active step scrolls, so no loadout can overflow the window. These
+// pure helpers carry the step model + affinity-draft edits so they are unit-
+// testable headless (the ApplicationV2 subclass below is runtime-only).
+const WIZARD_STEPS = [
+	{ key: 'identity',   label: 'Identity' },
+	{ key: 'classes',    label: 'Classes' },
+	{ key: 'skills',     label: 'Skills' },
+	{ key: 'affinities', label: 'Affinities' },
+	{ key: 'review',     label: 'Review' },
+];
+/** Clamp a step number into 1..WIZARD_STEPS.length. Pure. */
+const clampWizardStep = (n) => Math.min(WIZARD_STEPS.length, Math.max(1, Math.floor(Number(n) || 1)));
+
+/** Current level (-1..3, 0 = none) of `type` in an affinity set. Pure. */
+function affinityLevelOf(set, type) {
+	const a = (set?.affinities ?? []).find((x) => x?.type === type);
+	return a ? Number(a.level) : 0;
+}
+/** Return a NEW affinities array with `type` set to `level`. level 0/none (or an illegal type/level)
+ *  removes the entry, so the set stays valid per validateAffinitySet. Pure. */
+function withAffinityLevel(affinities, type, level) {
+	const lvl = Number(level);
+	const rest = (Array.isArray(affinities) ? affinities : []).filter((a) => a?.type !== type);
+	if (!AFFINITY_TYPES.includes(type) || !AFFINITY_VALUES.has(lvl) || lvl === 0) return rest;
+	return [...rest, { type, level: lvl }];
+}
+/** A fresh, valid, empty affinity set with the given id (and optional name). Pure. */
+function newAffinitySet(id, name = '') { return { id: String(id ?? ''), name: String(name ?? ''), affinities: [] }; }
+
 // Lazily define the wizard — foundry.applications.api is only live at runtime.
 let _GuiseBuilderApp = null;
 function getGuiseBuilderApp() {
@@ -1357,13 +1392,18 @@ function getGuiseBuilderApp() {
 			this.actor = actor;
 			this._draft = emptyGuiseDraft();
 			this._classSkills = {}; // classUuid -> [{uuid,name,maxSl}]
+			this._step = 1;         // active wizard step (1..WIZARD_STEPS.length)
 		}
 		static DEFAULT_OPTIONS = {
 			classes: ['rippers-guise', 'guise-builder'],
 			tag: 'form',
 			window: { title: 'RIPPERS.Builder.Title', icon: 'fas fa-mask' },
 			position: { width: 540, height: 'auto' },
-			actions: { create: GuiseBuilderApp.onCreate, createBind: GuiseBuilderApp.onCreateBind },
+			actions: {
+				create: GuiseBuilderApp.onCreate, createBind: GuiseBuilderApp.onCreateBind,
+				back: GuiseBuilderApp.onBack, next: GuiseBuilderApp.onNext,
+				addAffinitySet: GuiseBuilderApp.onAddAffinitySet, removeAffinitySet: GuiseBuilderApp.onRemoveAffinitySet,
+			},
 		};
 		static PARTS = { form: { template: `modules/${MODULE_ID}/templates/guise-builder.hbs` } };
 		get title() { return `${game.i18n.localize('RIPPERS.Builder.Title')} — ${this.actor?.name ?? ''}`; }
@@ -1393,7 +1433,66 @@ function getGuiseBuilderApp() {
 					return { ...s, sl, key: draftKey(cU, s.uuid), checked: sl > 0 };
 				}),
 			}));
-			return { draft: this._draft, slots, classBlocks, budget, spent, canCreate: chosen.length > 0 && spent > 0 };
+
+			// ---- wizard step model (Phase 2) ------------------------------------
+			const step = clampWizardStep(this._step);
+			const stepKey = WIZARD_STEPS[step - 1].key;
+			const steps = WIZARD_STEPS.map((s, i) => ({
+				n: i + 1, label: s.label, key: s.key,
+				active: i + 1 === step, done: i + 1 < step,
+			}));
+
+			// ---- affinities step view model (FDN-9 fields, no new engine behaviour) ----
+			const affTypes = AFFINITY_TYPES.map((t) => ({ type: t, label: t.charAt(0).toUpperCase() + t.slice(1) }));
+			const affLevelOpts = (cur) => [{ value: 0, label: game.i18n.localize('RIPPERS.Builder.AffNone') }]
+				.concat(AFFINITY_LEVELS.map((l) => ({ value: l.value, label: l.label })))
+				.map((o) => ({ ...o, selected: Number(o.value) === Number(cur) }));
+			const replace = this._draft.affinityMode === 'replace' || (this._draft.affinitySets?.length > 0);
+			const affinitySets = (this._draft.affinitySets ?? []).map((set, i) => ({
+				id: set.id, name: set.name ?? '', index: i,
+				rows: affTypes.map((t) => ({ ...t, options: affLevelOpts(affinityLevelOf(set, t.type)) })),
+				summary: this._affinitySummary(set),
+			}));
+			const affinity = {
+				replace,
+				sets: affinitySets,
+				cap: Number.isFinite(this._draft.affinitySetCap) ? this._draft.affinitySetCap : '',
+				capSkill: this._draft.affinityCapSkill ?? '',
+			};
+
+			// ---- review step summary (read-only) --------------------------------
+			const review = {
+				name: this._draft.name || game.i18n.localize('RIPPERS.Builder.Unnamed'),
+				role: this._draft.role || '',
+				notes: this._draft.notes || '',
+				classes: classBlocks.map((cb) => ({
+					name: cb.name,
+					skills: cb.skills.filter((s) => s.checked).map((s) => ({ name: s.name, sl: s.sl })),
+				})),
+				replace,
+				affinities: replace ? affinitySets.map((s) => ({ name: s.name || game.i18n.localize('RIPPERS.Builder.AffUnnamedSet'), summary: s.summary })) : [],
+				capSkill: replace ? (this._draft.affinityCapSkill ?? '') : '',
+				spent, budget,
+			};
+
+			return {
+				draft: this._draft, slots, classBlocks, budget, spent,
+				canCreate: chosen.length > 0 && spent > 0,
+				step, stepKey, steps, stepTotal: WIZARD_STEPS.length,
+				isFirst: step === 1, isLast: step === WIZARD_STEPS.length,
+				stepIdentity: stepKey === 'identity', stepClasses: stepKey === 'classes',
+				stepSkills: stepKey === 'skills', stepAffinities: stepKey === 'affinities',
+				stepReview: stepKey === 'review',
+				affinity, review,
+			};
+		}
+
+		/** One-line human summary of a set's affinities (for the review + set header). */
+		_affinitySummary(set) {
+			const parts = (set?.affinities ?? [])
+				.filter((a) => AFFINITY_VALUES.has(Number(a?.level)) && Number(a.level) !== 0)
+				.map((a) => `${a.type.charAt(0).toUpperCase() + a.type.slice(1)}: ${affinityWordOf(a.level)}`);
+			return parts.length ? parts.join(', ') : game.i18n.localize('RIPPERS.Builder.AffEmpty');
 		}
 
 		_skillMax() { const m = {}; for (const arr of Object.values(this._classSkills)) for (const s of arr) m[s.uuid] = s.maxSl; return m; }
@@ -1417,10 +1516,46 @@ function getGuiseBuilderApp() {
 				if (v > 0) this._draft.sl[inp.dataset.key] = v; else delete this._draft.sl[inp.dataset.key];
 				this.render();
 			}));
+
+			// ---- affinities step (step 4) — all no-op when the step isn't rendered ----
+			root.querySelectorAll('input.guise-aff-mode').forEach((cb) => cb.addEventListener('change', () => {
+				if (cb.checked) { this._draft.affinityMode = 'replace'; }
+				else { this._draft.affinityMode = 'modify'; this._draft.affinitySets = []; this._draft.affinitySetCap = null; this._draft.affinityCapSkill = ''; }
+				this.render();
+			}));
+			root.querySelectorAll('input.guise-aff-name').forEach((inp) => inp.addEventListener('change', () => {
+				const set = (this._draft.affinitySets ?? []).find((s) => s.id === inp.dataset.setId);
+				if (set) { set.name = inp.value; this.render(); }
+			}));
+			root.querySelectorAll('select.guise-aff-level').forEach((sel) => sel.addEventListener('change', () => {
+				const set = (this._draft.affinitySets ?? []).find((s) => s.id === sel.dataset.setId);
+				if (set) { set.affinities = withAffinityLevel(set.affinities, sel.dataset.type, Number(sel.value)); this.render(); }
+			}));
+			root.querySelectorAll('input.guise-aff-cap').forEach((inp) => inp.addEventListener('change', () => {
+				const n = Math.floor(Number(inp.value));
+				this._draft.affinitySetCap = (inp.value !== '' && Number.isFinite(n) && n >= 0) ? n : null;
+			}));
+			root.querySelectorAll('input.guise-aff-capskill').forEach((inp) => inp.addEventListener('change', () => { this._draft.affinityCapSkill = inp.value; }));
 		}
 
 		static async onCreate(event) { event.preventDefault(); await this._doCreate(false); }
 		static async onCreateBind(event) { event.preventDefault(); await this._doCreate(true); }
+		static onBack(event) { event.preventDefault(); this._step = clampWizardStep(this._step - 1); this.render(); }
+		static onNext(event) { event.preventDefault(); this._step = clampWizardStep(this._step + 1); this.render(); }
+		static onAddAffinitySet(event) {
+			event.preventDefault();
+			const id = foundry.utils?.randomID?.() ?? `set-${(this._draft.affinitySets?.length ?? 0) + 1}`;
+			this._draft.affinityMode = 'replace';
+			this._draft.affinitySets = [...(this._draft.affinitySets ?? []), newAffinitySet(id)];
+			this.render();
+		}
+		static onRemoveAffinitySet(event) {
+			event.preventDefault();
+			const id = event.target?.closest?.('[data-set-id]')?.dataset?.setId;
+			this._draft.affinitySets = (this._draft.affinitySets ?? []).filter((s) => s.id !== id);
+			if (!this._draft.affinitySets.length) this._draft.affinityMode = 'modify';
+			this.render();
+		}
 		async _doCreate(bind) {
 			if (!this._draft.classUuids.filter(Boolean).length) { ui.notifications?.warn('Pick at least one class for the guise.'); return; }
 			const item = await createGuiseFromDraft(this.actor, this._draft, { skillMax: this._skillMax(), bind });
@@ -1851,4 +1986,4 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
