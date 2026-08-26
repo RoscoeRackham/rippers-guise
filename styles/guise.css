@@ -101,7 +101,17 @@
 .rippers-guise-panel .guise-build:hover { filter: brightness(1.1); }
 .rippers-guise-panel .rippers-guise-empty { padding: 0.35rem 0.5rem; font-style: italic; opacity: 0.7; }
 
-.application.guise-builder .guise-builder-body { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.4rem; }
+.application.guise-builder .guise-builder-body { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.4rem; min-height: 0; }
+/* Phase-1 viewport fix (GUISE-BUILDER-WIZARD): cap the identity/classes/skills/budget
+   region to the viewport and let it scroll, so 3 classes stack inside a scrollbar
+   instead of growing the window past the screen. Footer (.gb-footer) sits outside
+   this wrapper and stays pinned. Phase 2 replaces this with a stepped wizard. */
+.application.guise-builder .gb-scroll {
+	display: flex; flex-direction: column; gap: 0.6rem;
+	overflow-y: auto; overflow-x: hidden;
+	max-height: calc(100vh - 12rem);
+	min-height: 0; padding-right: 0.3rem;
+}
 .application.guise-builder fieldset { border: 1px solid rgba(123,45,142,0.35); border-radius: 4px; padding: 0.4rem 0.6rem; }
 .application.guise-builder legend { font-weight: 700; padding: 0 0.35rem; color: #7b2d8e; }
 .application.guise-builder .gb-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem 0.8rem; }
@@ -117,7 +127,7 @@
 .application.guise-builder .gb-maxsl { opacity: 0.6; font-size: 0.85rem; }
 .application.guise-builder .gb-empty { font-style: italic; opacity: 0.7; margin: 0.2rem 0; }
 .application.guise-builder .gb-budget { padding: 0.2rem; border-top: 1px solid rgba(0,0,0,0.15); }
-.application.guise-builder .gb-footer { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.application.guise-builder .gb-footer { display: flex; justify-content: flex-end; gap: 0.5rem; flex: 0 0 auto; padding-top: 0.4rem; border-top: 1px solid rgba(0,0,0,0.15); }
 .application.guise-builder .gb-footer button {
 	padding: 0.25rem 0.9rem; border-radius: 3px; border: 1px solid #7b2d8e; background: #7b2d8e; color: #fff; font-weight: 700; cursor: pointer;
 }

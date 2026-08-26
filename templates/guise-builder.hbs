@@ -1,4 +1,8 @@
 <div class="guise-builder-body">
+	{{! Phase-1 viewport fix (GUISE-BUILDER-WIZARD): the identity/classes/skills/budget
+	    region scrolls within the viewport so 3 classes can never overflow the window;
+	    the action footer stays pinned below. Wizard rebuild is Phase 2. }}
+	<div class="gb-scroll">
 	<fieldset class="gb-identity">
 		<legend>{{localize "RIPPERS.Builder.Identity"}}</legend>
 		<label>{{localize "RIPPERS.Builder.Name"}} <input type="text" data-draft="name" value="{{draft.name}}" /></label>
@@ -33,6 +37,7 @@
 	{{/each}}
 
 	<div class="gb-budget">{{localize "RIPPERS.Builder.Budget"}}: <strong>{{spent}} / {{budget}}</strong> SL</div>
+	</div>{{! /.gb-scroll }}
 
 	<footer class="gb-footer">
 		<button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-mask"></i> {{localize "RIPPERS.Builder.Create"}}</button>
