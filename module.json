@@ -1,16 +1,34 @@
 {
 	"id": "rippers-guise",
-	"title": "Rippers Unmasked — Guise",
-	"description": "The Guise (mask / identity swap) as a first-class Project FU classFeature, on the Arcanist Arcanum pattern: hold several guises, bind one to make it active (dismissing any other), and its embedded ActiveEffect deltas apply on swap. Registers 'guise' on FU's module-open classFeature registry — no system fork. Original campaign content. A personal-table module — not for redistribution.",
-	"version": "0.6.1",
+	"title": "Rippers Unmasked \u2014 Guise",
+	"description": "The Guise (mask / identity swap) as a first-class Project FU classFeature, on the Arcanist Arcanum pattern: hold several guises, bind one to make it active (dismissing any other), and its embedded ActiveEffect deltas apply on swap. Registers 'guise' on FU's module-open classFeature registry \u2014 no system fork. Original campaign content. A personal-table module \u2014 not for redistribution.",
+	"version": "0.6.2",
 	"url": "https://github.com/RoscoeRackham/rippers-guise",
 	"manifest": "https://github.com/RoscoeRackham/rippers-guise/releases/latest/download/module.json",
 	"download": "https://github.com/RoscoeRackham/rippers-guise/releases/latest/download/rippers-guise.zip",
-	"compatibility": { "minimum": "13", "verified": "13", "maximum": "13" },
-	"authors": [ { "name": "Austin (cubemail.exe)" } ],
-	"esmodules": [ "scripts/rippers-guise.mjs" ],
-	"styles": [ "styles/guise.css" ],
-	"languages": [ { "lang": "en", "name": "English", "path": "lang/en.json" } ],
+	"compatibility": {
+		"minimum": "13",
+		"verified": "13",
+		"maximum": "13"
+	},
+	"authors": [
+		{
+			"name": "Austin (cubemail.exe)"
+		}
+	],
+	"esmodules": [
+		"scripts/rippers-guise.mjs"
+	],
+	"styles": [
+		"styles/guise.css"
+	],
+	"languages": [
+		{
+			"lang": "en",
+			"name": "English",
+			"path": "lang/en.json"
+		}
+	],
 	"packs": [
 		{
 			"name": "guises",
@@ -21,9 +39,22 @@
 		}
 	],
 	"packFolders": [
-		{ "name": "Rippers — Guises", "sorting": "m", "packs": ["guises"] }
+		{
+			"name": "Rippers \u2014 Guises",
+			"sorting": "m",
+			"packs": [
+				"guises"
+			]
+		}
 	],
-	"relationships": { "systems": [ { "id": "projectfu", "type": "system" } ] },
+	"relationships": {
+		"systems": [
+			{
+				"id": "projectfu",
+				"type": "system"
+			}
+		]
+	},
 	"flags": {
 		"rippers-guise": {
 			"note": "Registers a first-class 'guise' classFeature (Arcanum pattern) via CONFIG.FU.classFeatureRegistry. Active guise id stored in actor.flags.rippers-guise.activeGuise. No FU content redistributed."

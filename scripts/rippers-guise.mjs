@@ -1403,6 +1403,7 @@ function getGuiseBuilderApp() {
 				create: GuiseBuilderApp.onCreate, createBind: GuiseBuilderApp.onCreateBind,
 				back: GuiseBuilderApp.onBack, next: GuiseBuilderApp.onNext,
 				addAffinitySet: GuiseBuilderApp.onAddAffinitySet, removeAffinitySet: GuiseBuilderApp.onRemoveAffinitySet,
+				pickImg: GuiseBuilderApp.onPickImg,
 			},
 		};
 		static PARTS = { form: { template: `modules/${MODULE_ID}/templates/guise-builder.hbs` } };
@@ -1464,6 +1465,7 @@ function getGuiseBuilderApp() {
 			const review = {
 				name: this._draft.name || game.i18n.localize('RIPPERS.Builder.Unnamed'),
 				role: this._draft.role || '',
+				img: this._draft.img || '',
 				notes: this._draft.notes || '',
 				classes: classBlocks.map((cb) => ({
 					name: cb.name,
@@ -1499,7 +1501,16 @@ function getGuiseBuilderApp() {
 
 		_onRender() {
 			const root = this.element;
-			root.querySelectorAll('[data-draft]').forEach((el) => el.addEventListener('change', () => { this._draft[el.dataset.draft] = el.value; }));
+			root.querySelectorAll('[data-draft]').forEach((el) =>
+				el.addEventListener('change', () => {
+					this._draft[el.dataset.draft] = el.value;
+					// live preview: keep the sprite thumbnail in sync with a manually typed path
+					if (el.dataset.draft === 'img') {
+						const prev = root.querySelector('.gb-img-preview');
+						if (prev) prev.src = el.value || 'icons/svg/mystery-man.svg';
+					}
+				}),
+			);
 			root.querySelectorAll('select.guise-class-slot').forEach((sel) => sel.addEventListener('change', () => {
 				const arr = [...this._draft.classUuids];
 				arr[Number(sel.dataset.slot)] = sel.value || undefined;
@@ -1540,6 +1551,19 @@ function getGuiseBuilderApp() {
 
 		static async onCreate(event) { event.preventDefault(); await this._doCreate(false); }
 		static async onCreateBind(event) { event.preventDefault(); await this._doCreate(true); }
+		/** Open the Foundry image browser for the guise sprite; writes the chosen path back to draft.img. */
+		static async onPickImg(event) {
+			event.preventDefault();
+			// Foundry v13 moved FilePicker to foundry.applications.apps.FilePicker; fall back for drift.
+			const FP = foundry?.applications?.apps?.FilePicker?.implementation ?? foundry?.applications?.apps?.FilePicker ?? globalThis.FilePicker;
+			if (!FP) { ui.notifications?.warn('FilePicker is unavailable in this Foundry build.'); return; }
+			const picker = new FP({
+				type: 'image',
+				current: this._draft.img || '',
+				callback: (path) => { this._draft.img = path; this.render(); },
+			});
+			return typeof picker.browse === 'function' ? picker.browse() : picker.render(true);
+		}
 		static onBack(event) { event.preventDefault(); this._step = clampWizardStep(this._step - 1); this.render(); }
 		static onNext(event) { event.preventDefault(); this._step = clampWizardStep(this._step + 1); this.render(); }
 		static onAddAffinitySet(event) {

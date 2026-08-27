@@ -20,7 +20,13 @@
 				<legend>{{localize "RIPPERS.Builder.Identity"}}</legend>
 				<label>{{localize "RIPPERS.Builder.Name"}} <input type="text" data-draft="name" value="{{draft.name}}" /></label>
 				<label>{{localize "RIPPERS.Builder.Role"}} <input type="text" data-draft="role" value="{{draft.role}}" /></label>
-				<label>{{localize "RIPPERS.Builder.Icon"}} <input type="text" data-draft="img" value="{{draft.img}}" /></label>
+				<label class="gb-img-field">{{localize "RIPPERS.Builder.Icon"}}
+					<span class="gb-img-row">
+						<img class="gb-img-preview" src="{{#if draft.img}}{{draft.img}}{{else}}icons/svg/mystery-man.svg{{/if}}" width="40" height="40" alt="" />
+						<input type="text" data-draft="img" value="{{draft.img}}" placeholder="path/to/sprite.webp" />
+						<button type="button" class="gb-img-pick" data-action="pickImg" data-tooltip="{{localize "RIPPERS.Builder.PickImg"}}"><i class="fas fa-file-image"></i></button>
+					</span>
+				</label>
 				<label>{{localize "RIPPERS.Builder.Color"}} <input type="color" data-draft="color" value="{{#if draft.color}}{{draft.color}}{{else}}#7b2d8e{{/if}}" /></label>
 				<label class="gb-notes">{{localize "RIPPERS.Builder.Notes"}} <textarea data-draft="notes" rows="2">{{draft.notes}}</textarea></label>
 			</fieldset>
@@ -94,6 +100,7 @@
 		{{#if stepReview}}
 			<fieldset class="gb-review">
 				<legend>{{localize "RIPPERS.Builder.Review"}}</legend>
+				<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Icon"}}</span><span class="gb-review-v"><img class="gb-img-preview gb-review-thumb" src="{{#if review.img}}{{review.img}}{{else}}icons/svg/mystery-man.svg{{/if}}" width="32" height="32" alt="" /></span></div>
 				<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Name"}}</span><span class="gb-review-v">{{review.name}}</span></div>
 				{{#if review.role}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Role"}}</span><span class="gb-review-v">{{review.role}}</span></div>{{/if}}
 				{{#if review.notes}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Notes"}}</span><span class="gb-review-v">{{review.notes}}</span></div>{{/if}}

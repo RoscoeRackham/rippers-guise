@@ -41,6 +41,7 @@
 	"RIPPERS.Builder.Name": "Name",
 	"RIPPERS.Builder.Role": "Role",
 	"RIPPERS.Builder.Icon": "Icon path",
+	"RIPPERS.Builder.PickImg": "Browse for a sprite image",
 	"RIPPERS.Builder.Color": "Colour",
 	"RIPPERS.Builder.Notes": "Notes",
 	"RIPPERS.Builder.Classes": "Classes",
@@ -75,5 +76,9 @@
 	"RIPPERS.Clot.OverSockets": "\"{name}\" has {capacity} Clot socket(s) at this level; that loadout needs {needed}.",
 	"RIPPERS.Clot.OverImmunity": "A character may carry at most two Clot-granted Immunities across all weapons and armor; this loadout would make {total}.",
 	"RIPPERS.Clot.SlotHost": "Slot a Clot onto a custom weapon or armor.",
-	"TYPES": { "Item": { "hoplosphere": "Clot" } }
+	"TYPES": {
+		"Item": {
+			"hoplosphere": "Clot"
+		}
+	}
 }

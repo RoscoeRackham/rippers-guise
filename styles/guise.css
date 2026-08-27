@@ -233,3 +233,11 @@
 	width: auto !important;
 	flex: 0 0 auto !important;
 }
+
+/* Guise Builder — sprite picker (v0.6.2) */
+.application.guise-builder .gb-img-field { grid-column: 1 / -1; align-items: flex-start; }
+.application.guise-builder .gb-img-row { display: inline-flex; align-items: center; gap: 0.4rem; flex: 1; }
+.application.guise-builder .gb-img-row input[type="text"] { flex: 1; }
+.application.guise-builder .gb-img-preview { border: 1px solid var(--color-border-light-tertiary, #999); border-radius: 3px; object-fit: cover; background: rgba(0,0,0,0.15); flex: 0 0 auto; }
+.application.guise-builder .gb-img-pick { flex: 0 0 auto; width: 2rem; }
+.application.guise-builder .gb-review-thumb { vertical-align: middle; }
