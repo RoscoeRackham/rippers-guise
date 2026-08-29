@@ -24,6 +24,7 @@ const {
 	validateAffinityTrio, affinityTrioToModifiers, validateGuiseDraft,
 	SPECIALTY_LIST, SPECIALTY_COUNT, GUISE_MODES, REQUIRED_CLASS_COUNT,
 	validateAffinitySet, newAffinitySet, affinityLevelOf, withAffinityLevel,
+	parseClassSkills,
 } = mod;
 
 const CU = (n) => `Compendium.x.classes.Item.${n}`;
@@ -179,6 +180,34 @@ test('guiseDraftToData clamps an over-max single skill down to its max SL', () =
 	d.sl[key] = 99;
 	const data = guiseDraftToData(d, { 'Compendium.x.skills.Item.s1': 4 }, 30);
 	assert.equal(data.classes.find((c) => c.classUuid === CU('a')).skills[0].sl, 4); // capped, not 99
+});
+
+test('parseClassSkills defaults a no-badge (single-rank) skill to maxSl:1, not 10', () => {
+	// build-compendium.mjs omits the 【Max SL N】 badge ONLY for max_sl=1 by convention.
+	const html = [
+		'@UUID[Compendium.x.skills.Item.single]{Single Rank}',
+		'@UUID[Compendium.x.skills.Item.multi]{Multi Rank} <strong>【Max SL 5】</strong>',
+	].join(' ');
+	const parsed = parseClassSkills(html);
+	const single = parsed.find((s) => s.name === 'Single Rank');
+	const multi = parsed.find((s) => s.name === 'Multi Rank');
+	assert.equal(single.maxSl, 1); // was 10 before the ROS-27 fallback fix
+	assert.equal(multi.maxSl, 5);
+});
+
+test('a no-badge skill (max 1) clamps a SKILLS-step entry down to 1', () => {
+	const html = '@UUID[Compendium.x.skills.Item.single]{Single Rank}';
+	const skillMax = Object.fromEntries(parseClassSkills(html).map((s) => [s.uuid, s.maxSl]));
+	const d = threeClasses(emptyGuiseDraft());
+	const key = draftKey(CU('a'), 'Compendium.x.skills.Item.single');
+	d.sl[key] = 4; // player tries to over-allocate a single-rank skill
+	// Create is blocked…
+	const v = validateGuiseDraft(d, 'worn', skillMax);
+	assert.equal(v.ok, false);
+	assert.ok(v.errors.some((e) => /above its max/i.test(e)));
+	// …and compile clamps it to 1.
+	const data = guiseDraftToData(d, skillMax, 30);
+	assert.equal(data.classes.find((c) => c.classUuid === CU('a')).skills[0].sl, 1);
 });
 
 // --- retained affinity-set helpers (still exported; used by the runtime collected-library API) ---

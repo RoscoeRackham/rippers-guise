@@ -1421,7 +1421,10 @@ function parseClassSkills(descHtml) {
 	const re = /@UUID\[([^\]]+)\]\{([^}]+)\}(?:\s*<strong>【Max SL (\d+)】<\/strong>)?/g;
 	let m;
 	while ((m = re.exec(String(descHtml ?? '')))) {
-		out.push({ uuid: m[1], name: m[2], maxSl: m[3] ? Math.max(1, parseInt(m[3], 10)) : 10 });
+		// No 【Max SL N】 badge ⇒ single-rank skill: the compendium generator
+		// (build-compendium.mjs) omits the badge ONLY for max_sl=1 by documented
+		// convention, so a missing badge means cap 1, not an unbounded 10.
+		out.push({ uuid: m[1], name: m[2], maxSl: m[3] ? Math.max(1, parseInt(m[3], 10)) : 1 });
 	}
 	return out;
 }
