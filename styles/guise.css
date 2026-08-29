@@ -178,16 +178,16 @@
 	box-sizing: border-box;
 	overflow: hidden;
 }
-.rippers-benefit-panel .rippers-guise-header,
+.rippers-benefit-panel .rippers-benefit-header,
 .rippers-guise-panel .rippers-guise-header {
 	width: 100%;
 	box-sizing: border-box;
 	min-height: 0;
 	flex-wrap: nowrap;
 }
-.rippers-benefit-panel .rippers-guise-header .items-main,
+.rippers-benefit-panel .rippers-benefit-header .items-main,
 .rippers-guise-panel .rippers-guise-header .items-main,
-.rippers-benefit-panel .rippers-guise-header .items-label,
+.rippers-benefit-panel .rippers-benefit-header .items-label,
 .rippers-guise-panel .rippers-guise-header .items-label {
 	font-family: inherit !important;
 	font-size: 1rem !important;
@@ -213,8 +213,8 @@
 	text-transform: none !important;
 	letter-spacing: normal !important;
 }
-.rippers-benefit-panel .rippers-guise-header .items-main,
-.rippers-benefit-panel .rippers-guise-header .items-label,
+.rippers-benefit-panel .rippers-benefit-header .items-main,
+.rippers-benefit-panel .rippers-benefit-header .items-label,
 .rippers-guise-panel .rippers-guise-header .items-main,
 .rippers-guise-panel .rippers-guise-header .items-label {
 	font-size: 1rem !important;

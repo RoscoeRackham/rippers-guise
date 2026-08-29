@@ -11,6 +11,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 globalThis.Hooks = { on() {}, once() {} };
 globalThis.CONFIG = { FU: {} };
@@ -254,6 +256,28 @@ test('guiseStepErrors scopes each rule to its own step (so Next gates without tr
 
 test('the Specialty picker offers exactly the four FU attributes', () => {
 	assert.deepEqual(SPECIALTY_ATTRIBUTES.map((a) => a.key), ['dex', 'ins', 'mig', 'wlp']);
+});
+
+// --- ROS-30: the Guise section header must be stamped EXACTLY ONCE ----------------------------
+// The bug: the Benefit panel's header carried the `rippers-guise-header` class, so a
+// `.rippers-guise-header` selector matched it too — the Guise header read as duplicated (one in the
+// benefit panel, one in the guise panel). No jsdom here, so we assert on the source markup: the
+// class must appear on exactly one <header> template, and the benefit panel must use its own class.
+test('only one panel header wears rippers-guise-header; the benefit panel has its own', () => {
+	const src = readFileSync(fileURLToPath(new URL('../scripts/rippers-guise.mjs', import.meta.url)), 'utf8');
+	const headerClasses = [...src.matchAll(/<header class="([^"]*)"/g)].map((m) => m[1]);
+	const guiseHeaders = headerClasses.filter((c) => /\brippers-guise-header\b/.test(c));
+	const benefitHeaders = headerClasses.filter((c) => /\brippers-benefit-header\b/.test(c));
+	assert.equal(guiseHeaders.length, 1, `exactly one <header> may carry rippers-guise-header (found ${guiseHeaders.length})`);
+	assert.equal(benefitHeaders.length, 1, 'the benefit panel header must use rippers-benefit-header');
+	// and no <header> carries BOTH classes
+	assert.ok(!headerClasses.some((c) => /rippers-guise-header/.test(c) && /rippers-benefit-header/.test(c)));
+});
+
+test('the CSS styles the benefit header by its own class, not rippers-guise-header', () => {
+	const css = readFileSync(fileURLToPath(new URL('../styles/guise.css', import.meta.url)), 'utf8');
+	assert.ok(!/\.rippers-benefit-panel\s+\.rippers-guise-header\b/.test(css),
+		'no CSS rule may target .rippers-benefit-panel .rippers-guise-header (it would restyle a header that no longer exists / re-couple the classes)');
 });
 
 // --- retained affinity-set helpers (still exported; used by the runtime collected-library API) ---

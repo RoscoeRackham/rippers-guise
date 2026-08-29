@@ -1283,7 +1283,10 @@ function openBenefitPicker(actor) {
 function buildBenefitPanel(actor) {
 	const panel = document.createElement('div');
 	panel.className = 'rippers-benefit-panel';
-	panel.innerHTML = `<header class="items-main-header rippers-guise-header">
+	// ROS-30: the Benefit header must NOT wear `rippers-guise-header` — a `.rippers-guise-header`
+	// selector then matches it too, so the Guise section header reads as duplicated (one in this
+	// panel, one in the guise panel). Its own class keeps identical styling (see guise.css).
+	panel.innerHTML = `<header class="items-main-header rippers-benefit-header">
 			<span class="items-main"><label class="items-label">${game.i18n.localize('RIPPERS.Benefit.PanelTitle')}</label></span>
 		</header>
 		<div class="rippers-benefit-body">
