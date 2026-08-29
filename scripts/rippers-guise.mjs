@@ -1331,13 +1331,11 @@ function chooseBumpSlot(check, preferred) {
 // key the damage engine reads (HW_MATERIAL_BANE, defined below); 'cursed' = GM-authored bane.
 const HW_MATERIALS = Object.freeze(['silver', 'cold_iron', 'consecrated', 'wood', 'cursed']);
 
-// D-Bonus PROVISIONAL taxonomy (Q3 — Austin to confirm/adjust live). Core §2: "A Bonus — +3 to one
-// type of Check." Grounded in Fabula Ultima's own check taxonomy (the roller's Accuracy / Magic /
-// Open / Opposed / Group). Stored as data; accuracy/magic map cleanly to PFU system.bonuses.accuracy.*
-// (design §9), the rest are situational/GM-applied conventions until Austin rules. See v0.7.0 notes.
+// D-Bonus taxonomy (Q3 — RULED, Austin 2026-08-29). Core §2: "A Bonus — +3 to one type of Check."
+// Austin ruled the +3 follows the SAME rule as Specialties: it must NOT apply to Accuracy or Magic
+// checks. So the selector is Open / Opposed / Group ONLY — all GM-situational, so there is NO native
+// ActiveEffect; the +3 is stored/labelled data the GM applies at the table. (v0.7.2)
 const BONUS_CHECK_TYPES = Object.freeze([
-	{ key: 'accuracy', label: 'Accuracy Checks (attacks)' },
-	{ key: 'magic', label: 'Magic Checks (spells)' },
 	{ key: 'open', label: 'Open Checks (skills / exploration)' },
 	{ key: 'opposed', label: 'Opposed Checks (contests)' },
 	{ key: 'group', label: 'Group Checks' },

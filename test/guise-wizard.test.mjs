@@ -114,7 +114,7 @@ test('a worn draft compiles equipment (no longer hardcoded []), the trio, perks 
 	d.equipment = [{ itemUuid: 'Compendium.x.items.Item.armor1', slot: 'armor' }, { itemUuid: 'Compendium.x.items.Item.bad' }];
 	d.affinityImmunity = 'dark'; d.affinityVulnerability = 'light'; d.affinityResistance = 'fire';
 	d.perks = ['Nightsight', 'not-a-perk', 'Scent'];
-	d.bonus = { type: 'accuracy', value: 3 };
+	d.bonus = { type: 'open', value: 3 }; // Austin ruled the +3 excludes Accuracy/Magic (Open/Opposed/Group only)
 	d.tell = 'eyes reflect green'; d.bane = 'silver'; d.flaw = 'cannot cross running water'; d.nature = 'a tall stranger';
 	const data = guiseDraftToData(d, { 'Compendium.x.skills.Item.s1': 10 }, 30);
 	assert.equal(data.mode, 'worn');
@@ -123,7 +123,7 @@ test('a worn draft compiles equipment (no longer hardcoded []), the trio, perks 
 	assert.equal(data.equipment[1].slot, 'mainHand');               // bad slot defaulted
 	assert.deepEqual(data.affinityModifiers.map((m) => m.level).sort(), [-1, 1, 2]);
 	assert.deepEqual(data.perks, ['Nightsight', 'Scent']);          // non-canon perk dropped
-	assert.deepEqual(data.bonus, { type: 'accuracy', value: 3 });
+	assert.deepEqual(data.bonus, { type: 'open', value: 3 });
 	assert.equal(data.tell, 'eyes reflect green');
 	assert.equal(data.bane, 'silver');
 	assert.equal(data.nature, 'a tall stranger');
@@ -155,8 +155,12 @@ test('the canon vocabularies are well-formed', () => {
 	assert.ok(!PERK_LIST.includes('Flight'));                       // Flight is deliberately NOT a Perk
 	assert.ok(PERK_LIST.includes('Kin-Speech'));
 	assert.ok(GUISE_MODES.includes('worn') && GUISE_MODES.includes('innate'));
-	// the Bonus taxonomy is provisional but must at least be a non-empty keyed list
-	assert.ok(BONUS_CHECK_TYPES.length >= 2 && BONUS_CHECK_TYPES.every((t) => t.key && t.label));
+	// the Bonus taxonomy (Austin ruled): Open/Opposed/Group only — Accuracy and Magic are excluded
+	assert.deepEqual(BONUS_CHECK_TYPES.map((t) => t.key), ['open', 'opposed', 'group']);
+	assert.ok(BONUS_CHECK_TYPES.every((t) => t.key && t.label));
+	assert.equal(mod.isBonusCheckType('accuracy'), false);
+	assert.equal(mod.isBonusCheckType('magic'), false);
+	assert.equal(mod.isBonusCheckType('open'), true);
 });
 
 // --- retained affinity-set helpers (still exported; used by the runtime collected-library API) ---

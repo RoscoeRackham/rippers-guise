@@ -90,7 +90,7 @@
 	"RIPPERS.Builder.Traits": "Bonus, Tell & bane",
 	"RIPPERS.Builder.Bonus": "Bonus",
 	"RIPPERS.Builder.BonusNone": "— no Bonus —",
-	"RIPPERS.Builder.BonusProvisional": "Proposed taxonomy — Austin to confirm the check-type list and how it applies.",
+	"RIPPERS.Builder.BonusProvisional": "Applies to Open, Opposed or Group Checks only (never Accuracy or Magic) — the GM applies the +3 at the table.",
 	"RIPPERS.Builder.Tell": "Tell",
 	"RIPPERS.Builder.TellHint": "what gives you away",
 	"RIPPERS.Builder.Bane": "Bane",
