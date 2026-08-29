@@ -114,21 +114,11 @@
 					{{/each}}
 					<div class="guise-drop gb-drop" data-guise-drop="equipment">{{localize "RIPPERS.Builder.DropEquip"}}</div>
 				</fieldset>
-				<fieldset class="gb-perks">
-					<legend>{{localize "RIPPERS.Builder.Perks"}}</legend>
-					<p class="gb-hint">{{localize "RIPPERS.Builder.PerksHint"}}</p>
-					<div class="gb-checkgrid">
-						{{#each loadout.perkOpts}}
-							<label class="gb-check"><input type="checkbox" class="guise-perk" data-perk="{{name}}" {{#if checked}}checked{{/if}} /> {{name}}</label>
-						{{/each}}
-					</div>
-				</fieldset>
 				<fieldset class="gb-traits">
 					<legend>{{localize "RIPPERS.Builder.Traits"}}</legend>
-					<label>{{localize "RIPPERS.Builder.Bonus"}} (+{{loadout.bonusValue}})
-						<select class="guise-bonus">{{#each loadout.bonusOpts}}<option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
-					</label>
-					<p class="gb-hint gb-provisional">{{localize "RIPPERS.Builder.BonusProvisional"}}</p>
+					<label>{{localize "RIPPERS.Builder.Perk"}} <input type="text" data-draft="perk" value="{{loadout.perk}}" placeholder="{{localize "RIPPERS.Builder.PerkHint"}}" /></label>
+					<label>{{localize "RIPPERS.Builder.Bonus"}} (+{{loadout.bonusValue}}) <input type="text" data-draft="bonusDescriptor" value="{{loadout.bonusDescriptor}}" placeholder="{{localize "RIPPERS.Builder.BonusHint"}}" /></label>
+					<p class="gb-hint">{{localize "RIPPERS.Builder.BonusNote"}}</p>
 					<label>{{localize "RIPPERS.Builder.Tell"}} <input type="text" data-draft="tell" value="{{loadout.tell}}" placeholder="{{localize "RIPPERS.Builder.TellHint"}}" /></label>
 					<label>{{localize "RIPPERS.Builder.Bane"}} <input type="text" data-draft="bane" value="{{loadout.bane}}" placeholder="{{localize "RIPPERS.Builder.BaneHint"}}" /></label>
 					<label>{{localize "RIPPERS.Builder.Flaw"}} <input type="text" data-draft="flaw" value="{{loadout.flaw}}" placeholder="{{localize "RIPPERS.Builder.FlawHint"}}" /></label>
@@ -191,8 +181,8 @@
 					{{/if}}
 					<div class="gb-review-h">{{localize "RIPPERS.Builder.Affinities"}}</div>
 					{{#if review.affinities.length}}<div class="gb-review-v">{{#each review.affinities}}<span class="gb-review-aff">{{this}}</span>{{/each}}</div>{{else}}<div class="gb-empty">{{localize "RIPPERS.Builder.AffNoneReview"}}</div>{{/if}}
-					{{#if review.perks.length}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Perks"}}</span><span class="gb-review-v">{{#each review.perks}}{{this}}{{#unless @last}} · {{/unless}}{{/each}}</span></div>{{/if}}
-					{{#if review.bonus}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Bonus"}}</span><span class="gb-review-v">+3 {{review.bonus}}</span></div>{{/if}}
+					{{#if review.perk}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Perk"}}</span><span class="gb-review-v">{{review.perk}}</span></div>{{/if}}
+					{{#if review.bonus}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Bonus"}}</span><span class="gb-review-v">+3 to {{review.bonus}} ({{localize "RIPPERS.Builder.GMApplied"}})</span></div>{{/if}}
 					{{#if review.tell}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Tell"}}</span><span class="gb-review-v">{{review.tell}}</span></div>{{/if}}
 					{{#if review.bane}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Bane"}}</span><span class="gb-review-v">{{review.bane}}</span></div>{{/if}}
 					{{#if review.flaw}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.Flaw"}}</span><span class="gb-review-v">{{review.flaw}}</span></div>{{/if}}

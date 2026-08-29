@@ -1302,18 +1302,8 @@ const draftKey = (classUuid, skillUuid) => `${classUuid}${DRAFT_SEP}${skillUuid}
 const GUISE_MODES = Object.freeze(['worn', 'innate']);
 const REQUIRED_CLASS_COUNT = 3; // core §2: "Exactly three classes, no more, no less."
 
-// The curated Perk list (core §"The Perk list — free flavour"). Narrative permissions only
-// ("can you?" not "how well?"); free; a guise may carry more than one. Flight is deliberately NOT here.
-const PERK_LIST = Object.freeze([
-	// Senses
-	'Nightsight', 'Scent', 'Keen Ear', 'Ground-sense', 'Deathsight',
-	// Movement
-	'Wall-crawling', 'Boneless', 'Waterbreathing', 'Burrowing', 'Prodigious Leap', 'Silent Tread', 'Running Wild',
-	// Body
-	'Mist Form', 'Many Faces', 'Coldblood', 'Iron Stomach', 'Sleepless', 'Regrowth',
-	// Voice
-	'Kin-Speech', 'Mimicry', 'Stillness',
-]);
+// PERK is FREE TEXT (v0.7.4, Austin): a plain narrative fill-in like Tell / Bane / flaw / Nature.
+// The curated 21-perk list was dropped — the player writes the perk(s) in prose.
 
 // The two Specialties the Innate Guise carries (core §"It does carry one thing the masks don't:
 // Specialties"). Choose TWO; improve one die's size on an in-subject Check. Innate-mode only.
@@ -1347,17 +1337,12 @@ function chooseBumpSlot(check, preferred) {
 // key the damage engine reads (HW_MATERIAL_BANE, defined below); 'cursed' = GM-authored bane.
 const HW_MATERIALS = Object.freeze(['silver', 'cold_iron', 'consecrated', 'wood', 'cursed']);
 
-// D-Bonus taxonomy (Q3 — RULED, Austin 2026-08-29). Core §2: "A Bonus — +3 to one type of Check."
-// Austin ruled the +3 follows the SAME rule as Specialties: it must NOT apply to Accuracy or Magic
-// checks. So the selector is Open / Opposed / Group ONLY — all GM-situational, so there is NO native
-// ActiveEffect; the +3 is stored/labelled data the GM applies at the table. (v0.7.2)
-const BONUS_CHECK_TYPES = Object.freeze([
-	{ key: 'open', label: 'Open Checks (skills / exploration)' },
-	{ key: 'opposed', label: 'Opposed Checks (contests)' },
-	{ key: 'group', label: 'Group Checks' },
-]);
+// D-Bonus is a NARRATIVE scope, not a mechanical check type (v0.7.4, Austin: "it's not a mechanical
+// type of check, it's a narrative type of check"). The player writes the circumstance the +3 applies to
+// (e.g. "when acting to protect a child"); the GM applies it when a check fits. No mechanical-type gating,
+// no ActiveEffect. This supersedes the v0.7.2 Open/Opposed/Group selector (which was D-Bonus only — the
+// Specialty die-bump's magic/accuracy exclusion is unchanged).
 const BONUS_VALUE = 3;
-const isBonusCheckType = (k) => BONUS_CHECK_TYPES.some((t) => t.key === k);
 
 // --- Affinity TRIO (Q7) — replaces the un-canon nine-dropdown grid + monstrous library ------------
 // A guise authors up to three affinity slots: one Immunity, one Vulnerability, one Resistance.
@@ -1393,11 +1378,17 @@ function validateAffinityTrio(trio) {
  * Validate a whole guise draft against the construction guardrails (Q4/Q7). Pure. mode 'worn'|'innate'.
  * Returns {ok, errors:[]} so the wizard can gate Create and show why.
  */
-function validateGuiseDraft(draft, mode = 'worn') {
+function validateGuiseDraft(draft, mode = 'worn', skillMax = {}) {
 	const errors = [];
 	const classes = (draft?.classUuids ?? []).filter(Boolean);
 	if (classes.length !== REQUIRED_CLASS_COUNT) errors.push(`A guise has exactly ${REQUIRED_CLASS_COUNT} classes (has ${classes.length}).`);
 	if (new Set(classes).size !== classes.length) errors.push('The three classes must be distinct.');
+	// v0.7.4: no individual skill may exceed its own max SL (the live-builder cap bug — Q3).
+	for (const [key, raw] of Object.entries(draft?.sl ?? {})) {
+		const skillUuid = String(key).split(DRAFT_SEP)[1];
+		const cap = Number(skillMax[skillUuid] ?? PER_CLASS_CAP);
+		if (Number(raw) > cap) { errors.push(`A skill is set to SL ${Math.floor(Number(raw))}, above its max of ${cap}.`); break; }
+	}
 	if (mode === 'worn') {
 		const t = validateAffinityTrio({ immunity: draft?.affinityImmunity, vulnerability: draft?.affinityVulnerability, resistance: draft?.affinityResistance });
 		if (!t.ok) errors.push(t.reason);
@@ -1414,7 +1405,7 @@ function emptyGuiseDraft() {
 		name: '', role: '', nature: '', notes: '', img: 'icons/svg/mystery-man.svg', color: '', classUuids: [], sl: {},
 		// worn-guise fields (Q1: none of these belong on the Innate Guise)
 		equipment: [], // [{itemUuid, slot}] — armor / two hands / accessory (was hardcoded [] — the P2 bug)
-		perks: [], bonus: { type: '', value: BONUS_VALUE }, tell: '', bane: '', flaw: '',
+		perk: '', bonusDescriptor: '', tell: '', bane: '', flaw: '',
 		// affinity TRIO (Q7) — element keys or '' ; Absorption is never representable
 		affinityImmunity: '', affinityVulnerability: '', affinityResistance: '',
 		// innate-guise fields (Q1) + the Hunter Weapon (v0.7.1)
@@ -1473,7 +1464,7 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 			mode, identity: draft.name ?? '', role: draft.role ?? '', nature: '', notes: draft.notes ?? '',
 			classes, equipment: [], affinityModifiers: [],
 			affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
-			perks: [], bonus: null, tell: '', bane: '', flaw: '',
+			perk: '', bonus: null, tell: '', bane: '', flaw: '',
 			specialties, innateHeroicUuid: draft.innateHeroicUuid ?? '',
 			// Hunter Weapon (v0.7.1): the weapon is materialised + marked in createGuiseFromDraft.
 			hunterWeaponUuid: draft.hunterWeaponUuid ?? '', hunterMaterial, hunterOrigin: draft.hunterOrigin ?? '',
@@ -1487,14 +1478,15 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 	const affinityModifiers = affinityTrioToModifiers({
 		immunity: draft.affinityImmunity, vulnerability: draft.affinityVulnerability, resistance: draft.affinityResistance,
 	});
-	const perks = (draft.perks ?? []).filter((p) => PERK_LIST.includes(p));
-	const bonus = isBonusCheckType(draft.bonus?.type) ? { type: draft.bonus.type, value: BONUS_VALUE } : null;
+	const perk = (draft.perk ?? '').trim();
+	const bonusDescriptor = (draft.bonusDescriptor ?? '').trim();
+	const bonus = bonusDescriptor ? { descriptor: bonusDescriptor, value: BONUS_VALUE } : null;
 	return {
 		mode, identity: draft.name ?? '', role: draft.role ?? '', nature: draft.nature ?? '', notes: draft.notes ?? '',
 		classes, equipment, affinityModifiers,
 		// The monstrous "replace/collect forms" path is removed from the builder (Q7): always MODIFY, no sets.
 		affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
-		perks, bonus, tell: draft.tell ?? '', bane: draft.bane ?? '', flaw: draft.flaw ?? '',
+		perk, bonus, tell: draft.tell ?? '', bane: draft.bane ?? '', flaw: draft.flaw ?? '',
 		specialties: [], innateHeroicUuid: '',
 	};
 }
@@ -1626,7 +1618,8 @@ function getGuiseBuilderApp() {
 			const classBlocks = chosen.map((cU) => ({
 				name: classOptions.find((o) => o.uuid === cU)?.name ?? '(class)',
 				skills: (this._classSkills[cU] ?? []).map((s) => {
-					const sl = Math.max(0, Math.floor(Number(this._draft.sl[draftKey(cU, s.uuid)]) || 0));
+					// Display clamp (belt-and-suspenders with the input handler): never show an over-max SL.
+					const sl = Math.min(Math.max(0, Math.floor(Number(this._draft.sl[draftKey(cU, s.uuid)]) || 0)), Number(s.maxSl ?? PER_CLASS_CAP));
 					return { ...s, sl, key: draftKey(cU, s.uuid), checked: sl > 0 };
 				}),
 			}));
@@ -1663,9 +1656,6 @@ function getGuiseBuilderApp() {
 				i, uuid: eq.itemUuid, name: eq.name ?? eq.itemUuid,
 				slots: slotChoices.map((c) => ({ ...c, selected: c.value === eq.slot })),
 			}));
-			const perkOpts = PERK_LIST.map((p) => ({ name: p, checked: (this._draft.perks ?? []).includes(p) }));
-			const bonusOpts = [{ key: '', label: game.i18n.localize('RIPPERS.Builder.BonusNone') }]
-				.concat(BONUS_CHECK_TYPES).map((o) => ({ ...o, selected: o.key === (this._draft.bonus?.type || '') }));
 			const specialtyOpts = SPECIALTY_LIST.map((s) => ({ name: s, checked: (this._draft.specialties ?? []).includes(s) }));
 			const specialtyCount = (this._draft.specialties ?? []).filter(Boolean).length;
 			const heroicName = this._draft.innateHeroicUuid ? (this._draft.innateHeroicName || this._draft.innateHeroicUuid) : '';
@@ -1673,8 +1663,8 @@ function getGuiseBuilderApp() {
 				.concat(HW_MATERIALS.map((m) => ({ value: m, label: game.i18n.localize(`RIPPERS.Builder.HWMat.${m}`) })))
 				.map((o) => ({ ...o, selected: o.value === (this._draft.hunterMaterial || '') }));
 			const loadout = {
-				equipment, perkOpts,
-				bonusOpts, bonusValue: BONUS_VALUE,
+				equipment, bonusValue: BONUS_VALUE,
+				perk: this._draft.perk ?? '', bonusDescriptor: this._draft.bonusDescriptor ?? '',
 				tell: this._draft.tell ?? '', bane: this._draft.bane ?? '', flaw: this._draft.flaw ?? '',
 				specialtyOpts, specialtyCount, specialtyMax: SPECIALTY_COUNT, heroicName,
 				hunterName: this._draft.hunterWeaponUuid ? (this._draft.hunterWeaponName || this._draft.hunterWeaponUuid) : '',
@@ -1682,7 +1672,7 @@ function getGuiseBuilderApp() {
 			};
 
 			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties) ----
-			const validation = validateGuiseDraft(this._draft, mode);
+			const validation = validateGuiseDraft(this._draft, mode, skillMax);
 
 			// ---- review step summary (read-only) --------------------------------
 			const wordFor = (type, level) => `${capT(type)} ${affinityWordOf(level).toLowerCase()}`;
@@ -1700,8 +1690,8 @@ function getGuiseBuilderApp() {
 				})),
 				affinities: affSummary,
 				equipment: isInnate ? [] : equipment.map((e) => ({ name: e.name, slot: e.slots.find((s) => s.selected)?.label ?? '' })),
-				perks: isInnate ? [] : (this._draft.perks ?? []),
-				bonus: (!isInnate && this._draft.bonus?.type) ? (BONUS_CHECK_TYPES.find((t) => t.key === this._draft.bonus.type)?.label ?? '') : '',
+				perk: isInnate ? '' : (this._draft.perk || ''),
+				bonus: (!isInnate && (this._draft.bonusDescriptor || '').trim()) ? this._draft.bonusDescriptor.trim() : '',
 				tell: isInnate ? '' : (this._draft.tell || ''), bane: isInnate ? '' : (this._draft.bane || ''), flaw: isInnate ? '' : (this._draft.flaw || ''),
 				specialties: isInnate ? (this._draft.specialties ?? []) : [], heroic: isInnate ? heroicName : '',
 				hunterWeapon: (isInnate && this._draft.hunterWeaponUuid)
@@ -1750,8 +1740,14 @@ function getGuiseBuilderApp() {
 				this.render();
 			}));
 			root.querySelectorAll('input.guise-skill-sl').forEach((inp) => inp.addEventListener('change', () => {
-				const v = Math.max(0, Math.floor(Number(inp.value) || 0));
-				if (v > 0) this._draft.sl[inp.dataset.key] = v; else delete this._draft.sl[inp.dataset.key];
+				// v0.7.4 bug fix: CLAMP the individual skill to its own max SL here. The HTML `max`
+				// attribute does not block manual entry, so without this the draft (and the input) held
+				// an over-max value — Austin saw "no limit on skill levels", even though compile capped it.
+				const key = inp.dataset.key;
+				const skillUuid = key.split(DRAFT_SEP)[1];
+				const maxSl = Number(this._skillMax()[skillUuid] ?? PER_CLASS_CAP);
+				const v = Math.min(Math.max(0, Math.floor(Number(inp.value) || 0)), maxSl);
+				if (v > 0) this._draft.sl[key] = v; else delete this._draft.sl[key];
 				this.render();
 			}));
 
@@ -1769,15 +1765,8 @@ function getGuiseBuilderApp() {
 			}));
 
 			// ---- loadout step: perks / bonus / specialties ----
-			root.querySelectorAll('input.guise-perk').forEach((cb) => cb.addEventListener('change', () => {
-				const p = cb.dataset.perk; const set = new Set(this._draft.perks ?? []);
-				if (cb.checked) set.add(p); else set.delete(p);
-				this._draft.perks = PERK_LIST.filter((x) => set.has(x)); this.render();
-			}));
-			root.querySelectorAll('select.guise-bonus').forEach((sel) => sel.addEventListener('change', () => {
-				this._draft.bonus = isBonusCheckType(sel.value) ? { type: sel.value, value: BONUS_VALUE } : { type: '', value: BONUS_VALUE };
-				this.render();
-			}));
+			// Perk + Bonus descriptor are now free-text (data-draft="perk" / "bonusDescriptor") — handled
+			// by the generic [data-draft] change listener above; no per-control handler needed (v0.7.4).
 			root.querySelectorAll('input.guise-specialty').forEach((cb) => cb.addEventListener('change', () => {
 				const s = cb.dataset.specialty; const set = new Set(this._draft.specialties ?? []);
 				if (cb.checked) { if (set.size < SPECIALTY_COUNT) set.add(s); } else set.delete(s);
@@ -1847,7 +1836,7 @@ function getGuiseBuilderApp() {
 		static onNext(event) { event.preventDefault(); this._step = clampWizardStep(this._step + 1); this.render(); }
 		async _doCreate(bind) {
 			const mode = GUISE_MODES.includes(this._draft.mode) ? this._draft.mode : 'worn';
-			const v = validateGuiseDraft(this._draft, mode);
+			const v = validateGuiseDraft(this._draft, mode, this._skillMax());
 			if (!v.ok) { ui.notifications?.warn(v.errors[0]); return; }
 			const item = await createGuiseFromDraft(this.actor, this._draft, { skillMax: this._skillMax(), bind });
 			if (item) { ui.notifications?.info(`Guise "${item.name}" created${bind ? ' and bound' : ''}.`); this.close(); }
@@ -1970,10 +1959,10 @@ function defineGuiseModel() {
 				role: new StringField({ initial: '' }),
 				nature: new StringField({ initial: '' }),        // Q5 — the Guise's Identity (plain text)
 				notes: new HTMLField({ initial: '' }),
-				// worn-guise grants (core §2): Perk(s), a +3 Bonus, a Tell, a narrative Bane + flaw
-				perks: new ArrayField(new StringField({ initial: '' })),
+				// worn-guise grants (core §2): a Perk, a +3 Bonus, a Tell, a narrative Bane + flaw — all free text (v0.7.4)
+				perk: new StringField({ initial: '' }),
 				bonus: new SchemaField({
-					type: new StringField({ initial: '' }),        // '' | one of BONUS_CHECK_TYPES (Q3, provisional)
+					descriptor: new StringField({ initial: '' }), // the narrative circumstance the +3 applies to (GM-applied)
 					value: new NumberField({ initial: 3, integer: true }),
 				}, { nullable: true, initial: null }),
 				tell: new StringField({ initial: '' }),
@@ -2376,7 +2365,7 @@ export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affi
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
 export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
-export { GUISE_MODES, REQUIRED_CLASS_COUNT, PERK_LIST, SPECIALTY_LIST, SPECIALTY_COUNT, BONUS_CHECK_TYPES, BONUS_VALUE, isBonusCheckType, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
+export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.1 follow-up — Specialty die-bump (excl. magic/accuracy) + Hunter-Weapon-in-Innate authoring.
 export { SPECIALTY_EXCLUDED_CHECKS, specialtyBumpEligible, CHECK_DIE_SIZES, improveDieSize, chooseBumpSlot, HW_MATERIALS, actorInnateGuise, actorSpecialties };
 // v0.7.3 — Specialty arm/disarm (sheet button + macro/API).

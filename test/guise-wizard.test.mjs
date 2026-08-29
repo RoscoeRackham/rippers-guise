@@ -22,7 +22,7 @@ const mod = await import('../scripts/rippers-guise.mjs');
 const {
 	WIZARD_STEPS, clampWizardStep, emptyGuiseDraft, guiseDraftToData, draftKey, AFFINITY_TYPES,
 	validateAffinityTrio, affinityTrioToModifiers, validateGuiseDraft,
-	PERK_LIST, SPECIALTY_LIST, SPECIALTY_COUNT, BONUS_CHECK_TYPES, GUISE_MODES, REQUIRED_CLASS_COUNT,
+	SPECIALTY_LIST, SPECIALTY_COUNT, GUISE_MODES, REQUIRED_CLASS_COUNT,
 	validateAffinitySet, newAffinitySet, affinityLevelOf, withAffinityLevel,
 } = mod;
 
@@ -48,7 +48,8 @@ test('emptyGuiseDraft defaults to a worn mask with an empty trio and no monstrou
 	const d = emptyGuiseDraft();
 	assert.equal(d.mode, 'worn');
 	assert.deepEqual(d.equipment, []);
-	assert.deepEqual(d.perks, []);
+	assert.equal(d.perk, '');       // v0.7.4: Perk is free text
+	assert.equal(d.bonusDescriptor, ''); // v0.7.4: Bonus is a free-text narrative descriptor
 	assert.equal(d.affinityImmunity, '');
 	assert.equal(d.affinityVulnerability, '');
 	assert.equal(d.affinityResistance, '');
@@ -113,8 +114,8 @@ test('a worn draft compiles equipment (no longer hardcoded []), the trio, perks 
 	d.sl[draftKey(CU('a'), 'Compendium.x.skills.Item.s1')] = 3;
 	d.equipment = [{ itemUuid: 'Compendium.x.items.Item.armor1', slot: 'armor' }, { itemUuid: 'Compendium.x.items.Item.bad' }];
 	d.affinityImmunity = 'dark'; d.affinityVulnerability = 'light'; d.affinityResistance = 'fire';
-	d.perks = ['Nightsight', 'not-a-perk', 'Scent'];
-	d.bonus = { type: 'open', value: 3 }; // Austin ruled the +3 excludes Accuracy/Magic (Open/Opposed/Group only)
+	d.perk = 'Nightsight, Scent';       // v0.7.4: free text
+	d.bonusDescriptor = 'when acting to protect a child'; // v0.7.4: narrative descriptor, +3 GM-applied
 	d.tell = 'eyes reflect green'; d.bane = 'silver'; d.flaw = 'cannot cross running water'; d.nature = 'a tall stranger';
 	const data = guiseDraftToData(d, { 'Compendium.x.skills.Item.s1': 10 }, 30);
 	assert.equal(data.mode, 'worn');
@@ -122,8 +123,8 @@ test('a worn draft compiles equipment (no longer hardcoded []), the trio, perks 
 	assert.equal(data.equipment[0].slot, 'armor');
 	assert.equal(data.equipment[1].slot, 'mainHand');               // bad slot defaulted
 	assert.deepEqual(data.affinityModifiers.map((m) => m.level).sort(), [-1, 1, 2]);
-	assert.deepEqual(data.perks, ['Nightsight', 'Scent']);          // non-canon perk dropped
-	assert.deepEqual(data.bonus, { type: 'open', value: 3 });
+	assert.equal(data.perk, 'Nightsight, Scent');                   // free text rides through
+	assert.deepEqual(data.bonus, { descriptor: 'when acting to protect a child', value: 3 });
 	assert.equal(data.tell, 'eyes reflect green');
 	assert.equal(data.bane, 'silver');
 	assert.equal(data.nature, 'a tall stranger');
@@ -139,12 +140,12 @@ test('an innate draft compiles Specialties + heroic and carries NO equipment/aff
 	d.innateHeroicUuid = 'Compendium.x.heroics.Item.h1';
 	d.equipment = [{ itemUuid: 'Compendium.x.items.Item.armor1', slot: 'armor' }]; // ignored on innate
 	d.affinityImmunity = 'dark'; d.affinityVulnerability = 'light';               // ignored on innate
-	d.perks = ['Nightsight'];                                                     // ignored on innate
+	d.perk = 'Nightsight';                                                        // ignored on innate
 	const data = guiseDraftToData(d, {}, 30);
 	assert.equal(data.mode, 'innate');
 	assert.deepEqual(data.equipment, []);
 	assert.deepEqual(data.affinityModifiers, []);
-	assert.deepEqual(data.perks, []);
+	assert.equal(data.perk, '');
 	assert.equal(data.specialties.length, SPECIALTY_COUNT);         // trimmed to two
 	assert.equal(data.innateHeroicUuid, 'Compendium.x.heroics.Item.h1');
 });
@@ -152,15 +153,32 @@ test('an innate draft compiles Specialties + heroic and carries NO equipment/aff
 // --- vocab sanity -------------------------------------------------------------
 test('the canon vocabularies are well-formed', () => {
 	assert.equal(SPECIALTY_LIST.length, 13);
-	assert.ok(!PERK_LIST.includes('Flight'));                       // Flight is deliberately NOT a Perk
-	assert.ok(PERK_LIST.includes('Kin-Speech'));
 	assert.ok(GUISE_MODES.includes('worn') && GUISE_MODES.includes('innate'));
-	// the Bonus taxonomy (Austin ruled): Open/Opposed/Group only — Accuracy and Magic are excluded
-	assert.deepEqual(BONUS_CHECK_TYPES.map((t) => t.key), ['open', 'opposed', 'group']);
-	assert.ok(BONUS_CHECK_TYPES.every((t) => t.key && t.label));
-	assert.equal(mod.isBonusCheckType('accuracy'), false);
-	assert.equal(mod.isBonusCheckType('magic'), false);
-	assert.equal(mod.isBonusCheckType('open'), true);
+	// v0.7.4: Perk and Bonus are free text now — no fixed Perk list, no Bonus check-type taxonomy.
+	assert.equal(mod.PERK_LIST, undefined);
+	assert.equal(mod.BONUS_CHECK_TYPES, undefined);
+});
+
+// --- v0.7.4: per-skill SL cap (the live-builder bug) --------------------------
+test('validateGuiseDraft rejects a single skill set above its own max SL', () => {
+	const d = threeClasses(emptyGuiseDraft());
+	const key = draftKey(CU('a'), 'Compendium.x.skills.Item.s1');
+	d.sl[key] = 7;
+	const skillMax = { 'Compendium.x.skills.Item.s1': 5 };
+	const v = validateGuiseDraft(d, 'worn', skillMax);
+	assert.equal(v.ok, false);
+	assert.ok(v.errors.some((e) => /above its max/i.test(e)));
+	// within max → ok
+	d.sl[key] = 5;
+	assert.equal(validateGuiseDraft(d, 'worn', skillMax).ok, true);
+});
+
+test('guiseDraftToData clamps an over-max single skill down to its max SL', () => {
+	const d = threeClasses(emptyGuiseDraft());
+	const key = draftKey(CU('a'), 'Compendium.x.skills.Item.s1');
+	d.sl[key] = 99;
+	const data = guiseDraftToData(d, { 'Compendium.x.skills.Item.s1': 4 }, 30);
+	assert.equal(data.classes.find((c) => c.classUuid === CU('a')).skills[0].sl, 4); // capped, not 99
 });
 
 // --- retained affinity-set helpers (still exported; used by the runtime collected-library API) ---
