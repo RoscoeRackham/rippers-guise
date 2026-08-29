@@ -273,3 +273,7 @@
 
 .application.guise-builder .gb-error { color: #c8102a; font-size: 0.85rem; margin: 0.15rem 0; }
 .application.guise-builder .gb-error-h { color: #c8102a; }
+
+/* v0.7.1 — Hunter Weapon authoring (Innate mode) */
+.application.guise-builder .gb-hunter label { display: flex; align-items: center; gap: 0.5rem; margin: 0.25rem 0; }
+.application.guise-builder .gb-hunter input[type="text"], .application.guise-builder .gb-hunter select { flex: 1; }

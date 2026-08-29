@@ -89,6 +89,18 @@
 					{{/if}}
 					<div class="guise-drop gb-drop" data-guise-drop="heroic">{{localize "RIPPERS.Builder.DropHeroic"}}</div>
 				</fieldset>
+				<fieldset class="gb-hunter">
+					<legend>{{localize "RIPPERS.Builder.HunterWeapon"}}</legend>
+					<p class="gb-hint">{{localize "RIPPERS.Builder.HunterWeaponHint"}}</p>
+					{{#if loadout.hunterName}}
+						<div class="gb-chip"><i class="fas fa-gavel"></i> {{loadout.hunterName}} <a data-action="clearHunter" title="{{localize "RIPPERS.Builder.Clear"}}"><i class="fas fa-times"></i></a></div>
+					{{/if}}
+					<div class="guise-drop gb-drop" data-guise-drop="hunter">{{localize "RIPPERS.Builder.DropHunter"}}</div>
+					<label>{{localize "RIPPERS.Builder.HWMaterial"}}
+						<select class="guise-hw-material">{{#each loadout.hwMaterialOpts}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
+					</label>
+					<label>{{localize "RIPPERS.Builder.HWOrigin"}} <input type="text" data-draft="hunterOrigin" value="{{loadout.hunterOrigin}}" placeholder="{{localize "RIPPERS.Builder.HWOriginHint"}}" /></label>
+				</fieldset>
 			{{else}}
 				<fieldset class="gb-equipment">
 					<legend>{{localize "RIPPERS.Builder.Equipment"}}</legend>
@@ -170,6 +182,7 @@
 					<div class="gb-review-v">{{#each review.specialties}}<span class="gb-review-skill">{{this}}</span>{{/each}}</div>
 				{{/if}}
 				{{#if review.heroic}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.InnateHeroic"}}</span><span class="gb-review-v">{{review.heroic}}</span></div>{{/if}}
+				{{#if review.hunterWeapon}}<div class="gb-review-row"><span class="gb-review-k">{{localize "RIPPERS.Builder.HunterWeapon"}}</span><span class="gb-review-v">{{review.hunterWeapon.name}}{{#if review.hunterWeapon.material}} · {{review.hunterWeapon.material}}{{/if}}{{#if review.hunterWeapon.origin}} · {{review.hunterWeapon.origin}}{{/if}}</span></div>{{/if}}
 
 				{{#if isWorn}}
 					{{#if review.equipment.length}}

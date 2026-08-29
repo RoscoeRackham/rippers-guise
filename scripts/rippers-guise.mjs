@@ -1308,6 +1308,29 @@ const SPECIALTY_LIST = Object.freeze([
 ]);
 const SPECIALTY_COUNT = 2;
 
+// SPECIALTY die-bump (v0.7.1, Austin ROS-24 follow-up). Canon (core §"Specialties"): an in-subject
+// Check improves the die size of ONE die. Austin's ruling: it must NOT apply to Magic or Accuracy
+// checks — only Open/skill/exploration/social/etc. Subject-match is a human judgment, so the player
+// ARMS the bump for their next check; the prepareCheck hook applies it iff the check type is eligible.
+// FU check types: attribute · accuracy · magic · open · opposed · group · support · ritual · display.
+const SPECIALTY_EXCLUDED_CHECKS = Object.freeze(['magic', 'accuracy', 'display']); // display isn't a real check
+const specialtyBumpEligible = (checkType) => !!checkType && !SPECIALTY_EXCLUDED_CHECKS.includes(checkType);
+const CHECK_DIE_SIZES = Object.freeze([6, 8, 10, 12]); // FU attribute dice (d20 = Apex, not a Specialty target)
+/** Improve an attribute die one size, capped at d12. Unknown faces pass through. Pure. */
+function improveDieSize(faces) {
+	const i = CHECK_DIE_SIZES.indexOf(Number(faces));
+	return i >= 0 && i < CHECK_DIE_SIZES.length - 1 ? CHECK_DIE_SIZES[i + 1] : Number(faces);
+}
+/** Which die (primary|secondary) the bump lands on: the preferred attribute if it's in the check, else primary. Pure. */
+function chooseBumpSlot(check, preferred) {
+	if (preferred) { if (check?.primary === preferred) return 'primary'; if (check?.secondary === preferred) return 'secondary'; }
+	return 'primary';
+}
+
+// Hunter Weapon materials (Innate-mode authoring, v0.7.1). The five canon materials; each IS the bane
+// key the damage engine reads (HW_MATERIAL_BANE, defined below); 'cursed' = GM-authored bane.
+const HW_MATERIALS = Object.freeze(['silver', 'cold_iron', 'consecrated', 'wood', 'cursed']);
+
 // D-Bonus PROVISIONAL taxonomy (Q3 — Austin to confirm/adjust live). Core §2: "A Bonus — +3 to one
 // type of Check." Grounded in Fabula Ultima's own check taxonomy (the roller's Accuracy / Magic /
 // Open / Opposed / Group). Stored as data; accuracy/magic map cleanly to PFU system.bonuses.accuracy.*
@@ -1380,8 +1403,9 @@ function emptyGuiseDraft() {
 		perks: [], bonus: { type: '', value: BONUS_VALUE }, tell: '', bane: '', flaw: '',
 		// affinity TRIO (Q7) — element keys or '' ; Absorption is never representable
 		affinityImmunity: '', affinityVulnerability: '', affinityResistance: '',
-		// innate-guise fields (Q1)
+		// innate-guise fields (Q1) + the Hunter Weapon (v0.7.1)
 		specialties: [], innateHeroicUuid: '',
+		hunterWeaponUuid: '', hunterWeaponName: '', hunterMaterial: '', hunterOrigin: '',
 	};
 }
 
@@ -1430,12 +1454,15 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 	// — only Specialties + the creation Heroic (heroic assigned actor-side in createGuiseFromDraft).
 	if (mode === 'innate') {
 		const specialties = (draft.specialties ?? []).filter((s) => SPECIALTY_LIST.includes(s)).slice(0, SPECIALTY_COUNT);
+		const hunterMaterial = HW_MATERIALS.includes(draft.hunterMaterial) ? draft.hunterMaterial : '';
 		return {
 			mode, identity: draft.name ?? '', role: draft.role ?? '', nature: '', notes: draft.notes ?? '',
 			classes, equipment: [], affinityModifiers: [],
 			affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
 			perks: [], bonus: null, tell: '', bane: '', flaw: '',
 			specialties, innateHeroicUuid: draft.innateHeroicUuid ?? '',
+			// Hunter Weapon (v0.7.1): the weapon is materialised + marked in createGuiseFromDraft.
+			hunterWeaponUuid: draft.hunterWeaponUuid ?? '', hunterMaterial, hunterOrigin: draft.hunterOrigin ?? '',
 		};
 	}
 
@@ -1485,6 +1512,21 @@ async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false 
 				}
 			}
 		} catch (err) { console.warn('[rippers-guise] innate creation-heroic assignment failed:', err); }
+	}
+	// Innate-Guise mode (v0.7.1): materialise the Hunter Weapon as an owned Item and mark it
+	// (setHunterWeapon sets isHunterWeapon + material→bane key + origin). The Hunter Weapon belongs
+	// to the CHARACTER, not the guise, so it is a plain owned weapon (not a guise-origin item).
+	if (item && mode === 'innate' && draft.hunterWeaponUuid) {
+		try {
+			const src = await safeFromUuid(draft.hunterWeaponUuid);
+			if (src && (src.type === 'weapon' || src.type === 'customWeapon')) {
+				const obj = src.toObject(); delete obj._id;
+				const [weapon] = await actor.createEmbeddedDocuments('Item', [obj]);
+				if (weapon) await setHunterWeapon(weapon, { material: data.hunterMaterial || undefined, origin: data.hunterOrigin || undefined });
+			} else {
+				ui.notifications?.warn('The Hunter Weapon must be a weapon Item.');
+			}
+		} catch (err) { console.warn('[rippers-guise] Hunter Weapon materialisation failed:', err); }
 	}
 	if (item && bind) await bindGuise(actor, item);
 	return item;
@@ -1613,11 +1655,16 @@ function getGuiseBuilderApp() {
 			const specialtyOpts = SPECIALTY_LIST.map((s) => ({ name: s, checked: (this._draft.specialties ?? []).includes(s) }));
 			const specialtyCount = (this._draft.specialties ?? []).filter(Boolean).length;
 			const heroicName = this._draft.innateHeroicUuid ? (this._draft.innateHeroicName || this._draft.innateHeroicUuid) : '';
+			const hwMaterialOpts = [{ value: '', label: game.i18n.localize('RIPPERS.Builder.HWMaterialNone') }]
+				.concat(HW_MATERIALS.map((m) => ({ value: m, label: game.i18n.localize(`RIPPERS.Builder.HWMat.${m}`) })))
+				.map((o) => ({ ...o, selected: o.value === (this._draft.hunterMaterial || '') }));
 			const loadout = {
 				equipment, perkOpts,
 				bonusOpts, bonusValue: BONUS_VALUE,
 				tell: this._draft.tell ?? '', bane: this._draft.bane ?? '', flaw: this._draft.flaw ?? '',
 				specialtyOpts, specialtyCount, specialtyMax: SPECIALTY_COUNT, heroicName,
+				hunterName: this._draft.hunterWeaponUuid ? (this._draft.hunterWeaponName || this._draft.hunterWeaponUuid) : '',
+				hwMaterialOpts, hunterOrigin: this._draft.hunterOrigin ?? '',
 			};
 
 			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties) ----
@@ -1643,6 +1690,9 @@ function getGuiseBuilderApp() {
 				bonus: (!isInnate && this._draft.bonus?.type) ? (BONUS_CHECK_TYPES.find((t) => t.key === this._draft.bonus.type)?.label ?? '') : '',
 				tell: isInnate ? '' : (this._draft.tell || ''), bane: isInnate ? '' : (this._draft.bane || ''), flaw: isInnate ? '' : (this._draft.flaw || ''),
 				specialties: isInnate ? (this._draft.specialties ?? []) : [], heroic: isInnate ? heroicName : '',
+				hunterWeapon: (isInnate && this._draft.hunterWeaponUuid)
+					? { name: this._draft.hunterWeaponName || this._draft.hunterWeaponUuid, material: this._draft.hunterMaterial || '', origin: this._draft.hunterOrigin || '' }
+					: null,
 				errors: validation.errors, spent, budget,
 			};
 
@@ -1731,6 +1781,13 @@ function getGuiseBuilderApp() {
 			root.querySelectorAll('[data-action="clearHeroic"]').forEach((a) => a.addEventListener('click', (ev) => {
 				ev.preventDefault(); this._draft.innateHeroicUuid = ''; this._draft.innateHeroicName = ''; this.render();
 			}));
+			// Hunter Weapon (innate mode): material select, origin text, clear
+			root.querySelectorAll('select.guise-hw-material').forEach((sel) => sel.addEventListener('change', () => {
+				this._draft.hunterMaterial = HW_MATERIALS.includes(sel.value) ? sel.value : ''; this.render();
+			}));
+			root.querySelectorAll('[data-action="clearHunter"]').forEach((a) => a.addEventListener('click', (ev) => {
+				ev.preventDefault(); this._draft.hunterWeaponUuid = ''; this._draft.hunterWeaponName = ''; this.render();
+			}));
 
 			// ---- drop targets: equipment (worn) + creation heroic (innate) ----
 			root.querySelectorAll('[data-guise-drop]').forEach((zone) => {
@@ -1748,6 +1805,9 @@ function getGuiseBuilderApp() {
 						if (doc.type !== 'heroic') { ui.notifications?.warn('The Innate Guise heroic must be a Heroic Skill.'); return; }
 						if (heroicIsCreationBanned(doc)) { ui.notifications?.warn(`"${doc.name}" cannot be taken as a creation heroic.`); return; }
 						this._draft.innateHeroicUuid = data.uuid; this._draft.innateHeroicName = doc.name;
+					} else if (zone.dataset.guiseDrop === 'hunter') {
+						if (doc.type !== 'weapon' && doc.type !== 'customWeapon') { ui.notifications?.warn('The Hunter Weapon must be a weapon Item.'); return; }
+						this._draft.hunterWeaponUuid = data.uuid; this._draft.hunterWeaponName = doc.name;
 					}
 					this.render();
 				});
@@ -1908,6 +1968,10 @@ function defineGuiseModel() {
 				// innate-guise grants (Q1): two Specialties + the creation Heroic (assigned actor-side)
 				specialties: new ArrayField(new StringField({ initial: '' })),
 				innateHeroicUuid: new StringField({ initial: '' }),
+				// Hunter Weapon record (v0.7.1); the weapon Item itself is materialised + flagged on the actor
+				hunterWeaponUuid: new StringField({ initial: '' }),
+				hunterMaterial: new StringField({ initial: '' }),
+				hunterOrigin: new StringField({ initial: '' }),
 				// classes + per-skill allocation (D1: UUID refs to the compendium)
 				classes: new ArrayField(new SchemaField({
 					classUuid: new StringField({ initial: '' }),
@@ -2202,9 +2266,87 @@ Hooks.once('setup', () => {
 	loader([`modules/${MODULE_ID}/templates/guise-sheet.hbs`, `modules/${MODULE_ID}/templates/benefit-picker.hbs`, `modules/${MODULE_ID}/templates/guise-builder.hbs`]);
 });
 
+// ---------------------------------------------------------------------------
+// SPECIALTY die-bump runtime (v0.7.1). The two Specialties live on the character's INNATE guise
+// (system.data.specialties). The player ARMS the bump for their next check (a macro/API call —
+// subject-match is their judgment); FU's prepareCheck hook applies it iff the check type is eligible
+// (Austin: never Magic or Accuracy). Because FU builds the roll die from actor.system.attributes[attr]
+// .current at roll time (checks/checks.mjs rollCheck), the bump is a TRANSIENT in-memory raise of that
+// .current one size, recorded per check.id and restored in processCheck (post-roll; the follow-up
+// unsetFlag re-derives .current from .base anyway). No persisted write happens before the roll.
+const SPECIALTY_ARM_FLAG = 'specialtyBump';        // {attribute?} — armed for the actor's next check
+const _specialtyBumped = new Map();                // check.id -> { actorId, attr, old }
+
+/** The actor's Innate guise item (mode 'innate' / flag isInnate), or null. */
+function actorInnateGuise(actor) {
+	return Array.from(actor?.items ?? []).find((i) => isGuiseItem(i) && (i.getFlag?.(MODULE_ID, 'isInnate') || i.system?.data?.mode === 'innate')) ?? null;
+}
+/** The character's two Specialties (from the Innate guise). [] if none. */
+function actorSpecialties(actor) {
+	const g = actorInnateGuise(actor);
+	const s = g?.system?.data?.specialties;
+	return Array.isArray(s) ? s.filter(Boolean) : [];
+}
+/** Arm the Specialty die-bump for the actor's NEXT eligible check (macro/API). `attribute` optional. */
+async function armSpecialtyDieBump(actor, { attribute } = {}) {
+	if (!actor) { ui.notifications?.warn('No actor to arm the Specialty die-bump on.'); return { ok: false }; }
+	if (!actorSpecialties(actor).length) { ui.notifications?.warn('This character has no Specialties (author them on the Innate Guise).'); return { ok: false, reason: 'no specialties' }; }
+	await actor.setFlag(MODULE_ID, SPECIALTY_ARM_FLAG, { attribute: attribute ?? null });
+	ui.notifications?.info(game.i18n?.localize?.('RIPPERS.Specialty.Armed') ?? 'Specialty armed: your next Open/skill Check improves one die (not Magic or Accuracy).');
+	return { ok: true };
+}
+async function disarmSpecialtyDieBump(actor) { if (actor?.getFlag?.(MODULE_ID, SPECIALTY_ARM_FLAG)) await actor.unsetFlag(MODULE_ID, SPECIALTY_ARM_FLAG); }
+
+/** prepareCheck handler: apply an armed, eligible Specialty die-bump by transiently raising the die. */
+function onPrepareCheckSpecialty(check, actor) {
+	try {
+		if (!actor || !check) return;
+		const armed = actor.getFlag?.(MODULE_ID, SPECIALTY_ARM_FLAG);
+		if (!armed) return;
+		if (!specialtyBumpEligible(check.type)) {
+			ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Specialty.NotHere') ?? 'A Specialty does not improve Magic or Accuracy Checks. Die-bump not applied — still armed.');
+			return; // leave it armed for a later eligible check
+		}
+		if (!actorSpecialties(actor).length) return;
+		const slot = chooseBumpSlot(check, armed.attribute);
+		const attr = check[slot];
+		const node = actor.system?.attributes?.[attr];
+		const cur = Number(node?.current);
+		const up = improveDieSize(cur);
+		if (node && up > cur) {
+			node.current = up; // transient — rollCheck reads this next; restored in processCheck
+			_specialtyBumped.set(check.id, { actorId: actor.id, attr, old: cur });
+		}
+	} catch (err) { console.error('[rippers-guise] specialty die-bump (prepareCheck) failed:', err); }
+}
+/** processCheck handler: restore the transient die and consume the arm (post-roll — a DB write is safe here). */
+async function onProcessCheckSpecialty(result, actor) {
+	try {
+		const rec = _specialtyBumped.get(result?.id);
+		if (!rec) return;
+		_specialtyBumped.delete(result.id);
+		const node = actor?.system?.attributes?.[rec.attr];
+		if (node && Number(node.current) !== rec.old) node.current = rec.old;
+		if (actor?.getFlag?.(MODULE_ID, SPECIALTY_ARM_FLAG)) {
+			await actor.unsetFlag(MODULE_ID, SPECIALTY_ARM_FLAG); // consume — re-derives .current from .base
+			await ChatMessage.create({
+				speaker: ChatMessage.implementation.getSpeaker({ actor }),
+				content: `<div class="rippers-guise-card"><strong>${esc(actor.name)}</strong> draws on a Specialty — one die improved for this ${esc(result?.type ?? 'check')}.</div>`,
+			});
+		}
+	} catch (err) { console.error('[rippers-guise] specialty die-bump (processCheck) failed:', err); }
+}
+/** Register the FU check hooks. Resolves CheckHooks at ready (FU is live), falls back to the string names. */
+function registerSpecialtyBumpHooks() {
+	const CH = globalThis.game?.projectfu?.CheckHooks ?? {};
+	Hooks.on(CH.prepareCheck ?? 'projectfu.prepareCheck', onPrepareCheckSpecialty);
+	Hooks.on(CH.processCheck ?? 'projectfu.processCheck', onProcessCheckSpecialty);
+}
+
 Hooks.once('ready', async () => {
+	registerSpecialtyBumpHooks();
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, actorSpecialties, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -2221,3 +2363,5 @@ export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, 
 export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, PERK_LIST, SPECIALTY_LIST, SPECIALTY_COUNT, BONUS_CHECK_TYPES, BONUS_VALUE, isBonusCheckType, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
+// v0.7.1 follow-up — Specialty die-bump (excl. magic/accuracy) + Hunter-Weapon-in-Innate authoring.
+export { SPECIALTY_EXCLUDED_CHECKS, specialtyBumpEligible, CHECK_DIE_SIZES, improveDieSize, chooseBumpSlot, HW_MATERIALS, actorInnateGuise, actorSpecialties };
