@@ -402,7 +402,13 @@ async function _bindCore(actor, item) {
 async function _dismissCore(actor, item, { silent = false } = {}) {
 	const owned = actor.getFlag(MODULE_ID, 'owned')?.[item.id] ?? [];
 	const preBindEquip = actor.getFlag(MODULE_ID, 'preBindEquip') ?? {};
-	const existing = owned.filter((id) => actor.items.get(id));
+	// ROS-29 guard: only guise-origin materialised items are removed on dismiss — NEVER the character's
+	// Hunter Weapon (a plain owned weapon) or an Innate-Guise item, even if one were mis-tracked in
+	// `owned`. Both must survive every swap. (Belt-and-suspenders: today neither is ever added to owned.)
+	const existing = owned.filter((id) => {
+		const it = actor.items.get(id);
+		return it && !isHunterWeapon(it) && !isGuiseItem(it);
+	});
 	if (existing.length) await actor.deleteEmbeddedDocuments('Item', existing);
 	// Wake the innate skill set back up (Stage B) + the creation heroic (8c) before clearing state.
 	await restoreInnateSkills(actor);
@@ -2382,11 +2388,22 @@ async function promptSpecialtyAttribute() {
 function actorInnateGuise(actor) {
 	return Array.from(actor?.items ?? []).find((i) => isGuiseItem(i) && (i.getFlag?.(MODULE_ID, 'isInnate') || i.system?.data?.mode === 'innate')) ?? null;
 }
-/** The character's two Specialties (from the Innate guise). [] if none. */
+/** The character's two Specialties (from the Innate guise). [] if none.
+ *  ROS-29 invariant: this reads the innate-guise ITEM by mode, NOT the active-guise flag, so the
+ *  Specialties are the same whichever worn mask is bound (or none). The swap machinery
+ *  (bind/dismiss) never touches system.data.specialties, so they persist across guise changes. */
 function actorSpecialties(actor) {
 	const g = actorInnateGuise(actor);
 	const s = g?.system?.data?.specialties;
 	return Array.isArray(s) ? s.filter(Boolean) : [];
+}
+/** The character's Hunter Weapon Item (marked isHunterWeapon), or null. ROS-29 invariant: it is a
+ *  plain CHARACTER-owned weapon (never a guise-origin `owned` item), so a worn-mask swap can never
+ *  delete or rewrite it — it is found by its flag regardless of which guise is active. A mask may
+ *  displace it from the character's HANDS while worn (the mask carries its own weapons); it returns
+ *  to its slot on dismiss. The item and its flag are invariant throughout. */
+function actorHunterWeapon(actor) {
+	return Array.from(actor?.items ?? []).find((i) => isHunterWeapon(i)) ?? null;
 }
 /** Arm the Specialty die-bump for the actor's NEXT eligible check (macro/API). `attribute` optional. */
 async function armSpecialtyDieBump(actor, { attribute } = {}) {
@@ -2447,7 +2464,7 @@ function registerSpecialtyBumpHooks() {
 Hooks.once('ready', async () => {
 	registerSpecialtyBumpHooks();
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, actorSpecialties, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, actorSpecialties, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -2468,5 +2485,7 @@ export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, BON
 export { guiseStepErrors, draftRawSpent, draftClassSpent, SPECIALTY_ATTRIBUTES };
 // v0.7.1 follow-up — Specialty die-bump (excl. magic/accuracy) + Hunter-Weapon-in-Innate authoring.
 export { SPECIALTY_EXCLUDED_CHECKS, specialtyBumpEligible, CHECK_DIE_SIZES, improveDieSize, chooseBumpSlot, HW_MATERIALS, actorInnateGuise, actorSpecialties };
+// ROS-29 — character-invariant reads of the Specialty source (innate guise) + the Hunter Weapon.
+export { actorHunterWeapon };
 // v0.7.3 — Specialty arm/disarm (sheet button + macro/API).
 export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };

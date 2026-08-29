@@ -21,6 +21,7 @@ const {
 	specialtyBumpEligible, SPECIALTY_EXCLUDED_CHECKS, improveDieSize, CHECK_DIE_SIZES, chooseBumpSlot,
 	HW_MATERIALS, emptyGuiseDraft, guiseDraftToData, SPECIALTY_LIST, validateGuiseDraft,
 	actorSpecialties, armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG, draftKey,
+	actorHunterWeapon, isHunterWeapon,
 } = mod;
 
 const CU = (n) => `Compendium.x.classes.Item.${n}`;
@@ -125,4 +126,57 @@ test('armSpecialtyDieBump refuses a character with no Specialties', async () => 
 	const r = await armSpecialtyDieBump(actor);
 	assert.equal(r.ok, false);
 	assert.equal(actor.getFlag('rippers-guise', SPECIALTY_ARM_FLAG), undefined);
+});
+
+// --- ROS-29: Specialties + Hunter Weapon are INVARIANT across guise swaps -----
+// A worn-mask swap only flips the active-guise flag (and materialises/removes the mask's OWN skills
+// and equipment). The Specialties live on the Innate-guise item and the Hunter Weapon is a plain
+// character-owned weapon — neither is keyed off the active flag, so both survive A→B→none.
+function makeWeapon(id, flags = {}) {
+	return { id, type: 'weapon', getFlag: (_m, k) => flags[k], _flags: flags };
+}
+function guiseItem(id, mode) {
+	return { id, type: 'classFeature', system: { featureType: 'rippers-guise.guise', data: { mode, specialties: mode === 'innate' ? ['Arts', 'Seamanship'] : [] } }, getFlag: (_m, k) => (k === 'isInnate' ? mode === 'innate' : null) };
+}
+function stubSwapActor() {
+	const flags = { activeGuise: null };
+	const innate = guiseItem('innate1', 'innate');
+	const maskA = guiseItem('maskA', 'worn');
+	const maskB = guiseItem('maskB', 'worn');
+	const hw = makeWeapon('hw1', { isHunterWeapon: true, hunter: { material: 'silver', baneKey: 'silver' } });
+	return {
+		items: [innate, maskA, maskB, hw],
+		getFlag: (_m, k) => flags[k],
+		setFlag: async (_m, k, v) => { flags[k] = v; },
+		unsetFlag: async (_m, k) => { delete flags[k]; },
+		_flags: flags,
+	};
+}
+
+test('actorHunterWeapon finds the character-owned marked weapon regardless of active guise', () => {
+	const a = stubSwapActor();
+	assert.equal(isHunterWeapon(a.items[3]), true);
+	assert.equal(actorHunterWeapon(a).id, 'hw1');
+	assert.equal(actorHunterWeapon({ items: [] }), null);
+});
+
+test('Specialties + Hunter Weapon stay invariant through a swap A → B → none', () => {
+	const a = stubSwapActor();
+	const readSpecs = () => actorSpecialties(a);
+	const readHW = () => { const w = actorHunterWeapon(a); return w && { id: w.id, marked: isHunterWeapon(w) }; };
+	// no mask
+	assert.deepEqual(readSpecs(), ['Arts', 'Seamanship']);
+	assert.deepEqual(readHW(), { id: 'hw1', marked: true });
+	// bind mask A
+	a._flags.activeGuise = 'maskA';
+	assert.deepEqual(readSpecs(), ['Arts', 'Seamanship']);
+	assert.deepEqual(readHW(), { id: 'hw1', marked: true });
+	// swap to mask B
+	a._flags.activeGuise = 'maskB';
+	assert.deepEqual(readSpecs(), ['Arts', 'Seamanship']);
+	assert.deepEqual(readHW(), { id: 'hw1', marked: true });
+	// dismiss (none)
+	a._flags.activeGuise = null;
+	assert.deepEqual(readSpecs(), ['Arts', 'Seamanship']);
+	assert.deepEqual(readHW(), { id: 'hw1', marked: true });
 });
