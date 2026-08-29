@@ -20,10 +20,24 @@ const mod = await import('../scripts/rippers-guise.mjs');
 const {
 	specialtyBumpEligible, SPECIALTY_EXCLUDED_CHECKS, improveDieSize, CHECK_DIE_SIZES, chooseBumpSlot,
 	HW_MATERIALS, emptyGuiseDraft, guiseDraftToData, SPECIALTY_LIST, validateGuiseDraft,
+	actorSpecialties, armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG,
 } = mod;
 
 const CU = (n) => `Compendium.x.classes.Item.${n}`;
 const threeClasses = (d) => { d.classUuids = [CU('a'), CU('b'), CU('c')]; return d; };
+
+// A minimal FU-ish actor whose Innate guise holds Specialties. Flags stored in a plain object.
+function stubActorWithSpecialties(specs = ['Medicine', 'Mechanics & Electrical Work']) {
+	const flags = {};
+	const innate = { type: 'classFeature', system: { featureType: 'rippers-guise.guise', data: { mode: 'innate', specialties: specs } }, getFlag: () => null };
+	return {
+		items: [innate],
+		getFlag: (_m, k) => flags[k],
+		setFlag: async (_m, k, v) => { flags[k] = v; },
+		unsetFlag: async (_m, k) => { delete flags[k]; },
+		_flags: flags,
+	};
+}
 
 // --- Specialty die-bump eligibility (Austin: NOT Magic or Accuracy) -----------
 test('specialtyBumpEligible excludes exactly magic/accuracy/display, allows the rest', () => {
@@ -87,4 +101,26 @@ test('a WORN draft never carries Hunter-Weapon or Specialty data', () => {
 	assert.deepEqual(data.specialties, []);
 	// and the Hunter Weapon has no bearing on worn-guise validity (trio still governs)
 	assert.equal(validateGuiseDraft(d, 'worn').ok, true);
+});
+
+// --- v0.7.3 arm/disarm (sheet button + macro) ---------------------------------
+test('actorSpecialties reads the two Specialties off the Innate guise', () => {
+	assert.deepEqual(actorSpecialties(stubActorWithSpecialties(['Arts', 'Seamanship'])), ['Arts', 'Seamanship']);
+	assert.deepEqual(actorSpecialties({ items: [] }), []); // no innate guise → none
+});
+
+test('armSpecialtyDieBump sets the arm flag when the character has Specialties; disarm clears it', async () => {
+	const actor = stubActorWithSpecialties();
+	const r = await armSpecialtyDieBump(actor, { attribute: 'ins' });
+	assert.equal(r.ok, true);
+	assert.deepEqual(actor.getFlag('rippers-guise', SPECIALTY_ARM_FLAG), { attribute: 'ins' });
+	await disarmSpecialtyDieBump(actor);
+	assert.equal(actor.getFlag('rippers-guise', SPECIALTY_ARM_FLAG), undefined);
+});
+
+test('armSpecialtyDieBump refuses a character with no Specialties', async () => {
+	const actor = { items: [], getFlag: () => undefined, setFlag: async () => {}, unsetFlag: async () => {} };
+	const r = await armSpecialtyDieBump(actor);
+	assert.equal(r.ok, false);
+	assert.equal(actor.getFlag('rippers-guise', SPECIALTY_ARM_FLAG), undefined);
 });

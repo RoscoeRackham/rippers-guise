@@ -116,6 +116,8 @@
 	"RIPPERS.Builder.HWMat.cursed": "Cursed (GM-authored bane)",
 	"RIPPERS.Builder.HWOrigin": "Origin",
 	"RIPPERS.Builder.HWOriginHint": "what it was made from",
+	"RIPPERS.Specialty.Arm": "Specialty",
+	"RIPPERS.Specialty.Disarm": "Specialty ✓",
 	"RIPPERS.Specialty.Armed": "Specialty armed: your next Open/skill Check improves one die (not Magic or Accuracy).",
 	"RIPPERS.Specialty.NotHere": "A Specialty does not improve Magic or Accuracy Checks — die-bump not applied (still armed).",
 	"RIPPERS.Clot.DefaultName": "Clot",

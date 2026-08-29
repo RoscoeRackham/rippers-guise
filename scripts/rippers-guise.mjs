@@ -1072,6 +1072,10 @@ function guiseSummary(item) {
 function buildGuisePanel(actor) {
 	const guises = actor.items.filter(isGuiseItem);
 	const activeId = getActiveGuise(actor);
+	// v0.7.3: the Specialty die-bump arm/disarm control — shown only when the character has Specialties
+	// (authored on their Innate Guise). One click arms the next Open/skill Check (excl. magic/accuracy).
+	const specialties = actorSpecialties(actor);
+	const specialtyArmed = !!actor.getFlag?.(MODULE_ID, SPECIALTY_ARM_FLAG);
 	const panel = document.createElement('div');
 	panel.className = 'rippers-guise-panel';
 	const rows = guises.map((g) => {
@@ -1090,13 +1094,25 @@ function buildGuisePanel(actor) {
 			</button>
 		</div>`;
 	}).join('');
+	const specialtyBtn = specialties.length
+		? `<button type="button" class="guise-specialty-arm${specialtyArmed ? ' is-active' : ''}" title="${esc(specialties.join(' · '))}">${game.i18n.localize(specialtyArmed ? 'RIPPERS.Specialty.Disarm' : 'RIPPERS.Specialty.Arm')}</button>`
+		: '';
 	panel.innerHTML = `<header class="items-main-header rippers-guise-header">
 			<span class="items-main"><label class="items-label">${game.i18n.localize('RIPPERS.Guise.PanelTitle')}</label></span>
+			${specialtyBtn}
 			<button type="button" class="guise-build">${game.i18n.localize('RIPPERS.Builder.Build')}</button>
 		</header>
 		<div class="rippers-guise-list">${rows || `<p class="rippers-guise-empty">${game.i18n.localize('RIPPERS.Guise.NoGuises')}</p>`}</div>`;
 	// The Build button opens the player-facing Guise Builder wizard.
 	panel.querySelector('.guise-build')?.addEventListener('click', (ev) => { ev.preventDefault(); openGuiseBuilder(actor); });
+	// The Specialty button arms/disarms the die-bump for the next check (the flag change re-renders the sheet).
+	panel.querySelector('.guise-specialty-arm')?.addEventListener('click', async (ev) => {
+		ev.preventDefault(); ev.currentTarget.disabled = true;
+		try {
+			if (actor.getFlag(MODULE_ID, SPECIALTY_ARM_FLAG)) await disarmSpecialtyDieBump(actor);
+			else await armSpecialtyDieBump(actor);
+		} catch (err) { console.error('[rippers-guise] specialty arm toggle failed:', err); ev.currentTarget.disabled = false; }
+	});
 	// Wire each button to the EXISTING setActiveGuise (bind/dismiss/swap).
 	panel.querySelectorAll('.guise-toggle').forEach((btn) => {
 		btn.addEventListener('click', async (ev) => {
@@ -2363,3 +2379,5 @@ export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, PERK_LIST, SPECIALTY_LIST, SPECIALTY_COUNT, BONUS_CHECK_TYPES, BONUS_VALUE, isBonusCheckType, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.1 follow-up — Specialty die-bump (excl. magic/accuracy) + Hunter-Weapon-in-Innate authoring.
 export { SPECIALTY_EXCLUDED_CHECKS, specialtyBumpEligible, CHECK_DIE_SIZES, improveDieSize, chooseBumpSlot, HW_MATERIALS, actorInnateGuise, actorSpecialties };
+// v0.7.3 — Specialty arm/disarm (sheet button + macro/API).
+export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
