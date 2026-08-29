@@ -199,6 +199,13 @@
 
 	</div>{{! /.gb-scroll }}
 
+	{{! v0.7.6: surface THIS step's guardrail errors inline, and gate its Next button on them. }}
+	{{#if stepErrors.length}}
+		<div class="gb-step-errors">
+			{{#each stepErrors}}<p class="gb-error"><i class="fas fa-triangle-exclamation"></i> {{this}}</p>{{/each}}
+		</div>
+	{{/if}}
+
 	<footer class="gb-footer">
 		{{#unless isFirst}}<button type="button" class="gb-nav-back" data-action="back"><i class="fas fa-arrow-left"></i> {{localize "RIPPERS.Builder.Back"}}</button>{{/unless}}
 		<span class="gb-nav-spacer"></span>
@@ -206,7 +213,7 @@
 			<button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-mask"></i> {{localize "RIPPERS.Builder.Create"}}</button>
 			<button type="button" data-action="createBind" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-user-secret"></i> {{localize "RIPPERS.Builder.CreateBind"}}</button>
 		{{else}}
-			<button type="button" class="gb-nav-next" data-action="next">{{localize "RIPPERS.Builder.Next"}} <i class="fas fa-arrow-right"></i></button>
+			<button type="button" class="gb-nav-next" data-action="next" {{#unless stepValid}}disabled{{/unless}}>{{localize "RIPPERS.Builder.Next"}} <i class="fas fa-arrow-right"></i></button>
 		{{/if}}
 	</footer>
 </div>

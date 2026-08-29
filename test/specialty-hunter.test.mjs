@@ -20,11 +20,13 @@ const mod = await import('../scripts/rippers-guise.mjs');
 const {
 	specialtyBumpEligible, SPECIALTY_EXCLUDED_CHECKS, improveDieSize, CHECK_DIE_SIZES, chooseBumpSlot,
 	HW_MATERIALS, emptyGuiseDraft, guiseDraftToData, SPECIALTY_LIST, validateGuiseDraft,
-	actorSpecialties, armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG,
+	actorSpecialties, armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG, draftKey,
 } = mod;
 
 const CU = (n) => `Compendium.x.classes.Item.${n}`;
 const threeClasses = (d) => { d.classUuids = [CU('a'), CU('b'), CU('c')]; return d; };
+// v0.7.6 min-per-class: give each of the 3 classes a cheap skill so a draft is otherwise-valid.
+const filled = (d) => { d.classUuids.filter(Boolean).forEach((cU, i) => { d.sl[draftKey(cU, `Compendium.x.skills.Item.fill${i}`)] = 1; }); return d; };
 
 // A minimal FU-ish actor whose Innate guise holds Specialties. Flags stored in a plain object.
 function stubActorWithSpecialties(specs = ['Medicine', 'Mechanics & Electrical Work']) {
@@ -94,7 +96,7 @@ test('a non-canon Hunter Weapon material is dropped on compile', () => {
 });
 
 test('a WORN draft never carries Hunter-Weapon or Specialty data', () => {
-	const d = threeClasses(emptyGuiseDraft());
+	const d = filled(threeClasses(emptyGuiseDraft()));
 	d.hunterMaterial = 'silver'; d.hunterWeaponUuid = 'x'; d.specialties = [SPECIALTY_LIST[0], SPECIALTY_LIST[1]];
 	const data = guiseDraftToData(d, {}, 30);
 	assert.equal(data.hunterWeaponUuid ?? '', '');   // worn compile omits it

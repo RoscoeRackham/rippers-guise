@@ -1109,8 +1109,14 @@ function buildGuisePanel(actor) {
 	panel.querySelector('.guise-specialty-arm')?.addEventListener('click', async (ev) => {
 		ev.preventDefault(); ev.currentTarget.disabled = true;
 		try {
-			if (actor.getFlag(MODULE_ID, SPECIALTY_ARM_FLAG)) await disarmSpecialtyDieBump(actor);
-			else await armSpecialtyDieBump(actor);
+			if (actor.getFlag(MODULE_ID, SPECIALTY_ARM_FLAG)) {
+				await disarmSpecialtyDieBump(actor);
+			} else {
+				// Let the player nominate WHICH attribute's die the Specialty improves (v0.7.6).
+				const attribute = await promptSpecialtyAttribute();
+				if (!attribute) { ev.currentTarget.disabled = false; return; } // cancelled — leave disarmed
+				await armSpecialtyDieBump(actor, { attribute });
+			}
 		} catch (err) { console.error('[rippers-guise] specialty arm toggle failed:', err); ev.currentTarget.disabled = false; }
 	});
 	// Wire each button to the EXISTING setActiveGuise (bind/dismiss/swap).
@@ -1378,17 +1384,44 @@ function validateAffinityTrio(trio) {
  * Validate a whole guise draft against the construction guardrails (Q4/Q7). Pure. mode 'worn'|'innate'.
  * Returns {ok, errors:[]} so the wizard can gate Create and show why.
  */
-function validateGuiseDraft(draft, mode = 'worn', skillMax = {}) {
+/** Total SL a draft's raw allocations would spend, ignoring caps (for the budget guardrail). */
+function draftRawSpent(draft) {
+	let n = 0;
+	for (const raw of Object.values(draft?.sl ?? {})) n += Math.max(0, Math.floor(Number(raw) || 0));
+	return n;
+}
+
+/** Raw SL allocated to one class (by classUuid), summed across its skills. Pure. */
+function draftClassSpent(draft, classUuid) {
+	let n = 0;
+	for (const [key, raw] of Object.entries(draft?.sl ?? {})) {
+		if (String(key).split(DRAFT_SEP)[0] !== classUuid) continue;
+		n += Math.max(0, Math.floor(Number(raw) || 0));
+	}
+	return n;
+}
+
+function validateGuiseDraft(draft, mode = 'worn', skillMax = {}, budget = SKILL_BUDGET_CAP) {
 	const errors = [];
 	const classes = (draft?.classUuids ?? []).filter(Boolean);
 	if (classes.length !== REQUIRED_CLASS_COUNT) errors.push(`A guise has exactly ${REQUIRED_CLASS_COUNT} classes (has ${classes.length}).`);
 	if (new Set(classes).size !== classes.length) errors.push('The three classes must be distinct.');
+	// v0.7.6: every class must carry at least one skill — no piling the whole budget into one class
+	// while the other two sit empty (god's ROS-24 live finding). Only meaningful once 3 distinct
+	// classes are chosen; otherwise the class-count error above already covers it.
+	if (classes.length === REQUIRED_CLASS_COUNT && new Set(classes).size === REQUIRED_CLASS_COUNT) {
+		if (classes.some((cU) => draftClassSpent(draft, cU) <= 0)) errors.push('Each class needs at least one skill.');
+	}
 	// v0.7.4: no individual skill may exceed its own max SL (the live-builder cap bug — Q3).
 	for (const [key, raw] of Object.entries(draft?.sl ?? {})) {
 		const skillUuid = String(key).split(DRAFT_SEP)[1];
 		const cap = Number(skillMax[skillUuid] ?? PER_CLASS_CAP);
 		if (Number(raw) > cap) { errors.push(`A skill is set to SL ${Math.floor(Number(raw))}, above its max of ${cap}.`); break; }
 	}
+	// v0.7.6: the TOTAL allocation must fit the SL budget. guiseDraftToData silently clamps to it,
+	// so without this the wizard would look valid while quietly dropping SL on Create.
+	const spent = draftRawSpent(draft);
+	if (spent > budget) errors.push(`That allocation spends ${spent} SL, over the budget of ${budget}.`);
 	if (mode === 'worn') {
 		const t = validateAffinityTrio({ immunity: draft?.affinityImmunity, vulnerability: draft?.affinityVulnerability, resistance: draft?.affinityResistance });
 		if (!t.ok) errors.push(t.reason);
@@ -1397,6 +1430,23 @@ function validateGuiseDraft(draft, mode = 'worn', skillMax = {}) {
 		if (specs.length !== SPECIALTY_COUNT) errors.push(`The Innate Guise carries exactly ${SPECIALTY_COUNT} Specialties (has ${specs.length}).`);
 	}
 	return { ok: errors.length === 0, errors };
+}
+
+/** Per-step guardrail errors, so the wizard can gate the Next button and show inline errors on the
+ *  step that owns each rule — without gating Next on the whole-draft validity (which would trap you
+ *  on step 1, where a guise legitimately has <3 classes). Pure. Returns { ok, errors } for stepKey. */
+function guiseStepErrors(draft, mode = 'worn', skillMax = {}, budget = SKILL_BUDGET_CAP, stepKey = 'review') {
+	const all = validateGuiseDraft(draft, mode, skillMax, budget).errors;
+	const has = (frag) => all.filter((e) => frag.test(e));
+	switch (stepKey) {
+		case 'identity': return { ok: true, errors: [] };
+		case 'classes': return okFrom(has(/\bclasses\b|must be distinct/i));
+		case 'skills': return okFrom(has(/at least one skill|above its max|over the budget/i));
+		case 'loadout': return okFrom(mode === 'innate' ? has(/Specialties/i) : []);
+		case 'affinities': return okFrom(mode === 'worn' ? has(/Immunity|Vulnerability|Resistance|Absorption|affinit/i) : []);
+		case 'review': default: return { ok: all.length === 0, errors: all };
+	}
+	function okFrom(errs) { return { ok: errs.length === 0, errors: errs }; }
 }
 
 function emptyGuiseDraft() {
@@ -1674,8 +1724,11 @@ function getGuiseBuilderApp() {
 				hwMaterialOpts, hunterOrigin: this._draft.hunterOrigin ?? '',
 			};
 
-			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties) ----
-			const validation = validateGuiseDraft(this._draft, mode, skillMax);
+			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties, min-per-class + budget) ----
+			const validation = validateGuiseDraft(this._draft, mode, skillMax, budget);
+			// per-step errors so the CURRENT step gates its own Next button and shows its own errors
+			// (v0.7.6 — the guardrails were computed but never consumed by the wizard chrome).
+			const stepGate = guiseStepErrors(this._draft, mode, skillMax, budget, stepKey);
 
 			// ---- review step summary (read-only) --------------------------------
 			const wordFor = (type, level) => `${capT(type)} ${affinityWordOf(level).toLowerCase()}`;
@@ -1714,6 +1767,8 @@ function getGuiseBuilderApp() {
 				stepAffinities: stepKey === 'affinities', stepReview: stepKey === 'review',
 				trio, trioValid: trioValid.ok, trioReason: trioValid.ok ? '' : trioValid.reason,
 				loadout, review, validation,
+				// v0.7.6 wizard chrome: gate Next on the current step, surface its errors inline
+				stepValid: stepGate.ok, stepErrors: stepGate.errors,
 			};
 		}
 
@@ -1839,7 +1894,9 @@ function getGuiseBuilderApp() {
 		static onNext(event) { event.preventDefault(); this._step = clampWizardStep(this._step + 1); this.render(); }
 		async _doCreate(bind) {
 			const mode = GUISE_MODES.includes(this._draft.mode) ? this._draft.mode : 'worn';
-			const v = validateGuiseDraft(this._draft, mode, this._skillMax());
+			// Belt-and-suspenders gate: recompute the FULL guardrail set (incl. min-per-class + budget)
+			// and refuse to commit an invalid guise even if a disabled button were somehow triggered.
+			const v = validateGuiseDraft(this._draft, mode, this._skillMax(), budgetOf(this.actor));
 			if (!v.ok) { ui.notifications?.warn(v.errors[0]); return; }
 			const item = await createGuiseFromDraft(this.actor, this._draft, { skillMax: this._skillMax(), bind });
 			if (item) { ui.notifications?.info(`Guise "${item.name}" created${bind ? ' and bound' : ''}.`); this.close(); }
@@ -2282,6 +2339,44 @@ Hooks.once('setup', () => {
 // unsetFlag re-derives .current from .base anyway). No persisted write happens before the roll.
 const SPECIALTY_ARM_FLAG = 'specialtyBump';        // {attribute?} — armed for the actor's next check
 const _specialtyBumped = new Map();                // check.id -> { actorId, attr, old }
+// The four FU attributes whose die the player may nominate for the Specialty bump (v0.7.6 —
+// Austin: "the specialty button works but doesn't let you pick which die size to increase").
+const SPECIALTY_ATTRIBUTES = [
+	{ key: 'dex', label: 'DEX' }, { key: 'ins', label: 'INS' },
+	{ key: 'mig', label: 'MIG' }, { key: 'wlp', label: 'WLP' },
+];
+
+/** Prompt the player for which attribute's die the Specialty should improve. Resolves to a key
+ *  ('dex'|'ins'|'mig'|'wlp') or null if cancelled. DialogV2 (v13) with a classic-Dialog fallback. */
+async function promptSpecialtyAttribute() {
+	const opts = SPECIALTY_ATTRIBUTES.map((a) => `<option value="${a.key}">${a.label}</option>`).join('');
+	const content = `<p>${game.i18n?.localize?.('RIPPERS.Specialty.PickAttr') ?? "Which attribute's die does the Specialty improve on your next Check?"}</p>`
+		+ `<div class="form-group"><label>${game.i18n?.localize?.('RIPPERS.Specialty.Attribute') ?? 'Attribute'} </label>`
+		+ `<select name="attr">${opts}</select></div>`;
+	const title = game.i18n?.localize?.('RIPPERS.Specialty.Arm') ?? 'Specialty';
+	const armLabel = game.i18n?.localize?.('RIPPERS.Specialty.ArmAction') ?? 'Arm';
+	const DV2 = foundry?.applications?.api?.DialogV2;
+	if (DV2?.prompt) {
+		return DV2.prompt({
+			window: { title },
+			content,
+			ok: { label: armLabel, callback: (_ev, btn) => btn.form?.elements?.attr?.value ?? null },
+			rejectClose: false,
+		}).catch(() => null);
+	}
+	const Dlg = globalThis.Dialog;
+	if (!Dlg) return null;
+	return new Promise((resolve) => {
+		new Dlg({
+			title, content,
+			buttons: {
+				arm: { label: armLabel, callback: (html) => resolve((html[0] ?? html).querySelector('select[name=attr]')?.value ?? null) },
+				cancel: { label: game.i18n?.localize?.('RIPPERS.Builder.Clear') ?? 'Cancel', callback: () => resolve(null) },
+			},
+			default: 'arm', close: () => resolve(null),
+		}).render(true);
+	});
+}
 
 /** The actor's Innate guise item (mode 'innate' / flag isInnate), or null. */
 function actorInnateGuise(actor) {
@@ -2369,6 +2464,8 @@ export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, 
 export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
+// v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.
+export { guiseStepErrors, draftRawSpent, draftClassSpent, SPECIALTY_ATTRIBUTES };
 // v0.7.1 follow-up — Specialty die-bump (excl. magic/accuracy) + Hunter-Weapon-in-Innate authoring.
 export { SPECIALTY_EXCLUDED_CHECKS, specialtyBumpEligible, CHECK_DIE_SIZES, improveDieSize, chooseBumpSlot, HW_MATERIALS, actorInnateGuise, actorSpecialties };
 // v0.7.3 — Specialty arm/disarm (sheet button + macro/API).

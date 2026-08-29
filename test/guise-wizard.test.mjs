@@ -24,11 +24,14 @@ const {
 	validateAffinityTrio, affinityTrioToModifiers, validateGuiseDraft,
 	SPECIALTY_LIST, SPECIALTY_COUNT, GUISE_MODES, REQUIRED_CLASS_COUNT,
 	validateAffinitySet, newAffinitySet, affinityLevelOf, withAffinityLevel,
-	parseClassSkills,
+	parseClassSkills, guiseStepErrors, SPECIALTY_ATTRIBUTES,
 } = mod;
 
 const CU = (n) => `Compendium.x.classes.Item.${n}`;
 const threeClasses = (d) => { d.classUuids = [CU('a'), CU('b'), CU('c')]; return d; };
+// v0.7.6: min-per-class now requires ≥1 SL in EACH of the 3 classes; give each a cheap skill so a
+// draft can be otherwise-valid. Uses distinct filler skill uuids (default maxSl → no cap trip).
+const filled = (d) => { d.classUuids.filter(Boolean).forEach((cU, i) => { d.sl[draftKey(cU, `Compendium.x.skills.Item.fill${i}`)] = 1; }); return d; };
 
 // --- step model ---------------------------------------------------------------
 test('WIZARD_STEPS is the 6-step flow in order', () => {
@@ -88,7 +91,7 @@ test('validateGuiseDraft (worn): requires exactly three DISTINCT classes', () =>
 	assert.equal(validateGuiseDraft(four, 'worn').ok, false);                                       // 4 classes
 	const dup = emptyGuiseDraft(); dup.classUuids = [CU('a'), CU('a'), CU('b')];
 	assert.equal(validateGuiseDraft(dup, 'worn').ok, false);                                        // not distinct
-	assert.equal(validateGuiseDraft(threeClasses(emptyGuiseDraft()), 'worn').ok, true);             // exactly 3 distinct
+	assert.equal(validateGuiseDraft(filled(threeClasses(emptyGuiseDraft())), 'worn').ok, true);      // exactly 3 distinct, each with a skill
 	assert.equal(REQUIRED_CLASS_COUNT, 3);
 });
 
@@ -100,7 +103,7 @@ test('validateGuiseDraft (worn): a bad affinity trio blocks create', () => {
 });
 
 test('validateGuiseDraft (innate): requires exactly two Specialties, not the trio', () => {
-	const d = threeClasses(emptyGuiseDraft()); d.mode = 'innate';
+	const d = filled(threeClasses(emptyGuiseDraft())); d.mode = 'innate';
 	assert.equal(validateGuiseDraft(d, 'innate').ok, false);                                        // 0 specialties
 	d.specialties = [SPECIALTY_LIST[0]];
 	assert.equal(validateGuiseDraft(d, 'innate').ok, false);                                        // 1 specialty
@@ -162,7 +165,7 @@ test('the canon vocabularies are well-formed', () => {
 
 // --- v0.7.4: per-skill SL cap (the live-builder bug) --------------------------
 test('validateGuiseDraft rejects a single skill set above its own max SL', () => {
-	const d = threeClasses(emptyGuiseDraft());
+	const d = filled(threeClasses(emptyGuiseDraft()));
 	const key = draftKey(CU('a'), 'Compendium.x.skills.Item.s1');
 	d.sl[key] = 7;
 	const skillMax = { 'Compendium.x.skills.Item.s1': 5 };
@@ -208,6 +211,49 @@ test('a no-badge skill (max 1) clamps a SKILLS-step entry down to 1', () => {
 	// …and compile clamps it to 1.
 	const data = guiseDraftToData(d, skillMax, 30);
 	assert.equal(data.classes.find((c) => c.classUuid === CU('a')).skills[0].sl, 1);
+});
+
+// --- v0.7.6: the guardrails the wizard now actually consumes ---------------------------------
+test('validateGuiseDraft blocks all SL piled into ONE class (min-per-class)', () => {
+	// 3 distinct classes but every point in class a → the other two are empty (Austin's live bug).
+	const d = threeClasses(emptyGuiseDraft());
+	d.sl[draftKey(CU('a'), 'Compendium.x.skills.Item.s1')] = 5;
+	const v = validateGuiseDraft(d, 'worn', {}, 30);
+	assert.equal(v.ok, false);
+	assert.ok(v.errors.some((e) => /at least one skill/i.test(e)));
+	// spread one point to each of b and c → satisfied.
+	d.sl[draftKey(CU('b'), 'Compendium.x.skills.Item.s2')] = 1;
+	d.sl[draftKey(CU('c'), 'Compendium.x.skills.Item.s3')] = 1;
+	assert.equal(validateGuiseDraft(d, 'worn', {}, 30).ok, true);
+});
+
+test('validateGuiseDraft blocks an allocation over the total budget', () => {
+	const d = filled(threeClasses(emptyGuiseDraft())); // 3 SL so far (1 per class)
+	d.sl[draftKey(CU('a'), 'Compendium.x.skills.Item.big')] = 6; // → 9 total
+	const v = validateGuiseDraft(d, 'worn', {}, 5); // budget 5 (a level-5 character)
+	assert.equal(v.ok, false);
+	assert.ok(v.errors.some((e) => /over the budget/i.test(e)));
+	assert.equal(validateGuiseDraft(d, 'worn', {}, 30).ok, true); // fits a larger budget
+});
+
+test('guiseStepErrors scopes each rule to its own step (so Next gates without trapping step 1)', () => {
+	const d = threeClasses(emptyGuiseDraft()); // 3 classes, no skills yet
+	d.sl[draftKey(CU('a'), 'Compendium.x.skills.Item.s1')] = 9; // all in one class, over a 5 budget
+	// identity step is never blocked by allocation…
+	assert.equal(guiseStepErrors(d, 'worn', {}, 5, 'identity').ok, true);
+	// classes step only cares about class count/distinctness (all fine here)…
+	assert.equal(guiseStepErrors(d, 'worn', {}, 5, 'classes').ok, true);
+	// …the skills step owns min-per-class AND budget, so it blocks.
+	const sk = guiseStepErrors(d, 'worn', {}, 5, 'skills');
+	assert.equal(sk.ok, false);
+	assert.ok(sk.errors.some((e) => /at least one skill/i.test(e)));
+	assert.ok(sk.errors.some((e) => /over the budget/i.test(e)));
+	// review sees everything.
+	assert.equal(guiseStepErrors(d, 'worn', {}, 5, 'review').ok, false);
+});
+
+test('the Specialty picker offers exactly the four FU attributes', () => {
+	assert.deepEqual(SPECIALTY_ATTRIBUTES.map((a) => a.key), ['dex', 'ins', 'mig', 'wlp']);
 });
 
 // --- retained affinity-set helpers (still exported; used by the runtime collected-library API) ---

@@ -273,6 +273,8 @@
 
 .application.guise-builder .gb-error { color: #c8102a; font-size: 0.85rem; margin: 0.15rem 0; }
 .application.guise-builder .gb-error-h { color: #c8102a; }
+/* v0.7.6: this step's blocking guardrails, shown above the footer where Next is disabled. */
+.application.guise-builder .gb-step-errors { flex: 0 0 auto; margin: 0.25rem 0 0.15rem; padding: 0.35rem 0.5rem; border-left: 3px solid #c8102a; background: rgba(200,16,42,0.06); }
 
 /* v0.7.1 — Hunter Weapon authoring (Innate mode) */
 .application.guise-builder .gb-hunter label { display: flex; align-items: center; gap: 0.5rem; margin: 0.25rem 0; }
