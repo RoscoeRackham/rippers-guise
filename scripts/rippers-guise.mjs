@@ -1275,11 +1275,113 @@ function buildBenefitPanel(actor) {
 const DRAFT_SEP = '␟'; // separates the sl-map key "classUuid␟skillUuid"
 const draftKey = (classUuid, skillUuid) => `${classUuid}${DRAFT_SEP}${skillUuid}`;
 
+// ---------------------------------------------------------------------------
+// GUISE-BUILDER-FIX (v0.7.0). Canon vocabularies + guardrail helpers (all pure/testable).
+// Austin's rulings (ROS-24, 2026-08-29): Q1 add an INNATE-GUISE mode; Q2 Bane = NARRATIVE;
+// Q3 D-Bonus = a provisional +3 check-type taxonomy (below); Q4 enforce EXACTLY 3 classes;
+// Q5 Nature = plain text; Q6 enforce only the per-guise ≤1 Immunity; Q7 affinities are a TRIO
+// (1 Immunity + 1 Vulnerability + 1 Resistance, NEVER Absorption) — the monstrous "collect forms"
+// controls are removed. Cites: GUISES-core-rules.md §2 (contents + backstop), §"Perk list",
+// §"Innate Guise"/"Specialties"; GUISE-v2-design.md §9.
+const GUISE_MODES = Object.freeze(['worn', 'innate']);
+const REQUIRED_CLASS_COUNT = 3; // core §2: "Exactly three classes, no more, no less."
+
+// The curated Perk list (core §"The Perk list — free flavour"). Narrative permissions only
+// ("can you?" not "how well?"); free; a guise may carry more than one. Flight is deliberately NOT here.
+const PERK_LIST = Object.freeze([
+	// Senses
+	'Nightsight', 'Scent', 'Keen Ear', 'Ground-sense', 'Deathsight',
+	// Movement
+	'Wall-crawling', 'Boneless', 'Waterbreathing', 'Burrowing', 'Prodigious Leap', 'Silent Tread', 'Running Wild',
+	// Body
+	'Mist Form', 'Many Faces', 'Coldblood', 'Iron Stomach', 'Sleepless', 'Regrowth',
+	// Voice
+	'Kin-Speech', 'Mimicry', 'Stillness',
+]);
+
+// The two Specialties the Innate Guise carries (core §"It does carry one thing the masks don't:
+// Specialties"). Choose TWO; improve one die's size on an in-subject Check. Innate-mode only.
+const SPECIALTY_LIST = Object.freeze([
+	'Arts', 'Crafts', 'Administration & Bureaucracy', 'Criminal Activities', 'Domestic Arts',
+	'General Sciences', 'Medicine', 'Military Weapons', 'Military Science', 'Physical Sciences',
+	'Seamanship', 'Mechanics & Electrical Work', 'Wilderness Survival',
+]);
+const SPECIALTY_COUNT = 2;
+
+// D-Bonus PROVISIONAL taxonomy (Q3 — Austin to confirm/adjust live). Core §2: "A Bonus — +3 to one
+// type of Check." Grounded in Fabula Ultima's own check taxonomy (the roller's Accuracy / Magic /
+// Open / Opposed / Group). Stored as data; accuracy/magic map cleanly to PFU system.bonuses.accuracy.*
+// (design §9), the rest are situational/GM-applied conventions until Austin rules. See v0.7.0 notes.
+const BONUS_CHECK_TYPES = Object.freeze([
+	{ key: 'accuracy', label: 'Accuracy Checks (attacks)' },
+	{ key: 'magic', label: 'Magic Checks (spells)' },
+	{ key: 'open', label: 'Open Checks (skills / exploration)' },
+	{ key: 'opposed', label: 'Opposed Checks (contests)' },
+	{ key: 'group', label: 'Group Checks' },
+]);
+const BONUS_VALUE = 3;
+const isBonusCheckType = (k) => BONUS_CHECK_TYPES.some((t) => t.key === k);
+
+// --- Affinity TRIO (Q7) — replaces the un-canon nine-dropdown grid + monstrous library ------------
+// A guise authors up to three affinity slots: one Immunity, one Vulnerability, one Resistance.
+// ABSORPTION IS NEVER OFFERED (core §2: "A Guise never grants Absorption"). The whole trio may be
+// empty (a plain guise), but an Immunity MUST be paired with a Vulnerability (core §2 backstop, Q6).
+const TRIO_LEVEL = Object.freeze({ immunity: 2, vulnerability: -1, resistance: 1 });
+
+/** {immunity,vulnerability,resistance} element picks (or '') → affinityModifiers [{type,level}]. Pure. */
+function affinityTrioToModifiers(trio) {
+	const out = [];
+	for (const [slot, level] of Object.entries(TRIO_LEVEL)) {
+		const type = trio?.[slot];
+		if (AFFINITY_TYPES.includes(type)) out.push({ type, level });
+	}
+	return out;
+}
+
+/** Validate an affinity trio against the canon backstop (Q6/Q7). Pure. Returns {ok, reason?}. */
+function validateAffinityTrio(trio) {
+	const picks = { immunity: trio?.immunity || '', vulnerability: trio?.vulnerability || '', resistance: trio?.resistance || '' };
+	for (const [slot, type] of Object.entries(picks)) {
+		if (type && !AFFINITY_TYPES.includes(type)) return { ok: false, reason: `unknown affinity type "${type}" for ${slot}` };
+	}
+	// No element may fill two slots at once.
+	const used = Object.values(picks).filter(Boolean);
+	if (new Set(used).size !== used.length) return { ok: false, reason: 'one element cannot fill two affinity slots' };
+	// Backstop: an Immunity must come with a Vulnerability.
+	if (picks.immunity && !picks.vulnerability) return { ok: false, reason: 'an Immunity must be paired with a Vulnerability' };
+	return { ok: true };
+}
+
+/**
+ * Validate a whole guise draft against the construction guardrails (Q4/Q7). Pure. mode 'worn'|'innate'.
+ * Returns {ok, errors:[]} so the wizard can gate Create and show why.
+ */
+function validateGuiseDraft(draft, mode = 'worn') {
+	const errors = [];
+	const classes = (draft?.classUuids ?? []).filter(Boolean);
+	if (classes.length !== REQUIRED_CLASS_COUNT) errors.push(`A guise has exactly ${REQUIRED_CLASS_COUNT} classes (has ${classes.length}).`);
+	if (new Set(classes).size !== classes.length) errors.push('The three classes must be distinct.');
+	if (mode === 'worn') {
+		const t = validateAffinityTrio({ immunity: draft?.affinityImmunity, vulnerability: draft?.affinityVulnerability, resistance: draft?.affinityResistance });
+		if (!t.ok) errors.push(t.reason);
+	} else { // innate
+		const specs = (draft?.specialties ?? []).filter(Boolean);
+		if (specs.length !== SPECIALTY_COUNT) errors.push(`The Innate Guise carries exactly ${SPECIALTY_COUNT} Specialties (has ${specs.length}).`);
+	}
+	return { ok: errors.length === 0, errors };
+}
+
 function emptyGuiseDraft() {
 	return {
-		name: '', role: '', notes: '', img: 'icons/svg/mystery-man.svg', color: '', classUuids: [], sl: {},
-		// FDN-9 monstrous-form affinities (Phase-2 wizard step 4). Empty = ordinary guise (mode 'modify').
-		affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
+		mode: 'worn', // 'worn' (a mask) | 'innate' (the face under the masks, Q1)
+		name: '', role: '', nature: '', notes: '', img: 'icons/svg/mystery-man.svg', color: '', classUuids: [], sl: {},
+		// worn-guise fields (Q1: none of these belong on the Innate Guise)
+		equipment: [], // [{itemUuid, slot}] — armor / two hands / accessory (was hardcoded [] — the P2 bug)
+		perks: [], bonus: { type: '', value: BONUS_VALUE }, tell: '', bane: '', flaw: '',
+		// affinity TRIO (Q7) — element keys or '' ; Absorption is never representable
+		affinityImmunity: '', affinityVulnerability: '', affinityResistance: '',
+		// innate-guise fields (Q1)
+		specialties: [], innateHeroicUuid: '',
 	};
 }
 
@@ -1305,9 +1407,10 @@ async function skillsForClass(classRef) {
 /** Build GuiseDataModel data from a builder draft, applying the three SL caps (per-skill maxSl,
  *  per-class <=10, total <= budget). Pure. skillMax: {skillUuid: maxSl}. Caps mirror materialiseSkills. */
 function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
+	const mode = GUISE_MODES.includes(draft?.mode) ? draft.mode : 'worn';
 	const classes = [];
 	let spent = 0;
-	for (const classUuid of (draft.classUuids ?? []).filter(Boolean).slice(0, 3)) { // exactly three classes max
+	for (const classUuid of (draft.classUuids ?? []).filter(Boolean).slice(0, REQUIRED_CLASS_COUNT)) {
 		let perClass = 0;
 		const skills = [];
 		for (const [key, rawSl] of Object.entries(draft.sl ?? {})) {
@@ -1322,16 +1425,36 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 		}
 		classes.push({ classUuid, skills });
 	}
-	// FDN-9: a draft may optionally declare monstrous-form affinity-sets (validated; invalid sets dropped).
-	const rawSets = Array.isArray(draft.affinitySets) ? draft.affinitySets : [];
-	const affinitySets = rawSets.filter((s) => validateAffinitySet(s).ok);
-	const affinityMode = draft.affinityMode === 'replace' || affinitySets.length ? 'replace' : 'modify';
+
+	// The Innate Guise (Q1) carries NO affinities, NO armor/hands/accessory, NO Nature/Tell/flaw/bane/Perk
+	// — only Specialties + the creation Heroic (heroic assigned actor-side in createGuiseFromDraft).
+	if (mode === 'innate') {
+		const specialties = (draft.specialties ?? []).filter((s) => SPECIALTY_LIST.includes(s)).slice(0, SPECIALTY_COUNT);
+		return {
+			mode, identity: draft.name ?? '', role: draft.role ?? '', nature: '', notes: draft.notes ?? '',
+			classes, equipment: [], affinityModifiers: [],
+			affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
+			perks: [], bonus: null, tell: '', bane: '', flaw: '',
+			specialties, innateHeroicUuid: draft.innateHeroicUuid ?? '',
+		};
+	}
+
+	// A worn guise: equipment (was hardcoded [] — the P2 bug) + the affinity TRIO + narrative fields.
+	const equipment = (draft.equipment ?? [])
+		.filter((e) => e?.itemUuid)
+		.map((e) => ({ itemUuid: e.itemUuid, slot: EQUIP_SLOTS.includes(e.slot) ? e.slot : 'mainHand' }));
+	const affinityModifiers = affinityTrioToModifiers({
+		immunity: draft.affinityImmunity, vulnerability: draft.affinityVulnerability, resistance: draft.affinityResistance,
+	});
+	const perks = (draft.perks ?? []).filter((p) => PERK_LIST.includes(p));
+	const bonus = isBonusCheckType(draft.bonus?.type) ? { type: draft.bonus.type, value: BONUS_VALUE } : null;
 	return {
-		identity: draft.name ?? '', role: draft.role ?? '', notes: draft.notes ?? '',
-		classes, equipment: [], affinityModifiers: [],
-		affinityMode, affinitySets,
-		affinitySetCap: Number.isFinite(draft.affinitySetCap) ? draft.affinitySetCap : null,
-		affinityCapSkill: draft.affinityCapSkill ?? '',
+		mode, identity: draft.name ?? '', role: draft.role ?? '', nature: draft.nature ?? '', notes: draft.notes ?? '',
+		classes, equipment, affinityModifiers,
+		// The monstrous "replace/collect forms" path is removed from the builder (Q7): always MODIFY, no sets.
+		affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
+		perks, bonus, tell: draft.tell ?? '', bane: draft.bane ?? '', flaw: draft.flaw ?? '',
+		specialties: [], innateHeroicUuid: '',
 	};
 }
 
@@ -1339,13 +1462,30 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false } = {}) {
 	if (!actor) return null;
 	const data = guiseDraftToData(draft, skillMax, budgetOf(actor));
+	const mode = data.mode ?? 'worn';
 	const [item] = await actor.createEmbeddedDocuments('Item', [{
 		type: 'classFeature',
-		name: data.identity || 'New Guise',
+		name: data.identity || (mode === 'innate' ? 'Innate Guise' : 'New Guise'),
 		img: draft.img || 'icons/svg/mystery-man.svg',
 		system: { featureType: FEATURE_TYPE, data },
-		flags: { [MODULE_ID]: { schemaVersion: 2, ...(draft.color ? { color: draft.color } : {}) } },
+		flags: { [MODULE_ID]: { schemaVersion: 2, isInnate: mode === 'innate', ...(draft.color ? { color: draft.color } : {}) } },
 	}]);
+	// Innate-Guise mode (Q1): materialise the creation Heroic as an owned Item and seat it in the
+	// character's `creation` heroic slot (assignHeroicSlot refuses creation_banned heroics). A worn
+	// guise NEVER carries a heroic — "No Guise grants a Heroic Skill, ever" (core).
+	if (item && mode === 'innate' && draft.innateHeroicUuid) {
+		try {
+			const src = await safeFromUuid(draft.innateHeroicUuid);
+			if (src && src.type === 'heroic') {
+				const obj = src.toObject(); delete obj._id;
+				const [heroic] = await actor.createEmbeddedDocuments('Item', [obj]);
+				if (heroic) {
+					const res = await assignHeroicSlot(actor, 'creation', heroic);
+					if (!res?.ok) { await heroic.delete(); } // banned/refused — don't leave an orphan
+				}
+			}
+		} catch (err) { console.warn('[rippers-guise] innate creation-heroic assignment failed:', err); }
+	}
 	if (item && bind) await bindGuise(actor, item);
 	return item;
 }
@@ -1359,7 +1499,8 @@ const WIZARD_STEPS = [
 	{ key: 'identity',   label: 'Identity' },
 	{ key: 'classes',    label: 'Classes' },
 	{ key: 'skills',     label: 'Skills' },
-	{ key: 'affinities', label: 'Affinities' },
+	{ key: 'loadout',    label: 'Loadout' },     // worn: equipment + Perk/Bonus/Tell/Bane/Flaw; innate: Specialties + Heroic
+	{ key: 'affinities', label: 'Affinities' },  // worn: the trio; innate: none (skipped in content)
 	{ key: 'review',     label: 'Review' },
 ];
 /** Clamp a step number into 1..WIZARD_STEPS.length. Pure. */
@@ -1402,7 +1543,6 @@ function getGuiseBuilderApp() {
 			actions: {
 				create: GuiseBuilderApp.onCreate, createBind: GuiseBuilderApp.onCreateBind,
 				back: GuiseBuilderApp.onBack, next: GuiseBuilderApp.onNext,
-				addAffinitySet: GuiseBuilderApp.onAddAffinitySet, removeAffinitySet: GuiseBuilderApp.onRemoveAffinitySet,
 				pickImg: GuiseBuilderApp.onPickImg,
 			},
 		};
@@ -1443,58 +1583,81 @@ function getGuiseBuilderApp() {
 				active: i + 1 === step, done: i + 1 < step,
 			}));
 
-			// ---- affinities step view model (FDN-9 fields, no new engine behaviour) ----
-			const affTypes = AFFINITY_TYPES.map((t) => ({ type: t, label: t.charAt(0).toUpperCase() + t.slice(1) }));
-			const affLevelOpts = (cur) => [{ value: 0, label: game.i18n.localize('RIPPERS.Builder.AffNone') }]
-				.concat(AFFINITY_LEVELS.map((l) => ({ value: l.value, label: l.label })))
-				.map((o) => ({ ...o, selected: Number(o.value) === Number(cur) }));
-			const replace = this._draft.affinityMode === 'replace' || (this._draft.affinitySets?.length > 0);
-			const affinitySets = (this._draft.affinitySets ?? []).map((set, i) => ({
-				id: set.id, name: set.name ?? '', index: i,
-				rows: affTypes.map((t) => ({ ...t, options: affLevelOpts(affinityLevelOf(set, t.type)) })),
-				summary: this._affinitySummary(set),
+			// ---- mode (Q1: worn mask vs the Innate Guise) -----------------------
+			const mode = GUISE_MODES.includes(this._draft.mode) ? this._draft.mode : 'worn';
+			const isInnate = mode === 'innate';
+
+			// ---- affinities step: the TRIO (Q7). Never Absorption; Immunity⇒Vulnerability. ----
+			const capT = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+			const affElementOpts = (cur) => [{ value: '', label: game.i18n.localize('RIPPERS.Builder.AffNone') }]
+				.concat(AFFINITY_TYPES.map((t) => ({ value: t, label: capT(t) })))
+				.map((o) => ({ ...o, selected: o.value === (cur || '') }));
+			const trio = {
+				immunity: affElementOpts(this._draft.affinityImmunity),
+				vulnerability: affElementOpts(this._draft.affinityVulnerability),
+				resistance: affElementOpts(this._draft.affinityResistance),
+			};
+			const trioValid = validateAffinityTrio({
+				immunity: this._draft.affinityImmunity, vulnerability: this._draft.affinityVulnerability, resistance: this._draft.affinityResistance,
+			});
+
+			// ---- loadout step view model ----------------------------------------
+			const slotChoices = EQUIP_SLOTS.map((s) => ({ value: s, label: game.i18n.localize(`RIPPERS.Builder.Slot.${s}`) }));
+			const equipment = (this._draft.equipment ?? []).map((eq, i) => ({
+				i, uuid: eq.itemUuid, name: eq.name ?? eq.itemUuid,
+				slots: slotChoices.map((c) => ({ ...c, selected: c.value === eq.slot })),
 			}));
-			const affinity = {
-				replace,
-				sets: affinitySets,
-				cap: Number.isFinite(this._draft.affinitySetCap) ? this._draft.affinitySetCap : '',
-				capSkill: this._draft.affinityCapSkill ?? '',
+			const perkOpts = PERK_LIST.map((p) => ({ name: p, checked: (this._draft.perks ?? []).includes(p) }));
+			const bonusOpts = [{ key: '', label: game.i18n.localize('RIPPERS.Builder.BonusNone') }]
+				.concat(BONUS_CHECK_TYPES).map((o) => ({ ...o, selected: o.key === (this._draft.bonus?.type || '') }));
+			const specialtyOpts = SPECIALTY_LIST.map((s) => ({ name: s, checked: (this._draft.specialties ?? []).includes(s) }));
+			const specialtyCount = (this._draft.specialties ?? []).filter(Boolean).length;
+			const heroicName = this._draft.innateHeroicUuid ? (this._draft.innateHeroicName || this._draft.innateHeroicUuid) : '';
+			const loadout = {
+				equipment, perkOpts,
+				bonusOpts, bonusValue: BONUS_VALUE,
+				tell: this._draft.tell ?? '', bane: this._draft.bane ?? '', flaw: this._draft.flaw ?? '',
+				specialtyOpts, specialtyCount, specialtyMax: SPECIALTY_COUNT, heroicName,
 			};
 
+			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties) ----
+			const validation = validateGuiseDraft(this._draft, mode);
+
 			// ---- review step summary (read-only) --------------------------------
+			const wordFor = (type, level) => `${capT(type)} ${affinityWordOf(level).toLowerCase()}`;
+			const affSummary = isInnate ? [] : affinityTrioToModifiers({
+				immunity: this._draft.affinityImmunity, vulnerability: this._draft.affinityVulnerability, resistance: this._draft.affinityResistance,
+			}).map((m) => wordFor(m.type, m.level));
 			const review = {
 				name: this._draft.name || game.i18n.localize('RIPPERS.Builder.Unnamed'),
-				role: this._draft.role || '',
-				img: this._draft.img || '',
-				notes: this._draft.notes || '',
+				role: this._draft.role || '', nature: isInnate ? '' : (this._draft.nature || ''),
+				img: this._draft.img || '', notes: this._draft.notes || '',
+				modeLabel: game.i18n.localize(isInnate ? 'RIPPERS.Builder.ModeInnate' : 'RIPPERS.Builder.ModeWorn'),
 				classes: classBlocks.map((cb) => ({
 					name: cb.name,
 					skills: cb.skills.filter((s) => s.checked).map((s) => ({ name: s.name, sl: s.sl })),
 				})),
-				replace,
-				affinities: replace ? affinitySets.map((s) => ({ name: s.name || game.i18n.localize('RIPPERS.Builder.AffUnnamedSet'), summary: s.summary })) : [],
-				capSkill: replace ? (this._draft.affinityCapSkill ?? '') : '',
-				spent, budget,
+				affinities: affSummary,
+				equipment: isInnate ? [] : equipment.map((e) => ({ name: e.name, slot: e.slots.find((s) => s.selected)?.label ?? '' })),
+				perks: isInnate ? [] : (this._draft.perks ?? []),
+				bonus: (!isInnate && this._draft.bonus?.type) ? (BONUS_CHECK_TYPES.find((t) => t.key === this._draft.bonus.type)?.label ?? '') : '',
+				tell: isInnate ? '' : (this._draft.tell || ''), bane: isInnate ? '' : (this._draft.bane || ''), flaw: isInnate ? '' : (this._draft.flaw || ''),
+				specialties: isInnate ? (this._draft.specialties ?? []) : [], heroic: isInnate ? heroicName : '',
+				errors: validation.errors, spent, budget,
 			};
 
 			return {
 				draft: this._draft, slots, classBlocks, budget, spent,
-				canCreate: chosen.length > 0 && spent > 0,
+				mode, isInnate, isWorn: !isInnate,
+				canCreate: validation.ok && spent > 0,
 				step, stepKey, steps, stepTotal: WIZARD_STEPS.length,
 				isFirst: step === 1, isLast: step === WIZARD_STEPS.length,
 				stepIdentity: stepKey === 'identity', stepClasses: stepKey === 'classes',
-				stepSkills: stepKey === 'skills', stepAffinities: stepKey === 'affinities',
-				stepReview: stepKey === 'review',
-				affinity, review,
+				stepSkills: stepKey === 'skills', stepLoadout: stepKey === 'loadout',
+				stepAffinities: stepKey === 'affinities', stepReview: stepKey === 'review',
+				trio, trioValid: trioValid.ok, trioReason: trioValid.ok ? '' : trioValid.reason,
+				loadout, review, validation,
 			};
-		}
-
-		/** One-line human summary of a set's affinities (for the review + set header). */
-		_affinitySummary(set) {
-			const parts = (set?.affinities ?? [])
-				.filter((a) => AFFINITY_VALUES.has(Number(a?.level)) && Number(a.level) !== 0)
-				.map((a) => `${a.type.charAt(0).toUpperCase() + a.type.slice(1)}: ${affinityWordOf(a.level)}`);
-			return parts.length ? parts.join(', ') : game.i18n.localize('RIPPERS.Builder.AffEmpty');
 		}
 
 		_skillMax() { const m = {}; for (const arr of Object.values(this._classSkills)) for (const s of arr) m[s.uuid] = s.maxSl; return m; }
@@ -1528,25 +1691,67 @@ function getGuiseBuilderApp() {
 				this.render();
 			}));
 
-			// ---- affinities step (step 4) — all no-op when the step isn't rendered ----
-			root.querySelectorAll('input.guise-aff-mode').forEach((cb) => cb.addEventListener('change', () => {
-				if (cb.checked) { this._draft.affinityMode = 'replace'; }
-				else { this._draft.affinityMode = 'modify'; this._draft.affinitySets = []; this._draft.affinitySetCap = null; this._draft.affinityCapSkill = ''; }
+			// ---- mode toggle (Q1: worn mask ⇄ Innate Guise) ----
+			root.querySelectorAll('input.guise-mode').forEach((r) => r.addEventListener('change', () => {
+				if (r.checked && GUISE_MODES.includes(r.value)) { this._draft.mode = r.value; this.render(); }
+			}));
+
+			// ---- affinities step: the TRIO selects (worn only) ----
+			root.querySelectorAll('select.guise-trio').forEach((sel) => sel.addEventListener('change', () => {
+				const slot = sel.dataset.slot; // immunity | vulnerability | resistance
+				const key = slot === 'immunity' ? 'affinityImmunity' : slot === 'vulnerability' ? 'affinityVulnerability' : 'affinityResistance';
+				this._draft[key] = AFFINITY_TYPES.includes(sel.value) ? sel.value : '';
 				this.render();
 			}));
-			root.querySelectorAll('input.guise-aff-name').forEach((inp) => inp.addEventListener('change', () => {
-				const set = (this._draft.affinitySets ?? []).find((s) => s.id === inp.dataset.setId);
-				if (set) { set.name = inp.value; this.render(); }
+
+			// ---- loadout step: perks / bonus / specialties ----
+			root.querySelectorAll('input.guise-perk').forEach((cb) => cb.addEventListener('change', () => {
+				const p = cb.dataset.perk; const set = new Set(this._draft.perks ?? []);
+				if (cb.checked) set.add(p); else set.delete(p);
+				this._draft.perks = PERK_LIST.filter((x) => set.has(x)); this.render();
 			}));
-			root.querySelectorAll('select.guise-aff-level').forEach((sel) => sel.addEventListener('change', () => {
-				const set = (this._draft.affinitySets ?? []).find((s) => s.id === sel.dataset.setId);
-				if (set) { set.affinities = withAffinityLevel(set.affinities, sel.dataset.type, Number(sel.value)); this.render(); }
+			root.querySelectorAll('select.guise-bonus').forEach((sel) => sel.addEventListener('change', () => {
+				this._draft.bonus = isBonusCheckType(sel.value) ? { type: sel.value, value: BONUS_VALUE } : { type: '', value: BONUS_VALUE };
+				this.render();
 			}));
-			root.querySelectorAll('input.guise-aff-cap').forEach((inp) => inp.addEventListener('change', () => {
-				const n = Math.floor(Number(inp.value));
-				this._draft.affinitySetCap = (inp.value !== '' && Number.isFinite(n) && n >= 0) ? n : null;
+			root.querySelectorAll('input.guise-specialty').forEach((cb) => cb.addEventListener('change', () => {
+				const s = cb.dataset.specialty; const set = new Set(this._draft.specialties ?? []);
+				if (cb.checked) { if (set.size < SPECIALTY_COUNT) set.add(s); } else set.delete(s);
+				this._draft.specialties = SPECIALTY_LIST.filter((x) => set.has(x)); this.render();
 			}));
-			root.querySelectorAll('input.guise-aff-capskill').forEach((inp) => inp.addEventListener('change', () => { this._draft.affinityCapSkill = inp.value; }));
+			// equipment slot change + remove
+			root.querySelectorAll('select.guise-equip-slot').forEach((sel) => sel.addEventListener('change', () => {
+				const i = Number(sel.dataset.i); const eq = (this._draft.equipment ?? [])[i];
+				if (eq) { eq.slot = EQUIP_SLOTS.includes(sel.value) ? sel.value : 'mainHand'; }
+			}));
+			root.querySelectorAll('[data-action="removeEquip"]').forEach((a) => a.addEventListener('click', (ev) => {
+				ev.preventDefault(); const i = Number(a.dataset.i);
+				this._draft.equipment = (this._draft.equipment ?? []).filter((_, idx) => idx !== i); this.render();
+			}));
+			root.querySelectorAll('[data-action="clearHeroic"]').forEach((a) => a.addEventListener('click', (ev) => {
+				ev.preventDefault(); this._draft.innateHeroicUuid = ''; this._draft.innateHeroicName = ''; this.render();
+			}));
+
+			// ---- drop targets: equipment (worn) + creation heroic (innate) ----
+			root.querySelectorAll('[data-guise-drop]').forEach((zone) => {
+				zone.addEventListener('dragover', (ev) => { ev.preventDefault(); zone.classList.add('drop-hover'); });
+				zone.addEventListener('dragleave', () => zone.classList.remove('drop-hover'));
+				zone.addEventListener('drop', async (ev) => {
+					ev.preventDefault(); zone.classList.remove('drop-hover');
+					const data = readDropData(ev);
+					if (!data || data.type !== 'Item') return;
+					const doc = await safeFromUuid(data.uuid);
+					if (!doc) { ui.notifications?.warn('Could not resolve the dropped item.'); return; }
+					if (zone.dataset.guiseDrop === 'equipment') {
+						this._draft.equipment = [...(this._draft.equipment ?? []), { itemUuid: data.uuid, slot: 'mainHand', name: doc.name }];
+					} else if (zone.dataset.guiseDrop === 'heroic') {
+						if (doc.type !== 'heroic') { ui.notifications?.warn('The Innate Guise heroic must be a Heroic Skill.'); return; }
+						if (heroicIsCreationBanned(doc)) { ui.notifications?.warn(`"${doc.name}" cannot be taken as a creation heroic.`); return; }
+						this._draft.innateHeroicUuid = data.uuid; this._draft.innateHeroicName = doc.name;
+					}
+					this.render();
+				});
+			});
 		}
 
 		static async onCreate(event) { event.preventDefault(); await this._doCreate(false); }
@@ -1566,22 +1771,10 @@ function getGuiseBuilderApp() {
 		}
 		static onBack(event) { event.preventDefault(); this._step = clampWizardStep(this._step - 1); this.render(); }
 		static onNext(event) { event.preventDefault(); this._step = clampWizardStep(this._step + 1); this.render(); }
-		static onAddAffinitySet(event) {
-			event.preventDefault();
-			const id = foundry.utils?.randomID?.() ?? `set-${(this._draft.affinitySets?.length ?? 0) + 1}`;
-			this._draft.affinityMode = 'replace';
-			this._draft.affinitySets = [...(this._draft.affinitySets ?? []), newAffinitySet(id)];
-			this.render();
-		}
-		static onRemoveAffinitySet(event) {
-			event.preventDefault();
-			const id = event.target?.closest?.('[data-set-id]')?.dataset?.setId;
-			this._draft.affinitySets = (this._draft.affinitySets ?? []).filter((s) => s.id !== id);
-			if (!this._draft.affinitySets.length) this._draft.affinityMode = 'modify';
-			this.render();
-		}
 		async _doCreate(bind) {
-			if (!this._draft.classUuids.filter(Boolean).length) { ui.notifications?.warn('Pick at least one class for the guise.'); return; }
+			const mode = GUISE_MODES.includes(this._draft.mode) ? this._draft.mode : 'worn';
+			const v = validateGuiseDraft(this._draft, mode);
+			if (!v.ok) { ui.notifications?.warn(v.errors[0]); return; }
 			const item = await createGuiseFromDraft(this.actor, this._draft, { skillMax: this._skillMax(), bind });
 			if (item) { ui.notifications?.info(`Guise "${item.name}" created${bind ? ' and bound' : ''}.`); this.close(); }
 		}
@@ -1696,10 +1889,25 @@ function defineGuiseModel() {
 	return class GuiseDataModel extends RollableClassFeatureDataModel {
 		static defineSchema() {
 			return {
+				// mode (Q1): 'worn' mask vs the 'innate' Guise (the face under the masks)
+				mode: new StringField({ initial: 'worn', choices: GUISE_MODES }),
 				// narrative
 				identity: new StringField({ initial: '' }),
 				role: new StringField({ initial: '' }),
+				nature: new StringField({ initial: '' }),        // Q5 — the Guise's Identity (plain text)
 				notes: new HTMLField({ initial: '' }),
+				// worn-guise grants (core §2): Perk(s), a +3 Bonus, a Tell, a narrative Bane + flaw
+				perks: new ArrayField(new StringField({ initial: '' })),
+				bonus: new SchemaField({
+					type: new StringField({ initial: '' }),        // '' | one of BONUS_CHECK_TYPES (Q3, provisional)
+					value: new NumberField({ initial: 3, integer: true }),
+				}, { nullable: true, initial: null }),
+				tell: new StringField({ initial: '' }),
+				bane: new StringField({ initial: '' }),           // Q2 — NARRATIVE, not a mechanical effect
+				flaw: new StringField({ initial: '' }),
+				// innate-guise grants (Q1): two Specialties + the creation Heroic (assigned actor-side)
+				specialties: new ArrayField(new StringField({ initial: '' })),
+				innateHeroicUuid: new StringField({ initial: '' }),
 				// classes + per-skill allocation (D1: UUID refs to the compendium)
 				classes: new ArrayField(new SchemaField({
 					classUuid: new StringField({ initial: '' }),
@@ -2011,3 +2219,5 @@ export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affi
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
 export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+// GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
+export { GUISE_MODES, REQUIRED_CLASS_COUNT, PERK_LIST, SPECIALTY_LIST, SPECIALTY_COUNT, BONUS_CHECK_TYPES, BONUS_VALUE, isBonusCheckType, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
