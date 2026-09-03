@@ -34,6 +34,8 @@ const threeClasses = (d) => { d.classUuids = [CU('a'), CU('b'), CU('c')]; return
 // v0.7.6: min-per-class now requires ≥1 SL in EACH of the 3 classes; give each a cheap skill so a
 // draft can be otherwise-valid. Uses distinct filler skill uuids (default maxSl → no cap trip).
 const filled = (d) => { d.classUuids.filter(Boolean).forEach((cU, i) => { d.sl[draftKey(cU, `Compendium.x.skills.Item.fill${i}`)] = 1; }); return d; };
+// v0.7.9 (#3): a worn guise now requires its attached ("signature") Heroic to validate.
+const wornOk = (d) => { d.attachedHeroicUuid = 'Compendium.x.heroics.Item.sig'; return d; };
 
 // --- step model ---------------------------------------------------------------
 test('WIZARD_STEPS is the 6-step flow in order', () => {
@@ -93,7 +95,7 @@ test('validateGuiseDraft (worn): requires exactly three DISTINCT classes', () =>
 	assert.equal(validateGuiseDraft(four, 'worn').ok, false);                                       // 4 classes
 	const dup = emptyGuiseDraft(); dup.classUuids = [CU('a'), CU('a'), CU('b')];
 	assert.equal(validateGuiseDraft(dup, 'worn').ok, false);                                        // not distinct
-	assert.equal(validateGuiseDraft(filled(threeClasses(emptyGuiseDraft())), 'worn').ok, true);      // exactly 3 distinct, each with a skill
+	assert.equal(validateGuiseDraft(wornOk(filled(threeClasses(emptyGuiseDraft()))), 'worn').ok, true);      // exactly 3 distinct, each with a skill + signature heroic
 	assert.equal(REQUIRED_CLASS_COUNT, 3);
 });
 
@@ -204,6 +206,25 @@ test('v0.7.9 (#2): an innate draft carries armor + accessory refs; a worn guise 
 	assert.equal(wd.accessoryUuid, undefined);
 });
 
+test('v0.7.9 (#3): a worn guise requires an attached (signature) Heroic and carries it; innate leaves it empty', () => {
+	// soft-required: an otherwise-valid worn draft with NO attached heroic fails validation…
+	const d = filled(threeClasses(emptyGuiseDraft()));
+	const v0 = validateGuiseDraft(d, 'worn');
+	assert.equal(v0.ok, false);
+	assert.ok(v0.errors.some((e) => /attached Heroic/i.test(e)));
+	// …the loadout step is where that error surfaces (not identity/classes/skills)…
+	assert.equal(guiseStepErrors(d, 'worn', {}, 30, 'loadout').ok, false);
+	assert.equal(guiseStepErrors(d, 'worn', {}, 30, 'classes').ok, true);
+	// …and once set, the draft validates and guiseDraftToData carries the ref.
+	d.attachedHeroicUuid = 'Compendium.x.heroics.Item.sig';
+	assert.equal(validateGuiseDraft(d, 'worn').ok, true);
+	assert.equal(guiseDraftToData(d, {}, 30).attachedHeroicUuid, 'Compendium.x.heroics.Item.sig');
+	// the innate guise carries no attached heroic (it has its own creation-heroic slot instead)
+	const innate = filled(threeClasses(emptyGuiseDraft())); innate.mode = 'innate';
+	innate.specialties = [SPECIALTY_LIST[0], SPECIALTY_LIST[1]]; innate.attachedHeroicUuid = 'Compendium.x.heroics.Item.sig';
+	assert.equal(guiseDraftToData(innate, {}, 30).attachedHeroicUuid, undefined);
+});
+
 // --- vocab sanity -------------------------------------------------------------
 test('the canon vocabularies are well-formed', () => {
 	assert.equal(SPECIALTY_LIST.length, 13);
@@ -215,7 +236,7 @@ test('the canon vocabularies are well-formed', () => {
 
 // --- v0.7.4: per-skill SL cap (the live-builder bug) --------------------------
 test('validateGuiseDraft rejects a single skill set above its own max SL', () => {
-	const d = filled(threeClasses(emptyGuiseDraft()));
+	const d = wornOk(filled(threeClasses(emptyGuiseDraft())));
 	const key = draftKey(CU('a'), 'Compendium.x.skills.Item.s1');
 	d.sl[key] = 7;
 	const skillMax = { 'Compendium.x.skills.Item.s1': 5 };
@@ -266,7 +287,7 @@ test('a no-badge skill (max 1) clamps a SKILLS-step entry down to 1', () => {
 // --- v0.7.6: the guardrails the wizard now actually consumes ---------------------------------
 test('validateGuiseDraft blocks all SL piled into ONE class (min-per-class)', () => {
 	// 3 distinct classes but every point in class a → the other two are empty (Austin's live bug).
-	const d = threeClasses(emptyGuiseDraft());
+	const d = wornOk(threeClasses(emptyGuiseDraft()));
 	d.sl[draftKey(CU('a'), 'Compendium.x.skills.Item.s1')] = 5;
 	const v = validateGuiseDraft(d, 'worn', {}, 30);
 	assert.equal(v.ok, false);
@@ -278,7 +299,7 @@ test('validateGuiseDraft blocks all SL piled into ONE class (min-per-class)', ()
 });
 
 test('validateGuiseDraft blocks an allocation over the total budget', () => {
-	const d = filled(threeClasses(emptyGuiseDraft())); // 3 SL so far (1 per class)
+	const d = wornOk(filled(threeClasses(emptyGuiseDraft()))); // 3 SL so far (1 per class) + signature heroic
 	d.sl[draftKey(CU('a'), 'Compendium.x.skills.Item.big')] = 6; // → 9 total
 	const v = validateGuiseDraft(d, 'worn', {}, 5); // budget 5 (a level-5 character)
 	assert.equal(v.ok, false);

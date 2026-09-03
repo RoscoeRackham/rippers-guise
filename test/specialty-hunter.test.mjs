@@ -99,10 +99,11 @@ test('a non-canon Hunter Weapon material is dropped on compile', () => {
 test('a WORN draft never carries Hunter-Weapon or Specialty data', () => {
 	const d = filled(threeClasses(emptyGuiseDraft()));
 	d.hunterMaterial = 'silver'; d.hunterWeaponUuid = 'x'; d.specialties = [SPECIALTY_LIST[0], SPECIALTY_LIST[1]];
+	d.attachedHeroicUuid = 'Compendium.x.heroics.Item.sig'; // v0.7.9 (#3): worn guises need their signature heroic to validate
 	const data = guiseDraftToData(d, {}, 30);
 	assert.equal(data.hunterWeaponUuid ?? '', '');   // worn compile omits it
 	assert.deepEqual(data.specialties, []);
-	// and the Hunter Weapon has no bearing on worn-guise validity (trio still governs)
+	// and the Hunter Weapon has no bearing on worn-guise validity (trio + signature heroic govern)
 	assert.equal(validateGuiseDraft(d, 'worn').ok, true);
 });
 

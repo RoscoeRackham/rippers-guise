@@ -337,6 +337,24 @@ async function materialiseSkills(actor, item) {
 	return created.map((d) => d.id);
 }
 
+/** #3 (v0.7.9): materialise a worn guise's attached ("signature") Heroic as an owned Item, flagged
+ *  guise-origin. It carries its own ActiveEffect(s), so creating it on bind rides those onto the
+ *  actor; _dismissCore removes it on dismiss (it is neither a guise nor the Hunter Weapon). Distinct
+ *  from the character's own heroic slots — never seated via assignHeroicSlot. Returns created ids. */
+async function materialiseAttachedHeroic(actor, item) {
+	const uuid = item.system?.data?.attachedHeroicUuid;
+	if (!uuid) return [];
+	const src = await fromUuid(uuid);
+	if (!src) { console.warn(`[rippers-guise] attached heroic ref not found: ${uuid}`); return []; }
+	if (src.type !== 'heroic') { console.warn(`[rippers-guise] attached heroic is not a Heroic Skill: ${uuid}`); return []; }
+	const obj = src.toObject();
+	delete obj._id;
+	obj.flags = obj.flags ?? {};
+	obj.flags[MODULE_ID] = { origin: item.id, kind: 'heroic' };
+	const created = await actor.createEmbeddedDocuments('Item', [obj]);
+	return created.map((d) => d.id);
+}
+
 /** Materialise + equip the guise's equipment; returns {ids, equipUpdate}. Handles two-hand (D3b). */
 async function materialiseEquipment(actor, item) {
 	const data = item.system?.data ?? {};
@@ -384,7 +402,10 @@ async function _bindCore(actor, item) {
 	// Materialise the mask's live skill set FIRST (flagged guise-origin) …
 	const skillIds = await materialiseSkills(actor, item);
 	const { ids: equipIds, equipUpdate } = await materialiseEquipment(actor, item);
-	const owned = [...skillIds, ...equipIds];
+	// #3 (v0.7.9): the worn guise's signature Heroic rides on while worn (its effects apply);
+	// removed on dismiss with the rest of the guise-origin owned set.
+	const heroicIds = await materialiseAttachedHeroic(actor, item);
+	const owned = [...skillIds, ...equipIds, ...heroicIds];
 	await actor.update({
 		[`flags.${MODULE_ID}.${FLAG}`]: item.id,
 		[`flags.${MODULE_ID}.preBindEquip`]: preBindEquip,
@@ -1443,6 +1464,9 @@ function validateGuiseDraft(draft, mode = 'worn', skillMax = {}, budget = SKILL_
 	if (mode === 'worn') {
 		const t = validateAffinityTrio({ immunity: draft?.affinityImmunity, vulnerability: draft?.affinityVulnerability, resistance: draft?.affinityResistance });
 		if (!t.ok) errors.push(t.reason);
+		// #3 (v0.7.9): a worn guise always carries one attached Heroic (Austin). Soft-required — the
+		// module-wide GM override (#4) can waive it; existing in-world guises are not re-validated.
+		if (!draft?.attachedHeroicUuid) errors.push('A worn Guise carries one attached Heroic Skill.');
 	} else { // innate
 		const specs = (draft?.specialties ?? []).map((s) => (s ?? '').trim()).filter(Boolean);
 		const cap = specialtyCapFor(draftIsTalented(draft));
@@ -1461,7 +1485,7 @@ function guiseStepErrors(draft, mode = 'worn', skillMax = {}, budget = SKILL_BUD
 		case 'identity': return { ok: true, errors: [] };
 		case 'classes': return okFrom(has(/\bclasses\b|must be distinct/i));
 		case 'skills': return okFrom(has(/at least one skill|above its max|over the budget/i));
-		case 'loadout': return okFrom(mode === 'innate' ? has(/Specialties/i) : []);
+		case 'loadout': return okFrom(mode === 'innate' ? has(/Specialties/i) : has(/attached Heroic/i));
 		case 'affinities': return okFrom(mode === 'worn' ? has(/Immunity|Vulnerability|Resistance|Absorption|affinit/i) : []);
 		case 'review': default: return { ok: all.length === 0, errors: all };
 	}
@@ -1475,6 +1499,9 @@ function emptyGuiseDraft() {
 		// worn-guise fields (Q1: none of these belong on the Innate Guise)
 		equipment: [], // [{itemUuid, slot}] — armor / two hands / accessory (was hardcoded [] — the P2 bug)
 		perk: '', bonusDescriptor: '', tell: '', bane: '', flaw: '',
+		// #3 (v0.7.9): every worn guise carries ONE guise-native ("signature") Heroic — its own,
+		// distinct from the character's heroics; materialised on bind so its effect rides while worn.
+		attachedHeroicUuid: '', attachedHeroicName: '',
 		// affinity TRIO (Q7) — element keys or '' ; Absorption is never representable
 		affinityImmunity: '', affinityVulnerability: '', affinityResistance: '',
 		// innate-guise fields (Q1) + the Hunter Weapon (v0.7.1)
@@ -1566,6 +1593,8 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 		affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
 		perk, bonus, tell: draft.tell ?? '', bane: draft.bane ?? '', flaw: draft.flaw ?? '',
 		specialties: [], innateHeroicUuid: '',
+		// #3 (v0.7.9): the guise-native attached Heroic (materialised on bind in _bindCore).
+		attachedHeroicUuid: draft.attachedHeroicUuid ?? '',
 	};
 }
 
@@ -1777,6 +1806,8 @@ function getGuiseBuilderApp() {
 				// #2 (v0.7.9): innate armor + accessory chips
 				armorName: this._draft.armorUuid ? (this._draft.armorName || this._draft.armorUuid) : '',
 				accessoryName: this._draft.accessoryUuid ? (this._draft.accessoryName || this._draft.accessoryUuid) : '',
+				// #3 (v0.7.9): the worn guise's attached ("signature") Heroic chip
+				attachedHeroicName: this._draft.attachedHeroicUuid ? (this._draft.attachedHeroicName || this._draft.attachedHeroicUuid) : '',
 			};
 
 			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties, min-per-class + budget) ----
@@ -1921,6 +1952,10 @@ function getGuiseBuilderApp() {
 			root.querySelectorAll('[data-action="clearAccessory"]').forEach((a) => a.addEventListener('click', (ev) => {
 				ev.preventDefault(); this._draft.accessoryUuid = ''; this._draft.accessoryName = ''; this.render();
 			}));
+			// #3 (v0.7.9): worn guise attached-heroic clear
+			root.querySelectorAll('[data-action="clearWornHeroic"]').forEach((a) => a.addEventListener('click', (ev) => {
+				ev.preventDefault(); this._draft.attachedHeroicUuid = ''; this._draft.attachedHeroicName = ''; this.render();
+			}));
 
 			// ---- drop targets: equipment (worn) + creation heroic (innate) ----
 			root.querySelectorAll('[data-guise-drop]').forEach((zone) => {
@@ -1947,6 +1982,9 @@ function getGuiseBuilderApp() {
 					} else if (zone.dataset.guiseDrop === 'accessory') {
 						if (doc.type !== 'accessory') { ui.notifications?.warn('The Innate Guise accessory must be an accessory Item.'); return; }
 						this._draft.accessoryUuid = data.uuid; this._draft.accessoryName = doc.name;
+					} else if (zone.dataset.guiseDrop === 'wornHeroic') {
+						if (doc.type !== 'heroic') { ui.notifications?.warn('The attached Heroic must be a Heroic Skill.'); return; }
+						this._draft.attachedHeroicUuid = data.uuid; this._draft.attachedHeroicName = doc.name;
 					}
 					this.render();
 				});
@@ -2110,6 +2148,9 @@ function defineGuiseModel() {
 				specialties: new ArrayField(new StringField({ initial: '' })),
 				talented: new BooleanField({ initial: false }), // v0.7.9: the Talented keystone => four Specialties
 				innateHeroicUuid: new StringField({ initial: '' }),
+				// #3 (v0.7.9): a worn guise's own ("signature") Heroic — materialised on bind, distinct
+				// from the character's heroics. Innate guises leave this empty.
+				attachedHeroicUuid: new StringField({ initial: '' }),
 				// Hunter Weapon record (v0.7.1); the weapon Item itself is materialised + flagged on the actor
 				hunterWeaponUuid: new StringField({ initial: '' }),
 				hunterMaterial: new StringField({ initial: '' }),
