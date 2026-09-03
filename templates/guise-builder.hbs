@@ -108,6 +108,18 @@
 					</label>
 					<label>{{localize "RIPPERS.Builder.HWOrigin"}} <input type="text" data-draft="hunterOrigin" value="{{loadout.hunterOrigin}}" placeholder="{{localize "RIPPERS.Builder.HWOriginHint"}}" /></label>
 				</fieldset>
+				<fieldset class="gb-innate-equip">
+					<legend>{{localize "RIPPERS.Builder.InnateEquipment"}}</legend>
+					<p class="gb-hint">{{localize "RIPPERS.Builder.InnateEquipmentHint"}}</p>
+					{{#if loadout.armorName}}
+						<div class="gb-chip"><i class="fas fa-shield-halved"></i> {{loadout.armorName}} <a data-action="clearArmor" title="{{localize "RIPPERS.Builder.Clear"}}"><i class="fas fa-times"></i></a></div>
+					{{/if}}
+					<div class="guise-drop gb-drop" data-guise-drop="armor">{{localize "RIPPERS.Builder.DropArmor"}}</div>
+					{{#if loadout.accessoryName}}
+						<div class="gb-chip"><i class="fas fa-ring"></i> {{loadout.accessoryName}} <a data-action="clearAccessory" title="{{localize "RIPPERS.Builder.Clear"}}"><i class="fas fa-times"></i></a></div>
+					{{/if}}
+					<div class="guise-drop gb-drop" data-guise-drop="accessory">{{localize "RIPPERS.Builder.DropAccessory"}}</div>
+				</fieldset>
 			{{else}}
 				<fieldset class="gb-equipment">
 					<legend>{{localize "RIPPERS.Builder.Equipment"}}</legend>

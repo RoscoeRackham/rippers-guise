@@ -190,6 +190,20 @@ test('v0.7.9: Talented => four Specialties (dynamic count); default stays two', 
 	assert.equal(specialtyCapFor(false), 2);
 });
 
+test('v0.7.9 (#2): an innate draft carries armor + accessory refs; a worn guise carries neither', () => {
+	const d = filled(threeClasses(emptyGuiseDraft())); d.mode = 'innate';
+	d.specialties = [SPECIALTY_LIST[0], SPECIALTY_LIST[1]];
+	d.armorUuid = 'Compendium.x.items.Item.coat'; d.accessoryUuid = 'Compendium.x.items.Item.locket';
+	const data = guiseDraftToData(d, {}, 30);
+	assert.equal(data.armorUuid, 'Compendium.x.items.Item.coat');   // persisted for materialise + re-edit
+	assert.equal(data.accessoryUuid, 'Compendium.x.items.Item.locket');
+	// armor/accessory are innate-only (like Specialties): a WORN guise's data carries neither.
+	const w = filled(threeClasses(emptyGuiseDraft())); w.armorUuid = 'x'; w.accessoryUuid = 'y';
+	const wd = guiseDraftToData(w, {}, 30);
+	assert.equal(wd.armorUuid, undefined);
+	assert.equal(wd.accessoryUuid, undefined);
+});
+
 // --- vocab sanity -------------------------------------------------------------
 test('the canon vocabularies are well-formed', () => {
 	assert.equal(SPECIALTY_LIST.length, 13);

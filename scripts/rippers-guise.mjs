@@ -1480,6 +1480,8 @@ function emptyGuiseDraft() {
 		// innate-guise fields (Q1) + the Hunter Weapon (v0.7.1)
 		specialties: [], talented: false, innateHeroicUuid: '',
 		hunterWeaponUuid: '', hunterWeaponName: '', hunterMaterial: '', hunterOrigin: '',
+		// innate armor + accessory (#2, v0.7.9): authored Item refs, materialised + equipped on the actor
+		armorUuid: '', armorName: '', accessoryUuid: '', accessoryName: '',
 	};
 }
 
@@ -1542,6 +1544,8 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 			specialties, talented, innateHeroicUuid: draft.innateHeroicUuid ?? '',
 			// Hunter Weapon (v0.7.1): the weapon is materialised + marked in createGuiseFromDraft.
 			hunterWeaponUuid: draft.hunterWeaponUuid ?? '', hunterMaterial, hunterOrigin: draft.hunterOrigin ?? '',
+			// #2 (v0.7.9): innate armor + accessory refs, materialised + equipped in createGuiseFromDraft.
+			armorUuid: draft.armorUuid ?? '', accessoryUuid: draft.accessoryUuid ?? '',
 		};
 	}
 
@@ -1607,6 +1611,24 @@ async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false 
 				ui.notifications?.warn('The Hunter Weapon must be a weapon Item.');
 			}
 		} catch (err) { console.warn('[rippers-guise] Hunter Weapon materialisation failed:', err); }
+	}
+	// Innate-Guise mode (#2, v0.7.9): materialise the innate armor + accessory as owned Items and
+	// EQUIP them on the actor. Like the Hunter Weapon they belong to the CHARACTER (the face under
+	// the masks), so they are plain owned equipped items — a worn mask's own equipment displaces them
+	// on bind and preBindEquip restores them on dismiss (the existing snapshot/restore machinery).
+	if (item && mode === 'innate') {
+		for (const [slot, uuid] of [['armor', data.armorUuid], ['accessory', data.accessoryUuid]]) {
+			if (!uuid) continue;
+			try {
+				const src = await safeFromUuid(uuid);
+				if (!src) { console.warn(`[rippers-guise] innate ${slot} ref not found: ${uuid}`); continue; }
+				if (src.type !== slot) { ui.notifications?.warn(`The Innate Guise ${slot} must be ${slot === 'armor' ? 'an armor' : 'an accessory'} Item.`); continue; }
+				const obj = src.toObject(); delete obj._id;
+				obj.flags = obj.flags ?? {}; obj.flags[MODULE_ID] = { innateEquip: slot };
+				const [created] = await actor.createEmbeddedDocuments('Item', [obj]);
+				if (created) await actor.update({ [`system.equipped.${slot}`]: created.id });
+			} catch (err) { console.warn(`[rippers-guise] innate ${slot} materialisation failed:`, err); }
+		}
 	}
 	if (item && bind) await bindGuise(actor, item);
 	return item;
@@ -1752,6 +1774,9 @@ function getGuiseBuilderApp() {
 				specialtyCount, specialtyMax, talented: draftIsTalented(this._draft), heroicName,
 				hunterName: this._draft.hunterWeaponUuid ? (this._draft.hunterWeaponName || this._draft.hunterWeaponUuid) : '',
 				hwMaterialOpts, hunterOrigin: this._draft.hunterOrigin ?? '',
+				// #2 (v0.7.9): innate armor + accessory chips
+				armorName: this._draft.armorUuid ? (this._draft.armorName || this._draft.armorUuid) : '',
+				accessoryName: this._draft.accessoryUuid ? (this._draft.accessoryName || this._draft.accessoryUuid) : '',
 			};
 
 			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties, min-per-class + budget) ----
@@ -1889,6 +1914,13 @@ function getGuiseBuilderApp() {
 			root.querySelectorAll('[data-action="clearHunter"]').forEach((a) => a.addEventListener('click', (ev) => {
 				ev.preventDefault(); this._draft.hunterWeaponUuid = ''; this._draft.hunterWeaponName = ''; this.render();
 			}));
+			// #2 (v0.7.9): innate armor + accessory clear
+			root.querySelectorAll('[data-action="clearArmor"]').forEach((a) => a.addEventListener('click', (ev) => {
+				ev.preventDefault(); this._draft.armorUuid = ''; this._draft.armorName = ''; this.render();
+			}));
+			root.querySelectorAll('[data-action="clearAccessory"]').forEach((a) => a.addEventListener('click', (ev) => {
+				ev.preventDefault(); this._draft.accessoryUuid = ''; this._draft.accessoryName = ''; this.render();
+			}));
 
 			// ---- drop targets: equipment (worn) + creation heroic (innate) ----
 			root.querySelectorAll('[data-guise-drop]').forEach((zone) => {
@@ -1909,6 +1941,12 @@ function getGuiseBuilderApp() {
 					} else if (zone.dataset.guiseDrop === 'hunter') {
 						if (doc.type !== 'weapon' && doc.type !== 'customWeapon') { ui.notifications?.warn('The Hunter Weapon must be a weapon Item.'); return; }
 						this._draft.hunterWeaponUuid = data.uuid; this._draft.hunterWeaponName = doc.name;
+					} else if (zone.dataset.guiseDrop === 'armor') {
+						if (doc.type !== 'armor') { ui.notifications?.warn('The Innate Guise armor must be an armor Item.'); return; }
+						this._draft.armorUuid = data.uuid; this._draft.armorName = doc.name;
+					} else if (zone.dataset.guiseDrop === 'accessory') {
+						if (doc.type !== 'accessory') { ui.notifications?.warn('The Innate Guise accessory must be an accessory Item.'); return; }
+						this._draft.accessoryUuid = data.uuid; this._draft.accessoryName = doc.name;
 					}
 					this.render();
 				});
@@ -2076,6 +2114,11 @@ function defineGuiseModel() {
 				hunterWeaponUuid: new StringField({ initial: '' }),
 				hunterMaterial: new StringField({ initial: '' }),
 				hunterOrigin: new StringField({ initial: '' }),
+				// innate armor + accessory (#2, v0.7.9): authored refs; the Items are materialised +
+				// equipped on the actor at create (like the Hunter Weapon), so they are the character's
+				// own kit. Kept here for re-edit / display.
+				armorUuid: new StringField({ initial: '' }),
+				accessoryUuid: new StringField({ initial: '' }),
 				// classes + per-skill allocation (D1: UUID refs to the compendium)
 				classes: new ArrayField(new SchemaField({
 					classUuid: new StringField({ initial: '' }),
