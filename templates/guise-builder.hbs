@@ -141,6 +141,17 @@
 					{{/if}}
 					<div class="guise-drop gb-drop" data-guise-drop="wornHeroic">{{localize "RIPPERS.Builder.DropSignatureHeroic"}}</div>
 				</fieldset>
+				<fieldset class="gb-attached-effects">
+					<legend>{{localize "RIPPERS.Builder.AttachedEffects"}}</legend>
+					<p class="gb-hint">{{localize "RIPPERS.Builder.AttachedEffectsHint"}}</p>
+					{{#each loadout.attachedEffects}}
+						<div class="gb-equip-row">
+							<span class="gb-equip-name">{{name}}</span>
+							<a data-action="removeAttachedEffect" data-i="{{i}}" title="{{localize "RIPPERS.Builder.RemoveAttachedEffect"}}"><i class="fas fa-times"></i></a>
+						</div>
+					{{/each}}
+					<div class="guise-drop gb-drop" data-guise-drop="attachedEffect">{{localize "RIPPERS.Builder.DropAttachedEffect"}}</div>
+				</fieldset>
 				<fieldset class="gb-traits">
 					<legend>{{localize "RIPPERS.Builder.Traits"}}</legend>
 					<label>{{localize "RIPPERS.Builder.Perk"}} <input type="text" data-draft="perk" value="{{loadout.perk}}" placeholder="{{localize "RIPPERS.Builder.PerkHint"}}" /></label>

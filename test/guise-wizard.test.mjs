@@ -225,6 +225,21 @@ test('v0.7.9 (#3): a worn guise requires an attached (signature) Heroic and carr
 	assert.equal(guiseDraftToData(innate, {}, 30).attachedHeroicUuid, undefined);
 });
 
+test('v0.7.9 (#5): a worn guise carries attached effects that ride it; blanks dropped; innate omits them', () => {
+	const d = wornOk(filled(threeClasses(emptyGuiseDraft())));
+	d.attachedEffects = [
+		{ itemUuid: 'Compendium.x.items.Item.akromorphosis', name: 'Greater Akromorphosis' },
+		{ itemUuid: '', name: 'blank — dropped' },
+	];
+	const data = guiseDraftToData(d, {}, 30);
+	assert.deepEqual(data.attachedEffects, [{ itemUuid: 'Compendium.x.items.Item.akromorphosis' }]); // kept + normalised; blank gone
+	// innate guises don't carry the ride-on-swap list (they aren't bound/dismissed)
+	const innate = filled(threeClasses(emptyGuiseDraft())); innate.mode = 'innate';
+	innate.specialties = [SPECIALTY_LIST[0], SPECIALTY_LIST[1]];
+	innate.attachedEffects = [{ itemUuid: 'Compendium.x.items.Item.akromorphosis' }];
+	assert.equal(guiseDraftToData(innate, {}, 30).attachedEffects, undefined);
+});
+
 // --- vocab sanity -------------------------------------------------------------
 test('the canon vocabularies are well-formed', () => {
 	assert.equal(SPECIALTY_LIST.length, 13);

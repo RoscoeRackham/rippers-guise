@@ -355,6 +355,29 @@ async function materialiseAttachedHeroic(actor, item) {
 	return created.map((d) => d.id);
 }
 
+/** #5 (v0.7.9): materialise the guise's attached effects/abilities (e.g. Greater Akromorphosis) as
+ *  guise-origin owned Items. They carry their own ActiveEffect(s), so creating them on bind rides those
+ *  onto the actor; _dismissCore removes them on dismiss — the "effects travel with the guise, on while
+ *  worn, off while stashed" behaviour, on the same machinery as skills / equipment / the signature
+ *  Heroic. No type gate: any effect-bearing Item may ride; the GM authors which effects belong on a
+ *  mask (body/standing per the GUISES sort test). Returns created ids. */
+async function materialiseAttachedEffects(actor, item) {
+	const list = item.system?.data?.attachedEffects ?? [];
+	const toCreate = [];
+	for (const e of list) {
+		if (!e?.itemUuid) continue;
+		const src = await fromUuid(e.itemUuid);
+		if (!src) { console.warn(`[rippers-guise] attached effect ref not found: ${e.itemUuid}`); continue; }
+		const obj = src.toObject();
+		delete obj._id;
+		obj.flags = obj.flags ?? {};
+		obj.flags[MODULE_ID] = { origin: item.id, kind: 'effect' };
+		toCreate.push(obj);
+	}
+	const created = toCreate.length ? await actor.createEmbeddedDocuments('Item', toCreate) : [];
+	return created.map((d) => d.id);
+}
+
 /** Materialise + equip the guise's equipment; returns {ids, equipUpdate}. Handles two-hand (D3b). */
 async function materialiseEquipment(actor, item) {
 	const data = item.system?.data ?? {};
@@ -405,7 +428,9 @@ async function _bindCore(actor, item) {
 	// #3 (v0.7.9): the worn guise's signature Heroic rides on while worn (its effects apply);
 	// removed on dismiss with the rest of the guise-origin owned set.
 	const heroicIds = await materialiseAttachedHeroic(actor, item);
-	const owned = [...skillIds, ...equipIds, ...heroicIds];
+	// #5 (v0.7.9): effects/abilities that travel with the guise ride on the same way.
+	const effectIds = await materialiseAttachedEffects(actor, item);
+	const owned = [...skillIds, ...equipIds, ...heroicIds, ...effectIds];
 	await actor.update({
 		[`flags.${MODULE_ID}.${FLAG}`]: item.id,
 		[`flags.${MODULE_ID}.preBindEquip`]: preBindEquip,
@@ -1502,6 +1527,9 @@ function emptyGuiseDraft() {
 		// #3 (v0.7.9): every worn guise carries ONE guise-native ("signature") Heroic — its own,
 		// distinct from the character's heroics; materialised on bind so its effect rides while worn.
 		attachedHeroicUuid: '', attachedHeroicName: '',
+		// #5 (v0.7.9): effects/abilities that TRAVEL with the guise — [{itemUuid, name}]. Effect-bearing
+		// Items (e.g. Greater Akromorphosis) that switch ON when the guise is worn and OFF when it's not.
+		attachedEffects: [],
 		// affinity TRIO (Q7) — element keys or '' ; Absorption is never representable
 		affinityImmunity: '', affinityVulnerability: '', affinityResistance: '',
 		// innate-guise fields (Q1) + the Hunter Weapon (v0.7.1)
@@ -1595,6 +1623,8 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 		specialties: [], innateHeroicUuid: '',
 		// #3 (v0.7.9): the guise-native attached Heroic (materialised on bind in _bindCore).
 		attachedHeroicUuid: draft.attachedHeroicUuid ?? '',
+		// #5 (v0.7.9): effects that ride the guise (materialised on bind, removed on dismiss).
+		attachedEffects: (draft.attachedEffects ?? []).filter((e) => e?.itemUuid).map((e) => ({ itemUuid: e.itemUuid })),
 	};
 }
 
@@ -1808,6 +1838,8 @@ function getGuiseBuilderApp() {
 				accessoryName: this._draft.accessoryUuid ? (this._draft.accessoryName || this._draft.accessoryUuid) : '',
 				// #3 (v0.7.9): the worn guise's attached ("signature") Heroic chip
 				attachedHeroicName: this._draft.attachedHeroicUuid ? (this._draft.attachedHeroicName || this._draft.attachedHeroicUuid) : '',
+				// #5 (v0.7.9): effects/abilities that ride the guise
+				attachedEffects: (this._draft.attachedEffects ?? []).map((e, i) => ({ i, uuid: e.itemUuid, name: e.name ?? e.itemUuid })),
 			};
 
 			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties, min-per-class + budget) ----
@@ -1935,6 +1967,11 @@ function getGuiseBuilderApp() {
 				ev.preventDefault(); const i = Number(a.dataset.i);
 				this._draft.equipment = (this._draft.equipment ?? []).filter((_, idx) => idx !== i); this.render();
 			}));
+			// #5 (v0.7.9): remove an attached effect/ability
+			root.querySelectorAll('[data-action="removeAttachedEffect"]').forEach((a) => a.addEventListener('click', (ev) => {
+				ev.preventDefault(); const i = Number(a.dataset.i);
+				this._draft.attachedEffects = (this._draft.attachedEffects ?? []).filter((_, idx) => idx !== i); this.render();
+			}));
 			root.querySelectorAll('[data-action="clearHeroic"]').forEach((a) => a.addEventListener('click', (ev) => {
 				ev.preventDefault(); this._draft.innateHeroicUuid = ''; this._draft.innateHeroicName = ''; this.render();
 			}));
@@ -1985,6 +2022,9 @@ function getGuiseBuilderApp() {
 					} else if (zone.dataset.guiseDrop === 'wornHeroic') {
 						if (doc.type !== 'heroic') { ui.notifications?.warn('The attached Heroic must be a Heroic Skill.'); return; }
 						this._draft.attachedHeroicUuid = data.uuid; this._draft.attachedHeroicName = doc.name;
+					} else if (zone.dataset.guiseDrop === 'attachedEffect') {
+						// #5: any effect-bearing Item may ride the guise; the GM authors what belongs.
+						this._draft.attachedEffects = [...(this._draft.attachedEffects ?? []), { itemUuid: data.uuid, name: doc.name }];
 					}
 					this.render();
 				});
@@ -2151,6 +2191,10 @@ function defineGuiseModel() {
 				// #3 (v0.7.9): a worn guise's own ("signature") Heroic — materialised on bind, distinct
 				// from the character's heroics. Innate guises leave this empty.
 				attachedHeroicUuid: new StringField({ initial: '' }),
+				// #5 (v0.7.9): effects/abilities that ride the guise — effect-bearing Item refs
+				// materialised on bind (on while worn) and removed on dismiss. Body/standing effects
+				// per the GUISES sort test (e.g. mutations); the GM authors which effects ride.
+				attachedEffects: new ArrayField(new SchemaField({ itemUuid: new StringField({ initial: '' }) })),
 				// Hunter Weapon record (v0.7.1); the weapon Item itself is materialised + flagged on the actor
 				hunterWeaponUuid: new StringField({ initial: '' }),
 				hunterMaterial: new StringField({ initial: '' }),
