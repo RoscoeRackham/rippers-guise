@@ -156,6 +156,19 @@ test('an innate draft compiles Specialties + heroic and carries NO equipment/aff
 	assert.equal(data.innateHeroicUuid, 'Compendium.x.heroics.Item.h1');
 });
 
+test('v0.7.9: Specialties are FREE TEXT — a name off the list survives, empties/whitespace are dropped', () => {
+	const d = threeClasses(emptyGuiseDraft());
+	d.mode = 'innate';
+	// Neither of these is in SPECIALTY_LIST; the picker whitelist is gone.
+	d.specialties = ['Aetheric Cartography', '  Séance Etiquette  '];
+	const data = guiseDraftToData(d, {}, 30);
+	assert.deepEqual(data.specialties, ['Aetheric Cartography', 'Séance Etiquette']); // kept + trimmed
+	// empties and blanks never count toward the two
+	d.specialties = ['Only One', '', '   '];
+	assert.equal(validateGuiseDraft(d, 'innate').ok, false); // one real specialty ≠ two
+	assert.deepEqual(guiseDraftToData(d, {}, 30).specialties, ['Only One']);
+});
+
 // --- vocab sanity -------------------------------------------------------------
 test('the canon vocabularies are well-formed', () => {
 	assert.equal(SPECIALTY_LIST.length, 13);

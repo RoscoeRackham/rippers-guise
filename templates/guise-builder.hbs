@@ -75,11 +75,17 @@
 				<fieldset class="gb-specialties">
 					<legend>{{localize "RIPPERS.Builder.Specialties"}} — {{loadout.specialtyCount}} / {{loadout.specialtyMax}}</legend>
 					<p class="gb-hint">{{localize "RIPPERS.Builder.SpecialtiesHint"}}</p>
-					<div class="gb-checkgrid">
-						{{#each loadout.specialtyOpts}}
-							<label class="gb-check"><input type="checkbox" class="guise-specialty" data-specialty="{{name}}" {{#if checked}}checked{{/if}} /> {{name}}</label>
+					<div class="gb-specialty-inputs">
+						{{#each loadout.specialtyInputs}}
+							<label class="gb-specialty-input">{{label}}
+								<input type="text" class="guise-specialty" data-i="{{i}}" value="{{value}}"
+									   list="gb-specialty-hints" placeholder="{{../loadout.specialtyPlaceholder}}" />
+							</label>
 						{{/each}}
 					</div>
+					<datalist id="gb-specialty-hints">
+						{{#each loadout.specialtyHints}}<option value="{{this}}"></option>{{/each}}
+					</datalist>
 				</fieldset>
 				<fieldset class="gb-heroic">
 					<legend>{{localize "RIPPERS.Builder.InnateHeroic"}}</legend>

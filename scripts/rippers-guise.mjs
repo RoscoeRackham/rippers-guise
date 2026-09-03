@@ -1520,7 +1520,8 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 	// The Innate Guise (Q1) carries NO affinities, NO armor/hands/accessory, NO Nature/Tell/flaw/bane/Perk
 	// — only Specialties + the creation Heroic (heroic assigned actor-side in createGuiseFromDraft).
 	if (mode === 'innate') {
-		const specialties = (draft.specialties ?? []).filter((s) => SPECIALTY_LIST.includes(s)).slice(0, SPECIALTY_COUNT);
+		// v0.7.9: free text — no whitelist gate; trim, drop empties, cap at SPECIALTY_COUNT.
+		const specialties = (draft.specialties ?? []).map((s) => (s ?? '').trim()).filter(Boolean).slice(0, SPECIALTY_COUNT);
 		const hunterMaterial = HW_MATERIALS.includes(draft.hunterMaterial) ? draft.hunterMaterial : '';
 		return {
 			mode, identity: draft.name ?? '', role: draft.role ?? '', nature: '', notes: draft.notes ?? '',
@@ -1718,8 +1719,15 @@ function getGuiseBuilderApp() {
 				i, uuid: eq.itemUuid, name: eq.name ?? eq.itemUuid,
 				slots: slotChoices.map((c) => ({ ...c, selected: c.value === eq.slot })),
 			}));
-			const specialtyOpts = SPECIALTY_LIST.map((s) => ({ name: s, checked: (this._draft.specialties ?? []).includes(s) }));
-			const specialtyCount = (this._draft.specialties ?? []).filter(Boolean).length;
+			// v0.7.9 (Austin, 3 Sep): Specialties are FREE TEXT, not a picker. N inputs (N = SPECIALTY_COUNT),
+			// the 13-name list demoted to a <datalist> of autocomplete hints. Padded to N so positions are stable.
+			const specialtyDraft = this._draft.specialties ?? [];
+			const specialtyInputs = Array.from({ length: SPECIALTY_COUNT }, (_, i) => ({
+				i,
+				value: specialtyDraft[i] ?? '',
+				label: `${game.i18n.localize('RIPPERS.Builder.Specialties')} ${i + 1}`,
+			}));
+			const specialtyCount = specialtyDraft.filter((s) => (s ?? '').trim()).length;
 			const heroicName = this._draft.innateHeroicUuid ? (this._draft.innateHeroicName || this._draft.innateHeroicUuid) : '';
 			const hwMaterialOpts = [{ value: '', label: game.i18n.localize('RIPPERS.Builder.HWMaterialNone') }]
 				.concat(HW_MATERIALS.map((m) => ({ value: m, label: game.i18n.localize(`RIPPERS.Builder.HWMat.${m}`) })))
@@ -1728,7 +1736,8 @@ function getGuiseBuilderApp() {
 				equipment, bonusValue: BONUS_VALUE,
 				perk: this._draft.perk ?? '', bonusDescriptor: this._draft.bonusDescriptor ?? '',
 				tell: this._draft.tell ?? '', bane: this._draft.bane ?? '', flaw: this._draft.flaw ?? '',
-				specialtyOpts, specialtyCount, specialtyMax: SPECIALTY_COUNT, heroicName,
+				specialtyInputs, specialtyHints: SPECIALTY_LIST, specialtyPlaceholder: game.i18n.localize('RIPPERS.Builder.SpecialtyPlaceholder'),
+				specialtyCount, specialtyMax: SPECIALTY_COUNT, heroicName,
 				hunterName: this._draft.hunterWeaponUuid ? (this._draft.hunterWeaponName || this._draft.hunterWeaponUuid) : '',
 				hwMaterialOpts, hunterOrigin: this._draft.hunterOrigin ?? '',
 			};
@@ -1834,10 +1843,14 @@ function getGuiseBuilderApp() {
 			// ---- loadout step: perks / bonus / specialties ----
 			// Perk + Bonus descriptor are now free-text (data-draft="perk" / "bonusDescriptor") — handled
 			// by the generic [data-draft] change listener above; no per-control handler needed (v0.7.4).
-			root.querySelectorAll('input.guise-specialty').forEach((cb) => cb.addEventListener('change', () => {
-				const s = cb.dataset.specialty; const set = new Set(this._draft.specialties ?? []);
-				if (cb.checked) { if (set.size < SPECIALTY_COUNT) set.add(s); } else set.delete(s);
-				this._draft.specialties = SPECIALTY_LIST.filter((x) => set.has(x)); this.render();
+			// v0.7.9: free-text Specialty inputs. Write by index into a padded array so an empty middle
+			// slot keeps its position; guiseDraftToData trims empties on Create.
+			root.querySelectorAll('input.guise-specialty').forEach((inp) => inp.addEventListener('change', () => {
+				const i = Number(inp.dataset.i);
+				const arr = Array.from({ length: SPECIALTY_COUNT }, (_, k) => (this._draft.specialties ?? [])[k] ?? '');
+				arr[i] = inp.value.trim();
+				this._draft.specialties = arr;
+				this.render();
 			}));
 			// equipment slot change + remove
 			root.querySelectorAll('select.guise-equip-slot').forEach((sel) => sel.addEventListener('change', () => {
