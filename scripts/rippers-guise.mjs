@@ -1328,6 +1328,15 @@ const SPECIALTY_LIST = Object.freeze([
 	'Seamanship', 'Mechanics & Electrical Work', 'Wilderness Survival',
 ]);
 const SPECIALTY_COUNT = 2;
+const TALENTED_SPECIALTY_COUNT = 4;
+// v0.7.9 (Austin, 3 Sep): the Talented keystone doubles the two Specialties to four ("the Talented
+// carry four" — Lodge mig 0121 was the app's version of this canon rule). No keystone mechanic exists
+// in this ecosystem, so Talented is a build-time boolean on the Innate Guise; isTalented() is the single
+// seam — re-point it if Talented later becomes a holdable Item, with no change to the count logic.
+/** How many Specialties the Innate Guise carries. Pure. */
+const specialtyCapFor = (talented) => (talented ? TALENTED_SPECIALTY_COUNT : SPECIALTY_COUNT);
+/** Talented predicate off a builder draft (today: the innate-guise boolean). Pure. */
+const draftIsTalented = (draft) => !!draft?.talented;
 
 // SPECIALTY die-bump (v0.7.1, Austin ROS-24 follow-up). Canon (core §"Specialties"): an in-subject
 // Check improves the die size of ONE die. Austin's ruling: it must NOT apply to Magic or Accuracy
@@ -1435,8 +1444,9 @@ function validateGuiseDraft(draft, mode = 'worn', skillMax = {}, budget = SKILL_
 		const t = validateAffinityTrio({ immunity: draft?.affinityImmunity, vulnerability: draft?.affinityVulnerability, resistance: draft?.affinityResistance });
 		if (!t.ok) errors.push(t.reason);
 	} else { // innate
-		const specs = (draft?.specialties ?? []).filter(Boolean);
-		if (specs.length !== SPECIALTY_COUNT) errors.push(`The Innate Guise carries exactly ${SPECIALTY_COUNT} Specialties (has ${specs.length}).`);
+		const specs = (draft?.specialties ?? []).map((s) => (s ?? '').trim()).filter(Boolean);
+		const cap = specialtyCapFor(draftIsTalented(draft));
+		if (specs.length !== cap) errors.push(`The Innate Guise carries exactly ${cap} Specialties (has ${specs.length}).`);
 	}
 	return { ok: errors.length === 0, errors };
 }
@@ -1468,7 +1478,7 @@ function emptyGuiseDraft() {
 		// affinity TRIO (Q7) — element keys or '' ; Absorption is never representable
 		affinityImmunity: '', affinityVulnerability: '', affinityResistance: '',
 		// innate-guise fields (Q1) + the Hunter Weapon (v0.7.1)
-		specialties: [], innateHeroicUuid: '',
+		specialties: [], talented: false, innateHeroicUuid: '',
 		hunterWeaponUuid: '', hunterWeaponName: '', hunterMaterial: '', hunterOrigin: '',
 	};
 }
@@ -1520,15 +1530,16 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 	// The Innate Guise (Q1) carries NO affinities, NO armor/hands/accessory, NO Nature/Tell/flaw/bane/Perk
 	// — only Specialties + the creation Heroic (heroic assigned actor-side in createGuiseFromDraft).
 	if (mode === 'innate') {
-		// v0.7.9: free text — no whitelist gate; trim, drop empties, cap at SPECIALTY_COUNT.
-		const specialties = (draft.specialties ?? []).map((s) => (s ?? '').trim()).filter(Boolean).slice(0, SPECIALTY_COUNT);
+		// v0.7.9: free text — no whitelist gate; trim, drop empties, cap at the Specialty count (4 if Talented).
+		const talented = draftIsTalented(draft);
+		const specialties = (draft.specialties ?? []).map((s) => (s ?? '').trim()).filter(Boolean).slice(0, specialtyCapFor(talented));
 		const hunterMaterial = HW_MATERIALS.includes(draft.hunterMaterial) ? draft.hunterMaterial : '';
 		return {
 			mode, identity: draft.name ?? '', role: draft.role ?? '', nature: '', notes: draft.notes ?? '',
 			classes, equipment: [], affinityModifiers: [],
 			affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
 			perk: '', bonus: null, tell: '', bane: '', flaw: '',
-			specialties, innateHeroicUuid: draft.innateHeroicUuid ?? '',
+			specialties, talented, innateHeroicUuid: draft.innateHeroicUuid ?? '',
 			// Hunter Weapon (v0.7.1): the weapon is materialised + marked in createGuiseFromDraft.
 			hunterWeaponUuid: draft.hunterWeaponUuid ?? '', hunterMaterial, hunterOrigin: draft.hunterOrigin ?? '',
 		};
@@ -1722,12 +1733,13 @@ function getGuiseBuilderApp() {
 			// v0.7.9 (Austin, 3 Sep): Specialties are FREE TEXT, not a picker. N inputs (N = SPECIALTY_COUNT),
 			// the 13-name list demoted to a <datalist> of autocomplete hints. Padded to N so positions are stable.
 			const specialtyDraft = this._draft.specialties ?? [];
-			const specialtyInputs = Array.from({ length: SPECIALTY_COUNT }, (_, i) => ({
+			const specialtyMax = specialtyCapFor(draftIsTalented(this._draft)); // 2, or 4 with Talented
+			const specialtyInputs = Array.from({ length: specialtyMax }, (_, i) => ({
 				i,
 				value: specialtyDraft[i] ?? '',
 				label: `${game.i18n.localize('RIPPERS.Builder.Specialties')} ${i + 1}`,
 			}));
-			const specialtyCount = specialtyDraft.filter((s) => (s ?? '').trim()).length;
+			const specialtyCount = specialtyDraft.slice(0, specialtyMax).filter((s) => (s ?? '').trim()).length;
 			const heroicName = this._draft.innateHeroicUuid ? (this._draft.innateHeroicName || this._draft.innateHeroicUuid) : '';
 			const hwMaterialOpts = [{ value: '', label: game.i18n.localize('RIPPERS.Builder.HWMaterialNone') }]
 				.concat(HW_MATERIALS.map((m) => ({ value: m, label: game.i18n.localize(`RIPPERS.Builder.HWMat.${m}`) })))
@@ -1737,7 +1749,7 @@ function getGuiseBuilderApp() {
 				perk: this._draft.perk ?? '', bonusDescriptor: this._draft.bonusDescriptor ?? '',
 				tell: this._draft.tell ?? '', bane: this._draft.bane ?? '', flaw: this._draft.flaw ?? '',
 				specialtyInputs, specialtyHints: SPECIALTY_LIST, specialtyPlaceholder: game.i18n.localize('RIPPERS.Builder.SpecialtyPlaceholder'),
-				specialtyCount, specialtyMax: SPECIALTY_COUNT, heroicName,
+				specialtyCount, specialtyMax, talented: draftIsTalented(this._draft), heroicName,
 				hunterName: this._draft.hunterWeaponUuid ? (this._draft.hunterWeaponName || this._draft.hunterWeaponUuid) : '',
 				hwMaterialOpts, hunterOrigin: this._draft.hunterOrigin ?? '',
 			};
@@ -1847,11 +1859,17 @@ function getGuiseBuilderApp() {
 			// slot keeps its position; guiseDraftToData trims empties on Create.
 			root.querySelectorAll('input.guise-specialty').forEach((inp) => inp.addEventListener('change', () => {
 				const i = Number(inp.dataset.i);
-				const arr = Array.from({ length: SPECIALTY_COUNT }, (_, k) => (this._draft.specialties ?? [])[k] ?? '');
+				const cap = specialtyCapFor(draftIsTalented(this._draft));
+				const arr = Array.from({ length: cap }, (_, k) => (this._draft.specialties ?? [])[k] ?? '');
 				arr[i] = inp.value.trim();
 				this._draft.specialties = arr;
 				this.render();
 			}));
+			// v0.7.9: the Talented toggle re-sizes the Specialty count (2 <-> 4). Re-render redraws the inputs.
+			root.querySelector('input.guise-talented')?.addEventListener('change', (ev) => {
+				this._draft.talented = !!ev.currentTarget.checked;
+				this.render();
+			});
 			// equipment slot change + remove
 			root.querySelectorAll('select.guise-equip-slot').forEach((sel) => sel.addEventListener('change', () => {
 				const i = Number(sel.dataset.i); const eq = (this._draft.equipment ?? [])[i];
@@ -2029,7 +2047,7 @@ function defineGuiseModel() {
 	if (!RollableClassFeatureDataModel) {
 		throw new Error('[rippers-guise] Project FU (globalThis.projectfu.RollableClassFeatureDataModel) not found — is the projectfu system active?');
 	}
-	const { StringField, HTMLField, ArrayField, SchemaField, NumberField } = foundry.data.fields;
+	const { StringField, HTMLField, ArrayField, SchemaField, NumberField, BooleanField } = foundry.data.fields;
 
 	return class GuiseDataModel extends RollableClassFeatureDataModel {
 		static defineSchema() {
@@ -2050,8 +2068,9 @@ function defineGuiseModel() {
 				tell: new StringField({ initial: '' }),
 				bane: new StringField({ initial: '' }),           // Q2 — NARRATIVE, not a mechanical effect
 				flaw: new StringField({ initial: '' }),
-				// innate-guise grants (Q1): two Specialties + the creation Heroic (assigned actor-side)
+				// innate-guise grants (Q1): two Specialties (four with Talented, v0.7.9) + the creation Heroic (assigned actor-side)
 				specialties: new ArrayField(new StringField({ initial: '' })),
+				talented: new BooleanField({ initial: false }), // v0.7.9: the Talented keystone => four Specialties
 				innateHeroicUuid: new StringField({ initial: '' }),
 				// Hunter Weapon record (v0.7.1); the weapon Item itself is materialised + flagged on the actor
 				hunterWeaponUuid: new StringField({ initial: '' }),
@@ -2496,7 +2515,7 @@ export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affi
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
 export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
-export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
+export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.
 export { guiseStepErrors, draftRawSpent, draftClassSpent, SPECIALTY_ATTRIBUTES };
 // v0.7.1 follow-up — Specialty die-bump (excl. magic/accuracy) + Hunter-Weapon-in-Innate authoring.

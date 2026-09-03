@@ -75,6 +75,7 @@
 				<fieldset class="gb-specialties">
 					<legend>{{localize "RIPPERS.Builder.Specialties"}} — {{loadout.specialtyCount}} / {{loadout.specialtyMax}}</legend>
 					<p class="gb-hint">{{localize "RIPPERS.Builder.SpecialtiesHint"}}</p>
+					<label class="gb-talented"><input type="checkbox" class="guise-talented" {{#if loadout.talented}}checked{{/if}} /> {{localize "RIPPERS.Builder.Talented"}}</label>
 					<div class="gb-specialty-inputs">
 						{{#each loadout.specialtyInputs}}
 							<label class="gb-specialty-input">{{label}}

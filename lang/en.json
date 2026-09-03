@@ -101,6 +101,7 @@
 	"RIPPERS.Builder.Specialties": "Specialties",
 	"RIPPERS.Builder.SpecialtiesHint": "Type exactly two — pick a suggestion or write your own. In an in-subject Check, improve one die's size.",
 	"RIPPERS.Builder.SpecialtyPlaceholder": "Specialty — type or pick",
+	"RIPPERS.Builder.Talented": "Talented keystone — four Specialties instead of two",
 	"RIPPERS.Builder.InnateHeroic": "Creation Heroic",
 	"RIPPERS.Builder.InnateHeroicHint": "One Heroic Skill, attached to the Innate Guise (it sleeps while you wear a mask). Banned-at-creation heroics are refused.",
 	"RIPPERS.Builder.DropHeroic": "Drag a Heroic Skill here",

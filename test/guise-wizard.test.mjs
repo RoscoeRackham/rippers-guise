@@ -24,7 +24,7 @@ const mod = await import('../scripts/rippers-guise.mjs');
 const {
 	WIZARD_STEPS, clampWizardStep, emptyGuiseDraft, guiseDraftToData, draftKey, AFFINITY_TYPES,
 	validateAffinityTrio, affinityTrioToModifiers, validateGuiseDraft,
-	SPECIALTY_LIST, SPECIALTY_COUNT, GUISE_MODES, REQUIRED_CLASS_COUNT,
+	SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, GUISE_MODES, REQUIRED_CLASS_COUNT,
 	validateAffinitySet, newAffinitySet, affinityLevelOf, withAffinityLevel,
 	parseClassSkills, guiseStepErrors, SPECIALTY_ATTRIBUTES,
 } = mod;
@@ -167,6 +167,27 @@ test('v0.7.9: Specialties are FREE TEXT — a name off the list survives, emptie
 	d.specialties = ['Only One', '', '   '];
 	assert.equal(validateGuiseDraft(d, 'innate').ok, false); // one real specialty ≠ two
 	assert.deepEqual(guiseDraftToData(d, {}, 30).specialties, ['Only One']);
+});
+
+test('v0.7.9: Talented => four Specialties (dynamic count); default stays two', () => {
+	const four = ['Arts', 'Crafts', 'Medicine', 'Seamanship'];
+	// default (not Talented): caps at two; four is over-count → trimmed, and validate wants exactly two
+	const d2 = filled(threeClasses(emptyGuiseDraft())); d2.mode = 'innate'; d2.specialties = four;
+	assert.equal(guiseDraftToData(d2, {}, 30).specialties.length, SPECIALTY_COUNT); // trimmed to 2
+	assert.equal(guiseDraftToData(d2, {}, 30).talented, false);
+	assert.equal(validateGuiseDraft(d2, 'innate').ok, false);                        // 4 ≠ 2
+	// Talented: caps at four; the full spread survives and persists, validate wants exactly four
+	const d4 = filled(threeClasses(emptyGuiseDraft())); d4.mode = 'innate'; d4.talented = true; d4.specialties = four;
+	const data4 = guiseDraftToData(d4, {}, 30);
+	assert.equal(data4.specialties.length, TALENTED_SPECIALTY_COUNT);
+	assert.deepEqual(data4.specialties, four);
+	assert.equal(data4.talented, true);                                              // persisted on the guise
+	assert.equal(validateGuiseDraft(d4, 'innate').ok, true);
+	// a Talented guise with only two Specialties is incomplete (needs four)
+	d4.specialties = ['Arts', 'Crafts'];
+	assert.equal(validateGuiseDraft(d4, 'innate').ok, false);
+	assert.equal(specialtyCapFor(true), 4);
+	assert.equal(specialtyCapFor(false), 2);
 });
 
 // --- vocab sanity -------------------------------------------------------------
