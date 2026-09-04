@@ -453,6 +453,7 @@ async function _bindCore(actor, item) {
 	// … and sleep the creation heroic while masked (8c); 40/50/earned stay live.
 	await suppressCreationHeroic(actor);
 	// Affinities: the guise's embedded "Guise affinities" effect now transfers (transferEffects()=true).
+	await applyGuiseFace(actor, item); // H2: swap actor.img to the face this guise assigns (normal/other/none)
 	console.debug(`[rippers-guise] bound "${item.name}": ${skillIds.length} guise skill(s), ${equipIds.length} equipment; ${dormant} innate skill(s) dormant.`);
 }
 
@@ -477,7 +478,8 @@ async function _dismissCore(actor, item, { silent = false } = {}) {
 		[`flags.${MODULE_ID}.owned.-=${item.id}`]: null,
 		...equipRestore,
 	});
-	if (!silent) console.debug(`[rippers-guise] dismissed "${item.name}"; innate skills restored.`);
+	// H2: on a true unmask restore the NORMAL face; the silent swap-dismiss leaves it to the new bind.
+	if (!silent) { await restoreBaseFace(actor); console.debug(`[rippers-guise] dismissed "${item.name}"; innate skills restored.`); }
 }
 
 async function bindGuise(actor, ref) {
@@ -3288,6 +3290,88 @@ const arcanaBySlug = (slug) => ARCANA.find((a) => a.slug === slug) ?? null;
 /** The arcana tile chosen for a guise (from its Item flag), or null when unset. */
 function guiseArcana(guise) { return arcanaBySlug(guise?.getFlag?.(MODULE_ID, ARCANA_FLAG)); }
 
+// ── H2 two-portrait swap (Austin 4 Sep: NORMAL + OTHER-SHAPE only; our own minimal build, NOT Visage) ─
+// Exactly two configurable face images per actor live on flags['rippers-guise'].faces = {normal, other}
+// (local-only art, like the arcana). A worn guise ASSIGNS a face — 'normal' | 'other' | 'none' (none =
+// the no-portrait well, e.g. the Carbolic Coat); guises do NOT each carry a portrait. Wearing a guise
+// swaps actor.img to the matching face (the sheet masthead renders {{actor.img}} and the Stylish HUD
+// card reads the actor portrait, so BOTH follow for free); a manual sheet toggle flips it independently.
+// Non-destructive: the pre-swap portrait is cached ONCE (Visage's safe-revert PATTERN, MIT — borrowed,
+// not vendored). PLAYER guise/shape only — adversary portraits are never touched.
+const FACES_FLAG = 'faces';                                   // actor: { normal, other } image paths
+const FACE_CACHE_FLAG = 'faceCache';                          // actor: original actor.img (cached once)
+const GUISE_FACE_FLAG = 'face';                               // guise Item: 'normal' | 'other' | 'none'
+const GUISE_FACE_KEYS = Object.freeze(['normal', 'other', 'none']);
+const NO_PORTRAIT_WELL = 'icons/svg/mystery-man.svg';        // the "no-portrait well" (a core Foundry icon)
+
+/** The face a guise assigns: 'normal'|'other'|'none', or null when unassigned (no swap). */
+function faceForGuise(guise) {
+	const f = guise?.getFlag?.(MODULE_ID, GUISE_FACE_FLAG);
+	return GUISE_FACE_KEYS.includes(f) ? f : null;
+}
+/** PURE. Resolve a face key to an image path. normal/other → faces[key] (null if unset); none → the
+ *  no-portrait well; an unknown/unassigned key → undefined (leave the portrait unchanged). */
+function resolveFaceImg(faces, faceKey) {
+	if (faceKey === 'none') return NO_PORTRAIT_WELL;
+	if (faceKey === 'normal' || faceKey === 'other') return faces?.[faceKey] || null;
+	return undefined;
+}
+/** PURE. The manual-toggle target: whichever configured face is NOT the current image (falls back to
+ *  normal, then other). Returns null when neither face is set. */
+function nextManualFace(faces, currentImg) {
+	const n = faces?.normal || null, o = faces?.other || null;
+	if (!n && !o) return null;
+	if (currentImg === n && o) return o;
+	if (currentImg === o && n) return n;
+	return n || o;
+}
+/** The actor's two configured faces (empty strings when unset). */
+function getFaces(actor) {
+	const f = actor?.getFlag?.(MODULE_ID, FACES_FLAG) ?? {};
+	return { normal: f.normal || '', other: f.other || '' };
+}
+async function setFace(actor, which, path) {
+	if (which !== 'normal' && which !== 'other') return;
+	const faces = getFaces(actor);
+	faces[which] = path || '';
+	await actor.setFlag(MODULE_ID, FACES_FLAG, faces);
+}
+/** Cache the actor's current portrait ONCE (safe-revert). Returns the cached value. */
+async function cacheOriginalFace(actor) {
+	let cached = actor.getFlag(MODULE_ID, FACE_CACHE_FLAG);
+	if (cached == null) { cached = actor.img ?? ''; await actor.setFlag(MODULE_ID, FACE_CACHE_FLAG, cached); }
+	return cached;
+}
+/** Set actor.img to the face a worn guise assigns. Non-destructive (caches first); a guise that assigns
+ *  no face, or a normal/other face that isn't configured, leaves the portrait untouched. */
+async function applyGuiseFace(actor, guise) {
+	const key = faceForGuise(guise);
+	if (key == null) return;
+	const img = resolveFaceImg(getFaces(actor), key);
+	if (img == null) return;                 // undefined (unassigned) or null (normal/other unset) → skip
+	await cacheOriginalFace(actor);
+	if (actor.img !== img) await actor.update({ img });
+}
+/** Restore the base (NORMAL) face on unmask — else the cached original. Non-destructive. */
+async function restoreBaseFace(actor) {
+	const faces = getFaces(actor);
+	const target = faces.normal || actor.getFlag(MODULE_ID, FACE_CACHE_FLAG) || null;
+	if (target && actor.img !== target) await actor.update({ img: target });
+}
+/** H2 VM: the two configured faces + which is currently shown + whether a manual toggle is possible. */
+function guiseFacesVM(actor) {
+	const faces = getFaces(actor);
+	const cur = actor?.img ?? '';
+	return { normal: faces.normal, other: faces.other, canToggle: !!(faces.normal || faces.other), onNormal: cur === faces.normal && !!faces.normal, onOther: cur === faces.other && !!faces.other };
+}
+/** Manual sheet toggle: flip actor.img between the two configured faces (independent of worn guise). */
+async function sheetToggleFace(actor) {
+	const next = nextManualFace(getFaces(actor), actor.img);
+	if (!next) { ui.notifications?.info(game.i18n?.localize?.('RIPPERS.Sheet.NoFaces') ?? 'Set this character\'s two faces first.'); return; }
+	await cacheOriginalFace(actor);
+	if (actor.img !== next) await actor.update({ img: next });
+}
+
 /** PURE: a bond clock's four sections as fill flags (filled up to `clock`). */
 function bondClockPips(clock, sections = 4) {
 	const n = Math.max(0, Math.min(sections, Number(clock) || 0));
@@ -3401,6 +3485,8 @@ async function buildRippersSheetVM(actor, ui = {}) {
 			// H3: swapping TO this guise would be refunded by The Turn (free) this scene?
 			usedThisScene, swapWouldRefund: !worn && !usedThisScene && !turnRefundUsed,
 			arcana: guiseArcana(g), // 2a: the guise-identity tarot tile (null until picked)
+			// H2: this guise's face assignment (normal/other/none/'') + booleans for the toggle chips.
+			face: faceForGuise(g) ?? '', faceNormal: faceForGuise(g) === 'normal', faceOther: faceForGuise(g) === 'other', faceNone: faceForGuise(g) === 'none',
 		});
 	}
 	guises.sort((a, b) => (Number(b.worn) - Number(a.worn)) || (Number(a.innate) - Number(b.innate)));
@@ -3461,6 +3547,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, bondsNative, bondsIsGM,
 		theTurn: { available: !turnRefundUsed }, // H3: is The Turn's swap-refund still available this scene?
 		rivalWaiver: rivalWaiverVM(actor),       // R1: the Rival cost-waiver roller toggle (hidden unless the actor has it)
+		faces: { ...guiseFacesVM(actor) },       // H2: the two-portrait config + toggle availability
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
@@ -3809,6 +3896,9 @@ function getRippersActorSheetClass() {
 				selectTab: RippersActorSheet.onSelectTab,
 				guiseWear: RippersActorSheet.onGuiseWear,
 				pickArcana: RippersActorSheet.onPickArcana,
+				toggleFace: RippersActorSheet.onToggleFace,
+				setFace: RippersActorSheet.onSetFace,
+				setGuiseFace: RippersActorSheet.onSetGuiseFace,
 				guiseSwap: RippersActorSheet.onGuiseSwap,
 				rollWeapon: RippersActorSheet.onRollWeapon,
 				rollCheck: RippersActorSheet.onRollCheck,
@@ -3896,6 +3986,22 @@ function getRippersActorSheetClass() {
 		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this.render(); } }
 		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (id) { await sheetGuiseWear(this.document, id); this.render(); } }
 		static async onPickArcana(event, target) { const id = target?.dataset?.guise; if (id) { await sheetPickArcana(this.document, id); this.render(); } }
+		static async onToggleFace() { await sheetToggleFace(this.document); this.render(); }
+		static async onSetFace(event, target) {
+			const which = target?.dataset?.face; if (which !== 'normal' && which !== 'other') return;
+			const FP = foundry?.applications?.apps?.FilePicker?.implementation ?? foundry?.applications?.apps?.FilePicker ?? globalThis.FilePicker;
+			if (!FP) { ui.notifications?.warn('FilePicker is unavailable in this Foundry build.'); return; }
+			const self = this;
+			const picker = new FP({ type: 'image', current: getFaces(this.document)[which] || '', callback: async (path) => { await setFace(self.document, which, path); self.render(); } });
+			return typeof picker.browse === 'function' ? picker.browse() : picker.render(true);
+		}
+		static async onSetGuiseFace(event, target) {
+			const id = target?.dataset?.guise; const val = target?.dataset?.value ?? '';
+			const guise = id && this.document.items?.get?.(id); if (!guise) return;
+			if (GUISE_FACE_KEYS.includes(val)) await guise.setFlag(MODULE_ID, GUISE_FACE_FLAG, val);
+			else if (guise.getFlag(MODULE_ID, GUISE_FACE_FLAG)) await guise.unsetFlag(MODULE_ID, GUISE_FACE_FLAG);
+			this.render();
+		}
 		static async onGuiseSwap() { await sheetGuiseSwap(this.document); this.render(); }
 		static async onRollWeapon(event, target) { const id = target?.dataset?.item; if (id) await sheetRollWeapon(this.document, id); }
 		static async onRollCheck() { await sheetRollCheck(this.document); }
@@ -4208,7 +4314,7 @@ Hooks.once('ready', async () => {
 	Hooks.on('deleteCombat', _resetTurns);
 	Hooks.on('canvasReady', () => { if (!game.combat?.started) _resetTurns(); });
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, applyGuiseFace, restoreBaseFace, sheetToggleFace, setFace, getFaces, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -4243,6 +4349,8 @@ export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, R
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, arcanaBySlug, guiseArcana, sheetPickArcana };
+// H2 two-portrait swap (normal/other-shape; our own build, not Visage).
+export { faceForGuise, resolveFaceImg, nextManualFace, getFaces, setFace, applyGuiseFace, restoreBaseFace, sheetToggleFace, guiseFacesVM, GUISE_FACE_KEYS, FACES_FLAG, GUISE_FACE_FLAG, NO_PORTRAIT_WELL };
 // H3 "The Turn": guise-swap action economy (pure decision + scene state + boundary clear).
 export { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, clearGuiseSceneState, USED_GUISES_FLAG, TURN_REFUND_FLAG };
 // Unit 3 Party Vault: field limit + slots (V1/V5), roster/cabinet VM (V2/V3/V4), cross-owner hand-off (X4).

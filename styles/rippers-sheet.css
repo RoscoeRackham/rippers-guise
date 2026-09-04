@@ -140,6 +140,9 @@
 .rippers-sheet .rs-bar-mp .rs-bar-fill { background: var(--rs-mp, #2f6fb0); }
 .rippers-sheet .rs-bar-lent { height: 100%; background: repeating-linear-gradient(45deg, rgba(201,162,39,.85) 0 3px, rgba(201,162,39,.25) 3px 6px); }
 .rippers-sheet .rs-lent-num { color: var(--rs-gold, #c9a227); }
+/* H2 two-portrait faces config + per-guise assignment */
+.rippers-sheet .rs-faces, .rippers-sheet .rs-faceassign { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.rippers-sheet .rs-faces-label, .rippers-sheet .rs-faceassign > span { font-family: var(--rs-mono); font-size: 10px; letter-spacing: .12em; color: var(--rs-bone-dim); text-transform: uppercase; }
 /* 2a guise-identity arcana tile (bone frame, register −2° tilt) + the picker grid */
 .rippers-sheet .rs-arcana-tile { flex: none; width: 38px; height: 60px; padding: 2px; background: var(--rs-bone); border: 0; cursor: pointer; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); transform: rotate(-2deg); }
 .rippers-sheet .rs-arcana-tile img { width: 100%; height: 100%; object-fit: cover; display: block; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); }

@@ -551,6 +551,68 @@ test('guiseArcana + VM: a guise renders its chosen arcana tile from the Item fla
 	assert.equal(vm.guises[0].arcana, null);
 });
 
+// ── H2 two-portrait swap (normal / other-shape) ───────────────────────────────────────────────────
+const { faceForGuise, resolveFaceImg, nextManualFace, applyGuiseFace, restoreBaseFace, sheetToggleFace, NO_PORTRAIT_WELL } = mod;
+
+test('faceForGuise + resolveFaceImg: guise face assignment maps to an image path', () => {
+	const mk = (f) => ({ getFlag: (m, k) => (m === RGID && k === 'face' ? f : undefined) });
+	assert.equal(faceForGuise(mk('other')), 'other');
+	assert.equal(faceForGuise(mk('bogus')), null);
+	assert.equal(faceForGuise(mk(undefined)), null);
+	const faces = { normal: 'n.png', other: 'o.png' };
+	assert.equal(resolveFaceImg(faces, 'normal'), 'n.png');
+	assert.equal(resolveFaceImg(faces, 'other'), 'o.png');
+	assert.equal(resolveFaceImg(faces, 'none'), NO_PORTRAIT_WELL);
+	assert.equal(resolveFaceImg({}, 'other'), null);           // unset face → no swap
+	assert.equal(resolveFaceImg(faces, 'zzz'), undefined);     // unassigned → leave unchanged
+});
+
+test('nextManualFace: flips to whichever face is not current; falls back sensibly', () => {
+	const faces = { normal: 'n.png', other: 'o.png' };
+	assert.equal(nextManualFace(faces, 'n.png'), 'o.png');
+	assert.equal(nextManualFace(faces, 'o.png'), 'n.png');
+	assert.equal(nextManualFace(faces, 'other.png'), 'n.png'); // neither current → normal first
+	assert.equal(nextManualFace({ other: 'o.png' }, 'x'), 'o.png');
+	assert.equal(nextManualFace({}, 'x'), null);
+});
+
+function faceActor(img, faces, guiseFace) {
+	const aflags = { [RGID]: { faces } };
+	const guise = { getFlag: (m, k) => (m === RGID && k === 'face' ? guiseFace : undefined) };
+	const a = {
+		img, items: { get: () => guise },
+		getFlag: (m, k) => (m === RGID ? aflags[RGID][k] : undefined),
+		setFlag: async (m, k, v) => { if (m === RGID) aflags[RGID][k] = v; },
+		update: async (p) => { if ('img' in p) a.img = p.img; },
+	};
+	return { a, guise };
+}
+
+test('applyGuiseFace: swaps actor.img to the assigned face, caches the original, non-destructive', async () => {
+	const { a, guise } = faceActor('orig.png', { normal: 'n.png', other: 'o.png' }, 'other');
+	await applyGuiseFace(a, guise);
+	assert.equal(a.img, 'o.png');                              // swapped to the other-shape face
+	assert.equal(a.getFlag(RGID, 'faceCache'), 'orig.png');   // original cached once (safe-revert)
+	// a guise that assigns no face leaves the portrait untouched
+	const { a: b, guise: bg } = faceActor('orig.png', { normal: 'n.png' }, undefined);
+	await applyGuiseFace(b, bg);
+	assert.equal(b.img, 'orig.png');
+});
+
+test('restoreBaseFace: unmask restores the NORMAL face', async () => {
+	const { a } = faceActor('o.png', { normal: 'n.png', other: 'o.png' }, 'other');
+	await restoreBaseFace(a);
+	assert.equal(a.img, 'n.png');
+});
+
+test('sheetToggleFace: manual flip between the two faces, independent of any guise', async () => {
+	const { a } = faceActor('n.png', { normal: 'n.png', other: 'o.png' }, undefined);
+	await sheetToggleFace(a);
+	assert.equal(a.img, 'o.png');
+	await sheetToggleFace(a);
+	assert.equal(a.img, 'n.png');
+});
+
 // ── Unit 3 Party Vault (V1–V5, X4) ────────────────────────────────────────────────────────────────
 const { guiseFieldLimit, fieldSlots, buildVaultVM } = mod;
 

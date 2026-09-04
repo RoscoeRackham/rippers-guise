@@ -67,6 +67,8 @@
 					<button class="rs-chip" data-action="rest">{{localize 'RIPPERS.Sheet.Rest'}}</button>
 					{{!-- R1: the Rival cost-waiver roller toggle — shown only if the actor has the Rival quirk. --}}
 					{{#if vm.rivalWaiver.has}}<button class="rs-chip{{#if vm.rivalWaiver.armed}} rs-chip-on{{/if}}" data-action="toggleRivalWaiver" title="{{localize 'RIPPERS.Sheet.RivalWaiverHint'}}">{{localize 'RIPPERS.Sheet.RivalWaiver'}}</button>{{/if}}
+					{{!-- H2: manual face toggle (normal ↔ other-shape) — shown only when a face is configured. --}}
+					{{#if vm.faces.canToggle}}<button class="rs-chip{{#if vm.faces.onOther}} rs-chip-on{{/if}}" data-action="toggleFace" title="{{localize 'RIPPERS.Sheet.ToggleFaceHint'}}">{{localize 'RIPPERS.Sheet.OtherShape'}}</button>{{/if}}
 				</div>
 			</div>
 
@@ -98,6 +100,12 @@
 		{{!-- ── Tab body ─────────────────────────────────────────── --}}
 		<div class="rs-tbody">
 			{{#if vm.tab.form}}
+				{{!-- H2: the two configurable faces (NORMAL + OTHER-SHAPE). A worn guise assigns one below. --}}
+				<div class="rs-faces">
+					<span class="rs-faces-label">{{localize 'RIPPERS.Sheet.Faces'}}</span>
+					<button class="rs-chip" data-action="setFace" data-face="normal">{{localize 'RIPPERS.Sheet.FaceNormal'}}{{#if vm.faces.normal}} ✓{{/if}}</button>
+					<button class="rs-chip" data-action="setFace" data-face="other">{{localize 'RIPPERS.Sheet.FaceOther'}}{{#if vm.faces.other}} ✓{{/if}}</button>
+				</div>
 				{{#if vm.guises.length}}
 					{{#each vm.guises as |g|}}
 						<div class="rs-classcard">
@@ -112,6 +120,12 @@
 							{{#if g.trio.length}}<div class="rs-affchips" style="margin-top:8px;">{{#each g.trio as |t|}}<span class="rs-affchip {{#if t.good}}rs-aff-good{{/if}}{{#if t.bad}}rs-aff-bad{{/if}}">{{t.word}} {{t.type}}</span>{{/each}}</div>{{/if}}
 							<div class="rs-skillrow"><span>{{localize 'RIPPERS.Sheet.Skills'}}</span><b>{{g.skillCount}} · {{g.slTotal}}/{{g.budget}} SL</b></div>
 							{{#if g.heroicName}}<div class="rs-heroic" style="margin-top:8px;"><span class="rs-heroic-label">{{localize 'RIPPERS.Sheet.Heroic'}}</span><span class="rs-heroic-name">{{g.heroicName}}</span></div>{{/if}}
+							{{!-- H2: which face this guise shows when worn (normal / other-shape / no-portrait well). --}}
+							<div class="rs-faceassign"><span>{{localize 'RIPPERS.Sheet.ShowsFace'}}</span>
+								<button class="rs-chip{{#if g.faceNormal}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="normal">{{localize 'RIPPERS.Sheet.FaceNormal'}}</button>
+								<button class="rs-chip{{#if g.faceOther}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="other">{{localize 'RIPPERS.Sheet.FaceOther'}}</button>
+								<button class="rs-chip{{#if g.faceNone}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="none">{{localize 'RIPPERS.Sheet.FaceNone'}}</button>
+							</div>
 							<div class="rs-skillrow">
 								<span>
 									{{#if g.lent.hp.maximum}}{{localize 'RIPPERS.Sheet.LentHP'}} {{g.lent.hp.current}}/{{g.lent.hp.maximum}} &nbsp;{{/if}}
