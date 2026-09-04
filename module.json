@@ -2,7 +2,7 @@
   "id": "rippers-guise",
   "title": "Rippers Unmasked \u2014 Guise",
   "description": "The Guise (mask / identity swap) as a first-class Project FU classFeature, on the Arcanist Arcanum pattern: hold several guises, bind one to make it active (dismissing any other), and its embedded ActiveEffect deltas apply on swap. Registers 'guise' on FU's module-open classFeature registry \u2014 no system fork. Original campaign content. A personal-table module \u2014 not for redistribution.",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "url": "https://github.com/RoscoeRackham/rippers-guise",
   "manifest": "https://github.com/RoscoeRackham/rippers-guise/releases/latest/download/module.json",
   "download": "https://github.com/RoscoeRackham/rippers-guise/releases/latest/download/rippers-guise.zip",
