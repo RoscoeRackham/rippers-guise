@@ -928,3 +928,16 @@ test('buildEffectsVM: buckets applicable effects incl. item-transferred, surface
 	assert.equal(byKey.inactive.effects[0].disabled, true);
 	assert.equal(buildEffectsVM({}).any, false);                    // no-AE actor is safe
 });
+
+test('buildSpellsVM: lists native spell items with mp/target/duration; empty-safe', () => {
+	const { buildSpellsVM } = mod;
+	const actor = { itemTypes: { spell: [
+		{ id: 's1', name: 'Flare', img: 'i', system: { mpCost: { value: 10 }, target: { value: 'One creature' }, duration: { value: 'instantaneous' }, isOffensive: { value: true } } },
+	] } };
+	const vm = buildSpellsVM(actor);
+	assert.equal(vm.any, true);
+	assert.equal(vm.spells[0].mp, 10);
+	assert.equal(vm.spells[0].target, 'One creature');
+	assert.equal(vm.spells[0].offensive, true);
+	assert.equal(buildSpellsVM({}).any, false);                     // no spells is safe
+});

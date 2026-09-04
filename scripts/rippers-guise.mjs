@@ -3325,6 +3325,21 @@ function buildEffectsVM(actor) {
 	];
 	return { groups: G, any: G.some((g) => g.effects.length) };
 }
+/** Spells VM (Tier-1 #1): the actor's native 'spell' Items — list + cast. Spells are actor-owned (they
+ *  persist across guise swaps, like the Hunter Weapon), NOT materialised from a guise's classes: our data
+ *  has no class→spell mapping, so auto-materialisation is deferred (⚠ owed — see the report to god). This
+ *  tab surfaces + casts whatever spell Items the actor holds, using native item.roll(). Fields verified
+ *  against the FU spell data model (mpCost/target/duration/isOffensive); nothing invented. */
+function buildSpellsVM(actor) {
+	const spells = (actor?.itemTypes?.spell ?? []).map((s) => ({
+		id: s.id, name: s.name ?? '', img: s.img,
+		mp: rsDotGet(s, 'system.mpCost.value') ?? '',
+		target: rsDotGet(s, 'system.target.value') ?? '',
+		duration: rsDotGet(s, 'system.duration.value') ?? '',
+		offensive: !!rsDotGet(s, 'system.isOffensive.value'),
+	}));
+	return { spells, any: spells.length > 0 };
+}
 /** Full non-weapon inventory VM (armor/shield/accessory/consumable/treasure) with the actor's native
  *  equipped-slot state. Read-only; weapons keep their own Kit block. */
 function buildInventoryVM(actor) {
@@ -3355,7 +3370,6 @@ const RS_TABS = [
 	{ key: 'clots', label: 'Clots' }, { key: 'quirk', label: 'Quirk' }, { key: 'edit', label: 'Edit' },
 ];
 const RS_TAB_STUBS = {
-	spells: 'Vin studies no magic. A spell from a class or a seated Clot would be entered here.',
 	clots: 'No Clot is seated. A seated Clot rides its gear, not the character.',
 	quirk: 'The character\'s Quirk and Specialties are shown here.',
 };
@@ -3844,11 +3858,12 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		value: Number(r?.value) || 0, max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null,
 	})).filter((r) => r.label);
 	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
-	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', effects: activeTab === 'effects', edit: activeTab === 'edit' };
-	if (!tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.effects && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', effects: activeTab === 'effects', spells: activeTab === 'spells', edit: activeTab === 'edit' };
+	if (!tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.effects && !tab.spells && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
 	// v0.7.15: full inventory (Kit) + native Active Effects (Effects tab) — built only when their tab is open.
 	const inventory = tab.kit ? buildInventoryVM(actor) : null;
 	const effects = tab.effects ? buildEffectsVM(actor) : null;
+	const spells = tab.spells ? buildSpellsVM(actor) : null; // v0.7.16: native 'spell' Items (list + cast)
 	// V3: the Party Vault is an embedded tab — build its (party-wide, async) VM only when it is open.
 	const vault = tab.vault ? await buildVaultVM(actor) : null;
 	return {
@@ -3859,7 +3874,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, quirks, editable, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
-		inventory, effects,
+		inventory, effects, spells,
 	};
 }
 
@@ -4325,6 +4340,7 @@ function getRippersActorSheetClass() {
 				toggleUseEquipment: RippersActorSheet.onToggleUseEquipment,
 				itemUse: RippersActorSheet.onItemUse,
 				itemDelete: RippersActorSheet.onItemDelete,
+				spellAdd: RippersActorSheet.onSpellAdd,
 				rollCheck: RippersActorSheet.onRollCheck,
 				toggleRivalWaiver: RippersActorSheet.onToggleRivalWaiver,
 				rest: RippersActorSheet.onRest,
@@ -4594,6 +4610,14 @@ function getRippersActorSheetClass() {
 			const id = target?.dataset?.item; if (!id) return;
 			try { await this.document.deleteEmbeddedDocuments('Item', [id]); }
 			catch (err) { console.warn('[rippers-guise] item delete failed:', err); }
+			this.render();
+		}
+		// ── v0.7.16 spells: add a blank native 'spell' Item and open its sheet (cast reuses itemUse=item.roll) ──
+		static async onSpellAdd() {
+			try {
+				const created = await this.document.createEmbeddedDocuments('Item', [{ name: game.i18n?.localize?.('RIPPERS.Sheet.NewSpell') ?? 'New Spell', type: 'spell' }]);
+				created?.[0]?.sheet?.render?.(true);
+			} catch (err) { console.warn('[rippers-guise] spell add failed:', err); }
 			this.render();
 		}
 	}
@@ -4916,7 +4940,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };

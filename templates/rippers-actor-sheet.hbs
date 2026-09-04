@@ -322,6 +322,33 @@
 				</div>
 			{{/if}}
 
+			{{#if vm.tab.spells}}
+				{{!-- v0.7.16: native 'spell' Items — list + cast (item.roll). Spells are actor-owned; auto-
+				     materialisation from a guise's classes is deferred (no class→spell dataset; ⚠ owed). --}}
+				<div class="rs-inv-head">
+					<span class="rs-edit-title">{{localize 'RIPPERS.Sheet.Spells'}}</span>
+					<button type="button" class="rs-chip" data-action="spellAdd">＋ {{localize 'RIPPERS.Sheet.SpellAdd'}}</button>
+				</div>
+				{{#if vm.spells.any}}
+					{{#each vm.spells.spells as |sp|}}
+						<div class="rs-inv-row{{#if sp.offensive}} rs-spell-offensive{{/if}}">
+							<img class="rs-inv-img" src="{{sp.img}}" alt="">
+							<span class="rs-inv-name">{{sp.name}}</span>
+							<span class="rs-inv-stats">
+								{{#if sp.mp}}<span class="rs-inv-stat">MP {{sp.mp}}</span>{{/if}}
+								{{#if sp.target}}<span class="rs-inv-stat">{{sp.target}}</span>{{/if}}
+								{{#if sp.duration}}<span class="rs-inv-stat">{{sp.duration}}</span>{{/if}}
+							</span>
+							<span class="rs-inv-controls">
+								<button type="button" class="rs-chip" data-action="itemUse" data-item="{{sp.id}}">{{localize 'RIPPERS.Sheet.Cast'}}</button>
+								<button type="button" class="rs-chip" data-action="itemSheet" data-item="{{sp.id}}" title="{{localize 'RIPPERS.Sheet.OpenItem'}}">⚙</button>
+								<button type="button" class="rs-chip rs-chip-danger" data-action="itemDelete" data-item="{{sp.id}}" title="{{localize 'RIPPERS.Sheet.ItemDelete'}}">✕</button>
+							</span>
+						</div>
+					{{/each}}
+				{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoSpells'}}</p>{{/if}}
+			{{/if}}
+
 			{{#if vm.tab.kit}}
 				{{#if vm.weapons.length}}
 					{{#each vm.weapons as |w|}}
