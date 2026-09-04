@@ -466,3 +466,65 @@ test('buildRippersSheetVM: Resources tab binds tracked resources from the actor 
 	assert.equal(vm.trackedResources[0].label, 'Reputation');
 	assert.equal(vm.trackedResources[0].max, 5);
 });
+
+// ── H3 "The Turn": guise-swap action economy ──────────────────────────────────────────────────────
+const { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, USED_GUISES_FLAG, TURN_REFUND_FLAG } = mod;
+
+test('guiseSwapActionDecision: fresh guise + Turn available → FREE (refunded once/scene)', () => {
+	assert.deepEqual(guiseSwapActionDecision([], false, 'g1'), { cost: 'free', refunded: true, reason: 'the-turn' });
+	// The Turn already spent this scene → the next fresh swap costs an Action.
+	assert.deepEqual(guiseSwapActionDecision(['g1'], true, 'g2'), { cost: 'action', refunded: false, reason: 'turn-spent' });
+	// Swapping back to a guise already used this scene → an Action, even with the Turn unspent.
+	assert.deepEqual(guiseSwapActionDecision(['g1'], false, 'g1'), { cost: 'action', refunded: false, reason: 'already-used' });
+	assert.equal(guiseSwapActionDecision(null, false, '').cost, 'action'); // no target → not free
+});
+
+test('markGuiseUsed: appends once, dedups, tolerates non-arrays', () => {
+	assert.deepEqual(markGuiseUsed([], 'g1'), ['g1']);
+	assert.deepEqual(markGuiseUsed(['g1'], 'g1'), ['g1']);           // dedup
+	assert.deepEqual(markGuiseUsed(['g1'], 'g2'), ['g1', 'g2']);     // order preserved
+	assert.deepEqual(markGuiseUsed(undefined, 'g1'), ['g1']);
+});
+
+function turnActor() {
+	const flags = { [RGID]: { activeGuise: null } };
+	const items = new Map([['g1', { id: 'g1', name: 'Alpha' }], ['g2', { id: 'g2', name: 'Beta' }]]);
+	return {
+		id: 'A1', updates: [],
+		items: { get: (id) => items.get(id) ?? null },
+		getFlag: (m, k) => (m === RGID ? flags[RGID][k] : undefined),
+		async update(u) {
+			this.updates.push(u);
+			for (const [path, val] of Object.entries(u)) {
+				const k = path.replace(`flags.${RGID}.`, '');
+				flags[RGID][k] = val;
+			}
+		},
+	};
+}
+
+test('accountGuiseSwap: first fresh swap is refunded; the next fresh swap costs an Action', async () => {
+	const a = turnActor();
+	assert.deepEqual(guiseSceneState(a), { used: [], turnRefundUsed: false });
+	const d1 = await accountGuiseSwap(a, 'g1');
+	assert.equal(d1.refunded, true);
+	assert.deepEqual(guiseSceneState(a), { used: ['g1'], turnRefundUsed: true });
+	const d2 = await accountGuiseSwap(a, 'g2');           // Turn spent → Action
+	assert.equal(d2.refunded, false);
+	assert.deepEqual(guiseSceneState(a).used, ['g1', 'g2']);
+	const d3 = await accountGuiseSwap(a, 'g1');           // back to a used guise → Action, no dup
+	assert.equal(d3.reason, 'already-used');
+	assert.deepEqual(guiseSceneState(a).used, ['g1', 'g2']);
+});
+
+test('buildRippersSheetVM: guise rows hint The Turn refund, plus a top-level theTurn flag', async () => {
+	const a = actorStub(); // worn = w1, no scene state yet (getFlag returns undefined for the Turn flags)
+	const vm = await buildRippersSheetVM(a);
+	assert.equal(vm.theTurn.available, true);
+	const inn = vm.guises.find((g) => g.id === 'inn');
+	assert.equal(inn.worn, false);
+	assert.equal(inn.usedThisScene, false);
+	assert.equal(inn.swapWouldRefund, true);             // unused, unworn, Turn available
+	const worn = vm.guises.find((g) => g.worn);
+	assert.equal(worn.swapWouldRefund, false);           // the worn guise is never a "fresh" swap
+});

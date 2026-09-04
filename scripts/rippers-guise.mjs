@@ -485,7 +485,11 @@ async function bindGuise(actor, ref) {
 	if (!actor || !item) { console.warn('[rippers-guise] bindGuise: no actor/item (was an id string unresolvable?).'); return; }
 	if (_guiseBusy.has(actor.id)) { console.debug('[rippers-guise] bind ignored — a guise op is already in flight for this actor.'); return; }
 	_guiseBusy.add(actor.id);
-	try { return await _bindCore(actor, item); } finally { _guiseBusy.delete(actor.id); }
+	try {
+		const r = await _bindCore(actor, item);
+		await accountGuiseSwap(actor, item.id); // H3: cost an Action, or refund it via The Turn.
+		return r;
+	} finally { _guiseBusy.delete(actor.id); }
 }
 
 async function dismissGuise(actor, ref, opts = {}) {
@@ -506,13 +510,98 @@ async function setActiveGuise(actor, ref) {
 	_guiseBusy.add(actor.id);
 	try {
 		if (getActiveGuise(actor) === item.id) return await _dismissCore(actor, item);
-		return await _bindCore(actor, item);
+		const r = await _bindCore(actor, item);
+		await accountGuiseSwap(actor, item.id); // H3: cost an Action, or refund it via The Turn.
+		return r;
 	} finally { _guiseBusy.delete(actor.id); }
 }
 async function clearActiveGuise(actor) {
 	const id = getActiveGuise(actor);
 	const item = id && actor.items.get(id);
 	if (item) return dismissGuise(actor, item);
+}
+
+// ---------------------------------------------------------------------------
+// H3 — THE TURN: guise-swap action economy (Austin 4 Sep 2026, DECISIONS-RESOLVED H3).
+// A guise swap costs an ACTION — BUT "The Turn" (one EXTRA action per scene, not a second turn)
+// REFUNDS that action the FIRST time per scene a character switches TO a guise they have NOT USED that
+// scene. base/innate ARE selectable guises, so binding ANY guise runs through here; dismissing
+// (unmasking to the bare native character) is not a switch-to-a-guise and is not accounted. Per-scene
+// state lives on the ACTOR as two flags, cleared on a scene (canvasReady) or combat (combatStart/
+// deleteCombat) boundary — The Turn is a once-per-scene resource. We do NOT deduct from a hard action
+// pool (FU tracks the action economy on the turn tracker, narratively, not as a spent counter); we
+// decide the cost and post a thin advisory (layout/UI is Austin's). On clear we SEED the used-set with
+// the currently-worn guise: the guise you wear as the scene opens is already "in use", so switching
+// back to it later is not a fresh guise and earns no refund.
+const USED_GUISES_FLAG = 'usedGuisesThisScene';    // string[] of guise item ids used this scene
+const TURN_REFUND_FLAG = 'turnRefundUsedThisScene'; // bool: has The Turn's refund fired this scene
+
+/** PURE. The action cost of swapping TO targetId given scene state. The refund fires only the first
+ *  time per scene (turnRefundUsed=false) AND only for a guise not yet used this scene. */
+function guiseSwapActionDecision(usedGuises, turnRefundUsed, targetId) {
+	const used = Array.isArray(usedGuises) ? usedGuises : [];
+	const fresh = !!targetId && !used.includes(targetId);
+	if (fresh && !turnRefundUsed) return { cost: 'free', refunded: true, reason: 'the-turn' };
+	return { cost: 'action', refunded: false, reason: fresh ? 'turn-spent' : 'already-used' };
+}
+
+/** PURE. The used-guise set after swapping to targetId (dedup, order-preserving). */
+function markGuiseUsed(usedGuises, targetId) {
+	const used = Array.isArray(usedGuises) ? usedGuises.slice() : [];
+	if (targetId && !used.includes(targetId)) used.push(targetId);
+	return used;
+}
+
+/** Read the actor's per-scene swap state. */
+function guiseSceneState(actor) {
+	return {
+		used: actor?.getFlag?.(MODULE_ID, USED_GUISES_FLAG) ?? [],
+		turnRefundUsed: !!actor?.getFlag?.(MODULE_ID, TURN_REFUND_FLAG),
+	};
+}
+
+/** Thin advisory (the table-log line only; the sheet's own hint is Austin's). */
+function announceGuiseSwapCost(actor, targetId, decision) {
+	const name = actor?.items?.get?.(targetId)?.name ?? 'the guise';
+	const msg = decision.refunded
+		? (game.i18n?.format?.('RIPPERS.Turn.Refunded', { name }) ?? `The Turn: swapping to "${name}" is FREE — the action is refunded (once per scene).`)
+		: (game.i18n?.format?.('RIPPERS.Turn.CostsAction', { name }) ?? `Swapping to "${name}" costs an Action.`);
+	ui.notifications?.info?.(msg);
+	console.debug(`[rippers-guise] ${msg}`);
+}
+
+/** Account a swap TO targetId: decide the cost, persist the new scene state, post the advisory.
+ *  Called AFTER a successful bind. Returns the decision (for callers/tests). */
+async function accountGuiseSwap(actor, targetId) {
+	if (!actor || !targetId) return null;
+	const { used, turnRefundUsed } = guiseSceneState(actor);
+	const decision = guiseSwapActionDecision(used, turnRefundUsed, targetId);
+	const update = { [`flags.${MODULE_ID}.${USED_GUISES_FLAG}`]: markGuiseUsed(used, targetId) };
+	if (decision.refunded) update[`flags.${MODULE_ID}.${TURN_REFUND_FLAG}`] = true;
+	try { await actor.update(update); } catch (err) { console.warn('[rippers-guise] guise-swap accounting failed:', err); }
+	announceGuiseSwapCost(actor, targetId, decision);
+	return decision;
+}
+
+/** Clear one actor's per-scene swap state on a scene/combat boundary; SEED the used-set with the worn
+ *  guise so switching back to it is not treated as fresh. GM-authoritative writer. */
+async function clearGuiseSceneState(actor) {
+	if (!actor?.update) return;
+	const worn = getActiveGuise(actor);
+	try {
+		await actor.update({
+			[`flags.${MODULE_ID}.${USED_GUISES_FLAG}`]: worn ? [worn] : [],
+			[`flags.${MODULE_ID}.${TURN_REFUND_FLAG}`]: false,
+		});
+	} catch (err) { console.warn('[rippers-guise] clear guise scene-state failed:', err); }
+}
+
+/** Clear every guise-bearing actor's per-scene swap state — the GM runs it on the boundary hooks
+ *  (single writer, to avoid permission errors and double-writes). */
+async function clearAllGuiseSceneState() {
+	if (!game.user?.isGM) return;
+	const actors = game.actors?.filter?.((a) => a.type === 'character' || a.items?.some?.(isGuiseItem)) ?? [];
+	for (const a of actors) await clearGuiseSceneState(a);
 }
 
 // ---------------------------------------------------------------------------
@@ -3149,6 +3238,8 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const guiseItems = actor.items?.filter ? actor.items.filter(isGuiseItem) : [];
 	const guises = [];
 	let wornName = '';
+	// H3 "The Turn": scene-swap state, so the roster can hint which swap would be free this scene.
+	const { used: sceneUsed, turnRefundUsed } = guiseSceneState(actor);
 	for (const g of guiseItems) {
 		const d = g.system?.data ?? {};
 		const innate = !!g.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
@@ -3160,11 +3251,14 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		const v = guiseVitals(g);
 		const worn = g.id === activeId;
 		if (worn) wornName = g.name ?? '';
+		const usedThisScene = sceneUsed.includes(g.id);
 		guises.push({
 			id: g.id, name: g.name ?? '', img: g.img, role: d.role ?? '', identity: d.identity ?? '',
 			worn, innate, tradable: !innate,
 			trio, skillCount, slTotal, budget, heroicName,
 			lent: { hp: v.hp, mp: v.mp, ip: v.ip },
+			// H3: swapping TO this guise would be refunded by The Turn (free) this scene?
+			usedThisScene, swapWouldRefund: !worn && !usedThisScene && !turnRefundUsed,
 		});
 	}
 	guises.sort((a, b) => (Number(b.worn) - Number(a.worn)) || (Number(a.innate) - Number(b.innate)));
@@ -3221,6 +3315,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	if (!tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.kit && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
 	return {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, bondsNative, bondsIsGM,
+		theTurn: { available: !turnRefundUsed }, // H3: is The Turn's swap-refund still available this scene?
 		trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
@@ -3884,8 +3979,16 @@ Hooks.once('ready', async () => {
 	Hooks.on(globalThis.game?.projectfu?.FUHooks?.DAMAGE_PIPELINE_POST_CALCULATE ?? 'projectfu.pipelines.damage.postCalculate', onDamagePostLentSplit);
 	// MP-LAYER-ROUTING: spend the lent-MP layer before own MP on every spell/skill/feature MP cost.
 	Hooks.on(globalThis.game?.projectfu?.FUHooks?.CALCULATE_EXPENSE_EVENT ?? 'projectfu.events.calculateExpense', onCalculateExpenseLentMp);
+	// H3 "The Turn": reset every guise-bearer's per-scene swap state on a combat boundary (a new
+	// conflict is a new scene's Turn), and on a Foundry scene change while NO combat is running (a
+	// mid-combat scene pan must not clobber the Turn). A narrative scene break with no scene change
+	// is the GM's call — clearGuiseSceneState is on the api for a reset macro.
+	const _resetTurns = () => clearAllGuiseSceneState().catch((err) => console.warn('[rippers-guise] Turn reset failed:', err));
+	Hooks.on('combatStart', _resetTurns);
+	Hooks.on('deleteCombat', _resetTurns);
+	Hooks.on('canvasReady', () => { if (!game.combat?.started) _resetTurns(); });
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -3918,6 +4021,8 @@ export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifie
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
 export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
+// H3 "The Turn": guise-swap action economy (pure decision + scene state + boundary clear).
+export { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, clearGuiseSceneState, USED_GUISES_FLAG, TURN_REFUND_FLAG };
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };
 export { sheetOpenEditor, sheetStashGuise, handOffDecision, sheetHandOffGuise };
 export { deeperBondsApi, bondClockPips, bondPanelRow, buildBondPanelRows, SOLID_BOND_CAP, DEEPER_BONDS_ID };
