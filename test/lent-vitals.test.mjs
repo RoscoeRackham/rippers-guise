@@ -133,3 +133,58 @@ test('restRefillActorGuises: every LIVE guise refills lent HP/MP to max; IP satc
 	assert.equal(inHand.system.data.lentHp.current, 5);
 	assert.equal(worn.system.data.ipSatchel.current ?? worn.system.data.ipSatchel.stock, 1); // IP untouched by rest
 });
+
+// ── P3: lent-HP auto-intercept on the damage pipeline (POST_CALCULATE result split) ──
+const { lentHpAbsorbPlan, onDamagePostLentSplit } = mod;
+
+test('lentHpAbsorbPlan: the layer absorbs first, the remainder lands on own HP; debits exactly once', () => {
+	assert.deepEqual(lentHpAbsorbPlan(6, 4), { absorb: 4, remainder: 2, newLent: 0 });   // partial: 4 lent + 2 own
+	assert.deepEqual(lentHpAbsorbPlan(3, 4), { absorb: 3, remainder: 0, newLent: 1 });   // fully absorbed, 0 own
+	assert.deepEqual(lentHpAbsorbPlan(5, 0), { absorb: 0, remainder: 5, newLent: 0 });   // no layer → all own
+	assert.deepEqual(lentHpAbsorbPlan(0, 4), { absorb: 0, remainder: 0, newLent: 4 });   // no damage → no debit
+});
+
+test('onDamagePostLentSplit: worn guise lent-HP absorbs from context.result ONCE; remainder → own HP', async () => {
+	const g = guiseItem('g1', { lentHp: { current: 4, maximum: 6 } });
+	const actor = actorWith([g], { active: 'g1' });
+	const ctx = { actor, result: 6 };
+	onDamagePostLentSplit(ctx);
+	assert.equal(ctx.result, 2);                          // FU then applies only 2 to own HP (line 506)
+	await new Promise((r) => setTimeout(r, 0));           // let the async layer write land
+	assert.equal(g.system.data.lentHp.current, 0);       // layer debited by 4, exactly once
+});
+
+test('onDamagePostLentSplit: no worn guise / empty layer / zero damage → context.result untouched', async () => {
+	const g = guiseItem('g1', { lentHp: { current: 0, maximum: 6 } });
+	const actorEmpty = actorWith([g], { active: 'g1' });
+	const c1 = { actor: actorEmpty, result: 5 }; onDamagePostLentSplit(c1);
+	assert.equal(c1.result, 5);                           // empty layer → no change
+	const actorUnworn = actorWith([guiseItem('g2', { lentHp: { current: 4, maximum: 6 } })], { active: null });
+	const c2 = { actor: actorUnworn, result: 5 }; onDamagePostLentSplit(c2);
+	assert.equal(c2.result, 5);                           // no worn guise → no change
+});
+
+test('P3 composition: Crew/Revenant (PRE) then lent split (POST) — one event, each applied once', async () => {
+	// Simulate the pipeline the way FU runs it: PRE modifiers baked into result, THEN the POST lent split.
+	// base 40, target immune to dark but the attacker is a Revenant (affinity→1), Crew single-target (×0.5)
+	let result = 40;
+	const modifiers = new Map([['affinity', 1], ['crew-oneforall', 0.5]]); // as onDamagePreDispatch would set
+	for (const v of modifiers.values()) result *= v; result = Math.floor(result); // = 20 (each once)
+	const g = guiseItem('g1', { lentHp: { current: 8, maximum: 8 } });
+	const actor = actorWith([g], { active: 'g1' });
+	const ctx = { actor, result };
+	onDamagePostLentSplit(ctx);
+	assert.equal(ctx.result, 12);                         // 20 − 8 lent = 12 to own HP
+	await new Promise((r) => setTimeout(r, 0));
+	assert.equal(g.system.data.lentHp.current, 0);        // 8 absorbed, once; no double-count anywhere
+});
+
+test('onDamagePostLentSplit: MP-loss damage (mind-point-loss trait) is NOT absorbed by the lent-HP layer', async () => {
+	const g = guiseItem('g1', { lentHp: { current: 4, maximum: 6 } });
+	const actor = actorWith([g], { active: 'g1' });
+	const ctx = { actor, result: 6, traits: new Set(['mind-point-loss']) };
+	onDamagePostLentSplit(ctx);
+	assert.equal(ctx.result, 6);                          // untouched — this is MP damage, not HP
+	await new Promise((r) => setTimeout(r, 0));
+	assert.equal(g.system.data.lentHp.current, 4);       // layer not debited
+});
