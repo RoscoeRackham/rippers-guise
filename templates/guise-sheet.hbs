@@ -1,6 +1,6 @@
 <div class="flexcol flexgrow-1 rippers-guise-sheet">
 
-	{{!-- ── Narrative ─────────────────────────────────────────────── --}}
+	{{!-- ── Narrative (always editable — canon-clean) ─────────────── --}}
 	<fieldset class="title-fieldset section-container desc resource-content">
 		<legend class="resource-label-m">{{localize 'RIPPERS.Guise.Identity'}}</legend>
 		<input type="text" name="system.data.identity" value="{{system.data.identity}}"
@@ -20,7 +20,15 @@
 		</prose-mirror>
 	</fieldset>
 
-	{{!-- ── Classes + skill allocation (D4 SL picker, three caps) ──── --}}
+	{{!-- ── Fixed-at-distillation lock notice (#4) ────────────────── --}}
+	{{#unless additionalData.canEditFixed}}
+		<p class="hint guise-locked-note"><i class="fas fa-lock"></i> {{localize 'RIPPERS.Guise.FixedLockHint'}}</p>
+	{{/unless}}
+
+	{{!-- ── Classes + skill allocation (D4 SL picker, three caps) ────
+	     Fixed at distillation (#4): rendered as editable form fields ONLY when the GM edit override is
+	     on; otherwise a read-only display with NO named inputs, so a narrative save leaves these arrays
+	     untouched (avoids the partial-array-submit footgun that a `disabled` field would trigger). --}}
 	<fieldset class="title-fieldset section-container desc resource-content">
 		<legend class="resource-label-m">
 			{{localize 'RIPPERS.Guise.Classes'}}
@@ -37,32 +45,45 @@
 					<span class="guise-classlvl {{#if cls.over}}guise-over{{/if}}">
 						{{localize 'RIPPERS.Guise.Lvl'}} {{cls.sumSl}}/{{../additionalData.perClassCap}}{{#if cls.mastery}} ★{{/if}}
 					</span>
-					<a class="guise-del" data-guise-action="remove-class" data-cls="{{cls.i}}" title="{{localize 'RIPPERS.Guise.RemoveClass'}}"><i class="fas fa-trash"></i></a>
+					{{#if ../additionalData.canEditFixed}}
+						<a class="guise-del" data-guise-action="remove-class" data-cls="{{cls.i}}" title="{{localize 'RIPPERS.Guise.RemoveClass'}}"><i class="fas fa-trash"></i></a>
+					{{/if}}
 				</header>
-				<input type="hidden" name="system.data.classes.{{cls.i}}.classUuid" value="{{cls.uuid}}" />
 
-				{{#each cls.skills as |sk|}}
-					<div class="guise-skill-row">
-						<img class="guise-icon" src="{{sk.img}}" width="16" height="16" />
-						<span class="guise-name {{#if sk.missing}}guise-missing{{/if}}">{{sk.name}}</span>
-						<input type="hidden" name="system.data.classes.{{cls.i}}.skills.{{sk.j}}.skillUuid" value="{{sk.uuid}}" />
-						<input type="number" class="guise-sl" min="0" max="{{sk.maxSl}}"
-							   data-cls="{{cls.i}}" data-maxsl="{{sk.maxSl}}"
-							   name="system.data.classes.{{cls.i}}.skills.{{sk.j}}.sl" value="{{sk.sl}}" />
-						<span class="guise-maxsl">/ {{sk.maxSl}}</span>
-						<a class="guise-del" data-guise-action="remove-skill" data-cls="{{cls.i}}" data-skill="{{sk.j}}" title="{{localize 'RIPPERS.Guise.RemoveSkill'}}"><i class="fas fa-times"></i></a>
+				{{#if ../additionalData.canEditFixed}}
+					<input type="hidden" name="system.data.classes.{{cls.i}}.classUuid" value="{{cls.uuid}}" />
+					{{#each cls.skills as |sk|}}
+						<div class="guise-skill-row">
+							<img class="guise-icon" src="{{sk.img}}" width="16" height="16" />
+							<span class="guise-name {{#if sk.missing}}guise-missing{{/if}}">{{sk.name}}</span>
+							<input type="hidden" name="system.data.classes.{{cls.i}}.skills.{{sk.j}}.skillUuid" value="{{sk.uuid}}" />
+							<input type="number" class="guise-sl" min="0" max="{{sk.maxSl}}"
+								   data-cls="{{cls.i}}" data-maxsl="{{sk.maxSl}}"
+								   name="system.data.classes.{{cls.i}}.skills.{{sk.j}}.sl" value="{{sk.sl}}" />
+							<span class="guise-maxsl">/ {{sk.maxSl}}</span>
+							<a class="guise-del" data-guise-action="remove-skill" data-cls="{{cls.i}}" data-skill="{{sk.j}}" title="{{localize 'RIPPERS.Guise.RemoveSkill'}}"><i class="fas fa-times"></i></a>
+						</div>
+					{{/each}}
+					<div class="guise-drop guise-drop-skill" data-guise-drop="skill" data-cls="{{cls.i}}">
+						{{localize 'RIPPERS.Guise.DropSkill'}}
 					</div>
-				{{/each}}
-
-				<div class="guise-drop guise-drop-skill" data-guise-drop="skill" data-cls="{{cls.i}}">
-					{{localize 'RIPPERS.Guise.DropSkill'}}
-				</div>
+				{{else}}
+					{{#each cls.skills as |sk|}}
+						<div class="guise-skill-row">
+							<img class="guise-icon" src="{{sk.img}}" width="16" height="16" />
+							<span class="guise-name {{#if sk.missing}}guise-missing{{/if}}">{{sk.name}}</span>
+							<span class="guise-maxsl">{{localize 'RIPPERS.Guise.SL'}} {{sk.sl}} / {{sk.maxSl}}</span>
+						</div>
+					{{/each}}
+				{{/if}}
 			</div>
 		{{/each}}
 
-		<div class="guise-drop guise-drop-class" data-guise-drop="class">
-			{{localize 'RIPPERS.Guise.DropClass'}}
-		</div>
+		{{#if additionalData.canEditFixed}}
+			<div class="guise-drop guise-drop-class" data-guise-drop="class">
+				{{localize 'RIPPERS.Guise.DropClass'}}
+			</div>
+		{{/if}}
 	</fieldset>
 
 	{{!-- ── Equipment (guise loadout, D3) ─────────────────────────── --}}
@@ -72,33 +93,46 @@
 			<div class="guise-equip-row">
 				<img class="guise-icon" src="{{eq.img}}" width="18" height="18" />
 				<span class="guise-name {{#if eq.missing}}guise-missing{{/if}}">{{eq.name}}</span>
-				<input type="hidden" name="system.data.equipment.{{eq.i}}.itemUuid" value="{{eq.uuid}}" />
-				<select name="system.data.equipment.{{eq.i}}.slot">
-					{{selectOptions ../additionalData.slotChoices selected=eq.slot}}
-				</select>
-				<a class="guise-del" data-guise-action="remove-equip" data-equip="{{eq.i}}" title="{{localize 'RIPPERS.Guise.RemoveEquip'}}"><i class="fas fa-times"></i></a>
+				{{#if ../additionalData.canEditFixed}}
+					<input type="hidden" name="system.data.equipment.{{eq.i}}.itemUuid" value="{{eq.uuid}}" />
+					<select name="system.data.equipment.{{eq.i}}.slot">
+						{{selectOptions ../additionalData.slotChoices selected=eq.slot}}
+					</select>
+					<a class="guise-del" data-guise-action="remove-equip" data-equip="{{eq.i}}" title="{{localize 'RIPPERS.Guise.RemoveEquip'}}"><i class="fas fa-times"></i></a>
+				{{else}}
+					<span class="guise-maxsl">{{eq.slot}}</span>
+				{{/if}}
 			</div>
 		{{/each}}
-		<div class="guise-drop guise-drop-equip" data-guise-drop="equipment">
-			{{localize 'RIPPERS.Guise.DropEquip'}}
-		</div>
+		{{#if additionalData.canEditFixed}}
+			<div class="guise-drop guise-drop-equip" data-guise-drop="equipment">
+				{{localize 'RIPPERS.Guise.DropEquip'}}
+			</div>
+		{{/if}}
 	</fieldset>
 
 	{{!-- ── Affinities ────────────────────────────────────────────── --}}
 	<fieldset class="title-fieldset section-container desc resource-content">
 		<legend class="resource-label-m">
 			{{localize 'RIPPERS.Guise.Affinities'}}
-			<a class="guise-add" data-guise-action="add-affinity" title="{{localize 'RIPPERS.Guise.AddAffinity'}}"><i class="fas fa-plus"></i></a>
+			{{#if additionalData.canEditFixed}}
+				<a class="guise-add" data-guise-action="add-affinity" title="{{localize 'RIPPERS.Guise.AddAffinity'}}"><i class="fas fa-plus"></i></a>
+			{{/if}}
 		</legend>
 		{{#each additionalData.affinities as |aff|}}
 			<div class="guise-aff-row">
-				<select name="system.data.affinityModifiers.{{aff.i}}.type">
-					{{selectOptions ../additionalData.typeChoices selected=aff.type}}
-				</select>
-				<select name="system.data.affinityModifiers.{{aff.i}}.level">
-					{{selectOptions ../additionalData.levelChoices selected=aff.level}}
-				</select>
-				<a class="guise-del" data-guise-action="remove-affinity" data-aff="{{aff.i}}" title="{{localize 'RIPPERS.Guise.RemoveAffinity'}}"><i class="fas fa-times"></i></a>
+				{{#if ../additionalData.canEditFixed}}
+					<select name="system.data.affinityModifiers.{{aff.i}}.type">
+						{{selectOptions ../additionalData.typeChoices selected=aff.type}}
+					</select>
+					<select name="system.data.affinityModifiers.{{aff.i}}.level">
+						{{selectOptions ../additionalData.levelChoices selected=aff.level}}
+					</select>
+					<a class="guise-del" data-guise-action="remove-affinity" data-aff="{{aff.i}}" title="{{localize 'RIPPERS.Guise.RemoveAffinity'}}"><i class="fas fa-times"></i></a>
+				{{else}}
+					<span class="guise-name">{{aff.type}}</span>
+					<span class="guise-maxsl">{{aff.word}}</span>
+				{{/if}}
 			</div>
 		{{/each}}
 	</fieldset>

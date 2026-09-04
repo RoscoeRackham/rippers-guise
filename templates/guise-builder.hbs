@@ -244,12 +244,22 @@
 		</div>
 	{{/if}}
 
+	{{! #4 (v0.7.9): with the GM override on, validation is soft — show the same findings as warnings. }}
+	{{#if editOverride}}
+		<div class="gb-override-note"><i class="fas fa-unlock"></i> {{localize "RIPPERS.Builder.OverrideOn"}}</div>
+		{{#each warnings}}<p class="gb-warn"><i class="fas fa-triangle-exclamation"></i> {{this}}</p>{{/each}}
+	{{/if}}
+
 	<footer class="gb-footer">
 		{{#unless isFirst}}<button type="button" class="gb-nav-back" data-action="back"><i class="fas fa-arrow-left"></i> {{localize "RIPPERS.Builder.Back"}}</button>{{/unless}}
 		<span class="gb-nav-spacer"></span>
 		{{#if isLast}}
-			<button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-mask"></i> {{localize "RIPPERS.Builder.Create"}}</button>
-			<button type="button" data-action="createBind" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-user-secret"></i> {{localize "RIPPERS.Builder.CreateBind"}}</button>
+			{{#if isEditing}}
+				<button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-floppy-disk"></i> {{localize "RIPPERS.Builder.Save"}}</button>
+			{{else}}
+				<button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-mask"></i> {{localize "RIPPERS.Builder.Create"}}</button>
+				<button type="button" data-action="createBind" {{#unless canCreate}}disabled{{/unless}}><i class="fas fa-user-secret"></i> {{localize "RIPPERS.Builder.CreateBind"}}</button>
+			{{/if}}
 		{{else}}
 			<button type="button" class="gb-nav-next" data-action="next" {{#unless stepValid}}disabled{{/unless}}>{{localize "RIPPERS.Builder.Next"}} <i class="fas fa-arrow-right"></i></button>
 		{{/if}}

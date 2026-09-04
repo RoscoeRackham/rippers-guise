@@ -55,6 +55,14 @@
 .rippers-guise-entry .guise-toggle:hover { border-color: #b3122b; }
 .rippers-guise-entry .guise-toggle.is-active { border-color: #7b2d8e; color: #7b2d8e; }
 .rippers-guise-entry .guise-toggle:disabled { opacity: 0.5; cursor: wait; }
+/* #4 (v0.7.9): per-guise Edit button (reopens the wizard in edit mode). */
+.rippers-guise-entry .guise-edit {
+	flex: 0 0 auto; cursor: pointer; padding: 3px 10px; border-radius: 4px; margin-right: 4px;
+	border: 1px solid rgba(0,0,0,0.2); background: transparent; font-weight: 500; font-size: 0.85rem;
+}
+.rippers-guise-entry .guise-edit:hover { border-color: #7b2d8e; color: #7b2d8e; }
+/* #4: fixed-at-distillation lock note on the guise sheet + override note in the builder. */
+.rippers-guise-sheet .guise-locked-note { opacity: 0.75; font-style: italic; }
 
 /* ---------------------------------------------------------------------------
    Benefit-Picks panel (Features tab) + the picker dialog (v0.4.3). */
@@ -281,6 +289,9 @@
 .application.guise-builder .gb-error-h { color: #c8102a; }
 /* v0.7.6: this step's blocking guardrails, shown above the footer where Next is disabled. */
 .application.guise-builder .gb-step-errors { flex: 0 0 auto; margin: 0.25rem 0 0.15rem; padding: 0.35rem 0.5rem; border-left: 3px solid #c8102a; background: rgba(200,16,42,0.06); }
+/* #4 (v0.7.9): the GM edit-override banner + soft warnings (violet, not blocking-red). */
+.application.guise-builder .gb-override-note { flex: 0 0 auto; margin: 0.25rem 0 0.1rem; padding: 0.3rem 0.5rem; border-left: 3px solid #7b2d8e; background: rgba(123,45,142,0.08); font-weight: 600; color: #7b2d8e; }
+.application.guise-builder .gb-warn { color: #7b2d8e; font-size: 0.85rem; margin: 0.1rem 0; }
 
 /* v0.7.1 — Hunter Weapon authoring (Innate mode) */
 .application.guise-builder .gb-hunter label { display: flex; align-items: center; gap: 0.5rem; margin: 0.25rem 0; }

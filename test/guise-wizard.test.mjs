@@ -22,7 +22,7 @@ globalThis.ui = { notifications: { warn() {}, info() {} } };
 
 const mod = await import('../scripts/rippers-guise.mjs');
 const {
-	WIZARD_STEPS, clampWizardStep, emptyGuiseDraft, guiseDraftToData, draftKey, AFFINITY_TYPES,
+	WIZARD_STEPS, clampWizardStep, emptyGuiseDraft, guiseDraftToData, guiseDataToDraft, draftKey, AFFINITY_TYPES,
 	validateAffinityTrio, affinityTrioToModifiers, validateGuiseDraft,
 	SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, GUISE_MODES, REQUIRED_CLASS_COUNT,
 	validateAffinitySet, newAffinitySet, affinityLevelOf, withAffinityLevel,
@@ -370,4 +370,62 @@ test('the affinity-set helpers remain valid (runtime library path, not the build
 	assert.equal(validateAffinitySet(s).ok, true);
 	assert.equal(affinityLevelOf({ id: 'a', affinities: [{ type: 'fire', level: 2 }] }, 'fire'), 2);
 	assert.deepEqual(withAffinityLevel([], AFFINITY_TYPES[0], 1), [{ type: AFFINITY_TYPES[0], level: 1 }]);
+});
+
+// --- #4 (v0.7.9): editable builder — guiseDataToDraft round-trip + soft override validation --------
+test('#4 guiseDataToDraft round-trips a WORN guise (guiseDraftToData ∘ guiseDataToDraft = identity)', () => {
+	// A fully-authored worn draft → data (the canonical stored shape) → draft → data must be stable.
+	const src = wornOk(filled(threeClasses(emptyGuiseDraft())));
+	src.name = 'Inspector Grange'; src.role = 'plain-clothes'; src.nature = 'dogged'; src.notes = '<p>hi</p>';
+	src.perk = 'Nightsight'; src.bonusDescriptor = 'when protecting a child'; src.tell = 'cold hands'; src.bane = 'silver'; src.flaw = 'no running water';
+	src.affinityImmunity = 'dark'; src.affinityVulnerability = 'light'; src.affinityResistance = 'fire';
+	src.equipment = [{ itemUuid: 'Compendium.x.weapons.Item.w', slot: 'mainHand' }];
+	src.attachedEffects = [{ itemUuid: 'Compendium.x.effects.Item.e' }];
+	const data = guiseDraftToData(src);
+	const rebuilt = guiseDataToDraft(data);
+	assert.deepEqual(guiseDraftToData(rebuilt), data, 'worn data must survive a data→draft→data round-trip');
+	// spot-check the trio was reconstructed from affinityModifiers, not lost
+	assert.equal(rebuilt.affinityImmunity, 'dark');
+	assert.equal(rebuilt.affinityVulnerability, 'light');
+	assert.equal(rebuilt.affinityResistance, 'fire');
+	assert.equal(rebuilt.attachedHeroicUuid, src.attachedHeroicUuid);
+});
+
+test('#4 guiseDataToDraft round-trips the INNATE guise (specialties/talented/kit refs preserved)', () => {
+	const src = filled(threeClasses(emptyGuiseDraft()));
+	src.mode = 'innate'; src.name = 'The face'; src.notes = '<p>self</p>';
+	src.talented = true; src.specialties = ['Tracking', 'Lockpicking', 'Cooking', 'Riding'];
+	src.innateHeroicUuid = 'Compendium.x.heroics.Item.h';
+	src.hunterWeaponUuid = 'Compendium.x.weapons.Item.hw'; src.hunterMaterial = 'silver'; src.hunterOrigin = 'grandfather\'s cane';
+	src.armorUuid = 'Compendium.x.armor.Item.a'; src.accessoryUuid = 'Compendium.x.accessory.Item.ac';
+	const data = guiseDraftToData(src);
+	const rebuilt = guiseDataToDraft(data);
+	assert.deepEqual(guiseDraftToData(rebuilt), data, 'innate data must survive a data→draft→data round-trip');
+	assert.equal(rebuilt.talented, true);
+	assert.deepEqual(rebuilt.specialties, ['Tracking', 'Lockpicking', 'Cooking', 'Riding']);
+	assert.equal(rebuilt.hunterMaterial, 'silver');
+	assert.equal(rebuilt.armorUuid, 'Compendium.x.armor.Item.a');
+});
+
+test('#4 the GM override softens validation (findings become warnings, ok stays true)', () => {
+	// A worn draft missing its attached signature Heroic is INVALID by default...
+	const bad = filled(threeClasses(emptyGuiseDraft()));
+	bad.affinityImmunity = 'dark'; bad.affinityVulnerability = 'light'; bad.affinityResistance = 'fire';
+	const strict = validateGuiseDraft(bad, 'worn');
+	assert.equal(strict.ok, false);
+	assert.ok(strict.errors.some((e) => /attached Heroic/i.test(e)));
+	assert.deepEqual(strict.warnings, []);
+	// ...but with the override on, it is allowed through, the same finding riding as a warning.
+	const soft = validateGuiseDraft(bad, 'worn', {}, undefined, { override: true });
+	assert.equal(soft.ok, true);
+	assert.deepEqual(soft.errors, []);
+	assert.ok(soft.warnings.some((w) => /attached Heroic/i.test(w)));
+});
+
+test('#4 override does not fabricate warnings for an already-valid draft', () => {
+	const good = wornOk(filled(threeClasses(emptyGuiseDraft())));
+	good.affinityImmunity = 'dark'; good.affinityVulnerability = 'light'; good.affinityResistance = 'fire';
+	const soft = validateGuiseDraft(good, 'worn', {}, undefined, { override: true });
+	assert.equal(soft.ok, true);
+	assert.deepEqual(soft.warnings, []);
 });

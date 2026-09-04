@@ -56,6 +56,17 @@
 const MODULE_ID = 'rippers-guise';
 const FLAG = 'activeGuise';
 const FEATURE_TYPE = `${MODULE_ID}.guise`;
+// #4 (v0.7.9): the module-wide GM EDIT OVERRIDE. A guise's rules-fixed fields (its three classes, its
+// affinity trio, its equipment/hands — "fixed at distillation", GCR:507/:329/:124) are read-only by
+// default; turning this world setting ON lets a GM edit ANY normally-fixed field, with SOFT validation
+// (warn, don't block) and a dismiss-before-edit bypass. Registered in the 'setup' hook.
+const EDIT_OVERRIDE_SETTING = 'editOverride';
+/** True iff the module-wide GM edit override is on. Guarded so the pure helpers stay headless-safe
+ *  (game.settings does not exist under `node --test`). Runtime-only signal; validation stays pure. */
+function editOverrideOn() {
+	try { return game?.settings?.get(MODULE_ID, EDIT_OVERRIDE_SETTING) === true; }
+	catch { return false; }
+}
 const AFFINITY_TYPES = ['air', 'bolt', 'dark', 'earth', 'fire', 'ice', 'light', 'physical', 'poison'];
 const EQUIP_SLOTS = ['mainHand', 'offHand', 'armor', 'accessory'];
 const ALL_SLOTS = ['mainHand', 'offHand', 'armor', 'accessory', 'phantom', 'arcanum'];
@@ -1141,6 +1152,9 @@ function buildGuisePanel(actor) {
 				${sub ? `<span class="guise-sub">${sub}</span>` : ''}
 				${summary ? `<span class="guise-summary">${esc(summary)}</span>` : ''}
 			</div>
+			<button type="button" class="guise-edit" data-guise-id="${g.id}" title="${esc(game.i18n.localize('RIPPERS.Guise.Edit'))}">
+				${game.i18n.localize('RIPPERS.Guise.Edit')}
+			</button>
 			<button type="button" class="guise-toggle${active ? ' is-active' : ''}" data-guise-id="${g.id}">
 				${game.i18n.localize(active ? 'RIPPERS.Guise.Dismiss' : 'RIPPERS.Guise.Bind')}
 			</button>
@@ -1157,6 +1171,12 @@ function buildGuisePanel(actor) {
 		<div class="rippers-guise-list">${rows || `<p class="rippers-guise-empty">${game.i18n.localize('RIPPERS.Guise.NoGuises')}</p>`}</div>`;
 	// The Build button opens the player-facing Guise Builder wizard.
 	panel.querySelector('.guise-build')?.addEventListener('click', (ev) => { ev.preventDefault(); openGuiseBuilder(actor); });
+	// #4 (v0.7.9): the per-guise Edit button reopens the wizard seeded from that guise (edit mode).
+	panel.querySelectorAll('.guise-edit').forEach((btn) => btn.addEventListener('click', (ev) => {
+		ev.preventDefault();
+		const g = actor.items.get(btn.dataset.guiseId);
+		if (g) openGuiseBuilder(actor, g);
+	}));
 	// The Specialty button arms/disarms the die-bump for the next check (the flag change re-renders the sheet).
 	panel.querySelector('.guise-specialty-arm')?.addEventListener('click', async (ev) => {
 		ev.preventDefault(); ev.currentTarget.disabled = true;
@@ -1465,7 +1485,7 @@ function draftClassSpent(draft, classUuid) {
 	return n;
 }
 
-function validateGuiseDraft(draft, mode = 'worn', skillMax = {}, budget = SKILL_BUDGET_CAP) {
+function validateGuiseDraft(draft, mode = 'worn', skillMax = {}, budget = SKILL_BUDGET_CAP, { override = false } = {}) {
 	const errors = [];
 	const classes = (draft?.classUuids ?? []).filter(Boolean);
 	if (classes.length !== REQUIRED_CLASS_COUNT) errors.push(`A guise has exactly ${REQUIRED_CLASS_COUNT} classes (has ${classes.length}).`);
@@ -1497,14 +1517,18 @@ function validateGuiseDraft(draft, mode = 'worn', skillMax = {}, budget = SKILL_
 		const cap = specialtyCapFor(draftIsTalented(draft));
 		if (specs.length !== cap) errors.push(`The Innate Guise carries exactly ${cap} Specialties (has ${specs.length}).`);
 	}
-	return { ok: errors.length === 0, errors };
+	// #4 (v0.7.9): with the module-wide GM override ON, validation is SOFT — the same findings are
+	// returned as `warnings` and never block Create/Next (Austin: "modifiable with an override").
+	if (override) return { ok: true, errors: [], warnings: errors };
+	return { ok: errors.length === 0, errors, warnings: [] };
 }
 
 /** Per-step guardrail errors, so the wizard can gate the Next button and show inline errors on the
  *  step that owns each rule — without gating Next on the whole-draft validity (which would trap you
  *  on step 1, where a guise legitimately has <3 classes). Pure. Returns { ok, errors } for stepKey. */
-function guiseStepErrors(draft, mode = 'worn', skillMax = {}, budget = SKILL_BUDGET_CAP, stepKey = 'review') {
-	const all = validateGuiseDraft(draft, mode, skillMax, budget).errors;
+function guiseStepErrors(draft, mode = 'worn', skillMax = {}, budget = SKILL_BUDGET_CAP, stepKey = 'review', { override = false } = {}) {
+	// Under the GM override validation is soft: no step gates (errors come back as warnings, not errors).
+	const all = validateGuiseDraft(draft, mode, skillMax, budget, { override }).errors;
 	const has = (frag) => all.filter((e) => frag.test(e));
 	switch (stepKey) {
 		case 'identity': return { ok: true, errors: [] };
@@ -1628,6 +1652,77 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 	};
 }
 
+/** The INVERSE of guiseDraftToData (#4, v0.7.9): read a guise Item's system.data back into a builder
+ *  draft, so an existing guise can be re-opened in the wizard and edited. Pure — it carries the UUIDs;
+ *  display names / img are enriched async by draftFromGuiseItem. Round-trip stable: for any output D of
+ *  guiseDraftToData, guiseDraftToData(guiseDataToDraft(D)) deep-equals D. */
+function guiseDataToDraft(data = {}) {
+	const mode = GUISE_MODES.includes(data.mode) ? data.mode : 'worn';
+	const draft = emptyGuiseDraft();
+	draft.mode = mode;
+	draft.name = data.identity ?? '';
+	draft.role = data.role ?? '';
+	draft.nature = mode === 'innate' ? '' : (data.nature ?? '');
+	draft.notes = data.notes ?? '';
+	// classes + the sl-map (classUuid␟skillUuid -> sl), rebuilt in the same order guiseDraftToData emits.
+	draft.classUuids = (data.classes ?? []).map((c) => c.classUuid).filter(Boolean);
+	draft.sl = {};
+	for (const cls of data.classes ?? []) {
+		for (const sk of cls.skills ?? []) {
+			if (cls.classUuid && sk.skillUuid && Number(sk.sl) > 0) draft.sl[draftKey(cls.classUuid, sk.skillUuid)] = Number(sk.sl);
+		}
+	}
+	if (mode === 'innate') {
+		draft.specialties = (data.specialties ?? []).map((s) => s ?? '');
+		draft.talented = !!data.talented;
+		draft.innateHeroicUuid = data.innateHeroicUuid ?? '';
+		draft.hunterWeaponUuid = data.hunterWeaponUuid ?? '';
+		draft.hunterMaterial = data.hunterMaterial ?? '';
+		draft.hunterOrigin = data.hunterOrigin ?? '';
+		draft.armorUuid = data.armorUuid ?? '';
+		draft.accessoryUuid = data.accessoryUuid ?? '';
+		return draft;
+	}
+	// worn: equipment + the affinity trio + narrative + attached heroic/effects
+	draft.equipment = (data.equipment ?? []).filter((e) => e?.itemUuid)
+		.map((e) => ({ itemUuid: e.itemUuid, slot: EQUIP_SLOTS.includes(e.slot) ? e.slot : 'mainHand' }));
+	for (const m of data.affinityModifiers ?? []) {
+		if (!AFFINITY_TYPES.includes(m.type)) continue;
+		if (Number(m.level) === TRIO_LEVEL.immunity) draft.affinityImmunity = m.type;
+		else if (Number(m.level) === TRIO_LEVEL.vulnerability) draft.affinityVulnerability = m.type;
+		else if (Number(m.level) === TRIO_LEVEL.resistance) draft.affinityResistance = m.type;
+	}
+	draft.perk = data.perk ?? '';
+	draft.bonusDescriptor = data.bonus?.descriptor ?? '';
+	draft.tell = data.tell ?? '';
+	draft.bane = data.bane ?? '';
+	draft.flaw = data.flaw ?? '';
+	draft.attachedHeroicUuid = data.attachedHeroicUuid ?? '';
+	draft.attachedEffects = (data.attachedEffects ?? []).filter((e) => e?.itemUuid).map((e) => ({ itemUuid: e.itemUuid }));
+	return draft;
+}
+
+/** Enrich a pure guiseDataToDraft with an Item's display fields (img, colour, chip names). Async —
+ *  resolves each authored UUID to a name for the builder chips. Used by openGuiseBuilder for edit. */
+async function draftFromGuiseItem(item) {
+	const draft = guiseDataToDraft(item?.system?.data ?? {});
+	draft.img = item?.img || draft.img;
+	const color = item?.getFlag?.(MODULE_ID, 'color');
+	if (color) draft.color = color;
+	const nameOf = async (uuid) => (uuid ? (await safeFromUuid(uuid))?.name ?? '' : '');
+	if (draft.mode === 'innate') {
+		draft.innateHeroicName = await nameOf(draft.innateHeroicUuid);
+		draft.hunterWeaponName = await nameOf(draft.hunterWeaponUuid);
+		draft.armorName = await nameOf(draft.armorUuid);
+		draft.accessoryName = await nameOf(draft.accessoryUuid);
+	} else {
+		draft.attachedHeroicName = await nameOf(draft.attachedHeroicUuid);
+		for (const e of draft.equipment) e.name = await nameOf(e.itemUuid);
+		for (const e of draft.attachedEffects) e.name = await nameOf(e.itemUuid);
+	}
+	return draft;
+}
+
 /** Create the guise classFeature Item on the actor from a draft; optionally bind it. Async. */
 async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false } = {}) {
 	if (!actor) return null;
@@ -1737,6 +1832,7 @@ function getGuiseBuilderApp() {
 			this._draft = emptyGuiseDraft();
 			this._classSkills = {}; // classUuid -> [{uuid,name,maxSl}]
 			this._step = 1;         // active wizard step (1..WIZARD_STEPS.length)
+			this._editingId = null; // #4: the id of the guise Item being edited (null = create a new one)
 		}
 		static DEFAULT_OPTIONS = {
 			classes: ['rippers-guise', 'guise-builder'],
@@ -1843,10 +1939,12 @@ function getGuiseBuilderApp() {
 			};
 
 			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties, min-per-class + budget) ----
-			const validation = validateGuiseDraft(this._draft, mode, skillMax, budget);
+			// #4 (v0.7.9): with the GM override ON, validation is soft (findings → warnings, never block).
+			const override = editOverrideOn();
+			const validation = validateGuiseDraft(this._draft, mode, skillMax, budget, { override });
 			// per-step errors so the CURRENT step gates its own Next button and shows its own errors
 			// (v0.7.6 — the guardrails were computed but never consumed by the wizard chrome).
-			const stepGate = guiseStepErrors(this._draft, mode, skillMax, budget, stepKey);
+			const stepGate = guiseStepErrors(this._draft, mode, skillMax, budget, stepKey, { override });
 
 			// ---- review step summary (read-only) --------------------------------
 			const wordFor = (type, level) => `${capT(type)} ${affinityWordOf(level).toLowerCase()}`;
@@ -1887,6 +1985,9 @@ function getGuiseBuilderApp() {
 				loadout, review, validation,
 				// v0.7.6 wizard chrome: gate Next on the current step, surface its errors inline
 				stepValid: stepGate.ok, stepErrors: stepGate.errors,
+				// #4 (v0.7.9): edit vs create; the GM override state + its warnings (soft validation)
+				isEditing: !!this._editingId, editOverride: override,
+				warnings: validation.warnings ?? [],
 			};
 		}
 
@@ -2050,10 +2151,33 @@ function getGuiseBuilderApp() {
 		static onNext(event) { event.preventDefault(); this._step = clampWizardStep(this._step + 1); this.render(); }
 		async _doCreate(bind) {
 			const mode = GUISE_MODES.includes(this._draft.mode) ? this._draft.mode : 'worn';
+			const override = editOverrideOn();
 			// Belt-and-suspenders gate: recompute the FULL guardrail set (incl. min-per-class + budget)
 			// and refuse to commit an invalid guise even if a disabled button were somehow triggered.
-			const v = validateGuiseDraft(this._draft, mode, this._skillMax(), budgetOf(this.actor));
+			// With the GM override on, validation is SOFT — findings surface as warnings, never block.
+			const v = validateGuiseDraft(this._draft, mode, this._skillMax(), budgetOf(this.actor), { override });
 			if (!v.ok) { ui.notifications?.warn(v.errors[0]); return; }
+			for (const w of v.warnings ?? []) ui.notifications?.warn(w);
+			// #4 (v0.7.9): EDIT path — update the existing guise's record in place instead of creating a new one.
+			if (this._editingId) {
+				const item = this.actor?.items?.get(this._editingId);
+				if (!item) { ui.notifications?.error('That guise no longer exists — reopen the builder.'); this.close(); return; }
+				// Dismiss-before-edit guard: a BOUND guise has materialised its skills/equipment onto the
+				// actor; its structural fields must not change underneath. Block unless the GM override is on.
+				const isBound = this.actor.getFlag(MODULE_ID, FLAG) === item.id;
+				if (isBound && !override) { ui.notifications?.warn(game.i18n.localize('RIPPERS.Builder.DismissFirst')); return; }
+				if (isBound && override) ui.notifications?.warn(game.i18n.localize('RIPPERS.Builder.EditBoundWarn'));
+				const data = guiseDraftToData(this._draft, this._skillMax(), budgetOf(this.actor));
+				await item.update({ name: data.identity || item.name, img: this._draft.img || item.img, 'system.data': data });
+				// NOTE (#4 scope, flagged to god): the record is updated fully (classes, skills, specialties,
+				// talented, narrative, affinity trio, all authored refs). A WORN guise's kit re-materialises
+				// on the next bind. Swapping an INNATE guise's already-materialised char-side kit items
+				// (creation heroic / Hunter Weapon / armour / accessory) post-creation is intentionally out
+				// of scope here (a singleton, dormancy-sensitive, destructive reconcile) — refs are stored.
+				ui.notifications?.info(`Guise "${item.name}" updated.`);
+				this.close();
+				return;
+			}
 			const item = await createGuiseFromDraft(this.actor, this._draft, { skillMax: this._skillMax(), bind });
 			if (item) { ui.notifications?.info(`Guise "${item.name}" created${bind ? ' and bound' : ''}.`); this.close(); }
 		}
@@ -2061,11 +2185,20 @@ function getGuiseBuilderApp() {
 	_GuiseBuilderApp = GuiseBuilderApp;
 	return GuiseBuilderApp;
 }
-/** Open the Guise Builder wizard for an actor (panel button / macro). */
-function openGuiseBuilder(actor) {
+/** Open the Guise Builder wizard for an actor (panel button / macro). With `existingGuise`, the wizard
+ *  opens in EDIT mode (#4): its draft is seeded from that guise Item and Create becomes Save. */
+function openGuiseBuilder(actor, existingGuise = null) {
 	if (!actor) return;
-	try { new (getGuiseBuilderApp())(actor).render(true); }
-	catch (err) { console.error('[rippers-guise] openGuiseBuilder failed:', err); }
+	(async () => {
+		try {
+			const app = new (getGuiseBuilderApp())(actor);
+			if (existingGuise?.system?.data) {
+				app._draft = await draftFromGuiseItem(existingGuise);
+				app._editingId = existingGuise.id;
+			}
+			app.render(true);
+		} catch (err) { console.error('[rippers-guise] openGuiseBuilder failed:', err); }
+	})();
 }
 
 // ---------------------------------------------------------------------------
@@ -2127,6 +2260,9 @@ async function enrichGuiseData(model) {
 		classes, equipment, affinities,
 		slotChoices, typeChoices, levelChoices,
 		hasActor: !!actor,
+		// #4 (v0.7.9): a guise's classes / equipment / affinities are fixed at distillation — read-only
+		// on the sheet unless the module-wide GM edit override is on.
+		canEditFixed: editOverrideOn(),
 	};
 }
 
@@ -2269,9 +2405,13 @@ function defineGuiseModel() {
 			const cur = () => foundry.utils.deepClone(item.system?.data ?? {});
 			const setData = (patch) => item.update({ 'system.data': { ...cur(), ...patch } });
 			const budget = budgetOf(item.actor);
+			// #4 (v0.7.9): classes / equipment / affinities are fixed at distillation. The template hides
+			// their edit controls unless the GM override is on; this guard is defense-in-depth so a stale
+			// control can't mutate a fixed field. Identity/role/notes stay freely editable (canon-clean).
+			const canEdit = editOverrideOn();
 
 			// --- drop targets (class / per-class skill / equipment) -----------------
-			html.querySelectorAll('[data-guise-drop]').forEach((zone) => {
+			if (canEdit) html.querySelectorAll('[data-guise-drop]').forEach((zone) => {
 				zone.addEventListener('dragover', (ev) => { ev.preventDefault(); zone.classList.add('drop-hover'); });
 				zone.addEventListener('dragleave', () => zone.classList.remove('drop-hover'));
 				zone.addEventListener('drop', async (ev) => {
@@ -2307,7 +2447,7 @@ function defineGuiseModel() {
 			});
 
 			// --- remove buttons -----------------------------------------------------
-			html.querySelectorAll('[data-guise-action]').forEach((btn) => {
+			if (canEdit) html.querySelectorAll('[data-guise-action]').forEach((btn) => {
 				btn.addEventListener('click', async (ev) => {
 					ev.preventDefault();
 					const action = btn.dataset.guiseAction;
@@ -2481,6 +2621,14 @@ Hooks.on('renderFUStandardActorSheet', (app) => injectGuisePanel(app));
 // ---------------------------------------------------------------------------
 // Registration + template preload.
 Hooks.once('setup', () => {
+	// #4 (v0.7.9): register the module-wide GM edit override (world scope ⇒ GM-only to change).
+	try {
+		game.settings.register(MODULE_ID, EDIT_OVERRIDE_SETTING, {
+			name: 'RIPPERS.Settings.EditOverride',
+			hint: 'RIPPERS.Settings.EditOverrideHint',
+			scope: 'world', config: true, type: Boolean, default: false,
+		});
+	} catch (err) { console.warn('[rippers-guise] could not register the edit-override setting:', err); }
 	const registry = CONFIG.FU?.classFeatureRegistry ?? globalThis.projectfu?.ClassFeatureRegistry;
 	if (!registry?.register) {
 		console.error('[rippers-guise] CONFIG.FU.classFeatureRegistry not available — projectfu must be active. Guise not registered.');
@@ -2641,7 +2789,7 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.
