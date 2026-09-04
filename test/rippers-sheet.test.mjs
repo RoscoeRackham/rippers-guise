@@ -1081,6 +1081,62 @@ test('buildGuisePlayVM: previewId renders another owned guise WITHOUT binding (p
 	assert.equal(menu.find((g) => g.id === 'go').previewing, true);
 });
 
+// ── v0.7.30 SPELL AUTO-MATERIALIZATION ──
+test('spell-mat: guiseDraftToData carries picked spellUuids on a skill, capped at the clamped SL', () => {
+	const { guiseDraftToData, draftKey } = mod;
+	const cU = 'Compendium.x.classes.Item.c1', sU = 'Compendium.x.skills.Item.elemmagic';
+	const key = draftKey(cU, sU);
+	const draft = { mode: 'innate', name: 'V', classUuids: [cU], sl: { [key]: 2 }, spells: { [key]: ['sp/a', 'sp/b', 'sp/c'] }, specialties: [] };
+	const data = guiseDraftToData(draft, { [sU]: 4 }, 30);
+	const sk = data.classes[0].skills.find((s) => s.skillUuid === sU);
+	assert.deepEqual(sk.spellUuids, ['sp/a', 'sp/b']);   // 3 picked, but SL 2 → capped at 2
+});
+
+test('spell-mat: guiseDataToDraft rebuilds draft.spells from stored spellUuids (round-trip)', () => {
+	const { guiseDataToDraft, draftKey } = mod;
+	const cU = 'c1', sU = 's1';
+	const data = { mode: 'worn', identity: 'V', classes: [{ classUuid: cU, skills: [{ skillUuid: sU, sl: 2, spellUuids: ['sp/a', 'sp/b'] }] }] };
+	const draft = guiseDataToDraft(data);
+	assert.deepEqual(draft.spells[draftKey(cU, sU)], ['sp/a', 'sp/b']);
+	assert.equal(draft.sl[draftKey(cU, sU)], 2);
+});
+
+test('spell-mat: materialiseSpells creates guise-origin spell Items, capped at SL (strip on dismiss)', async () => {
+	const { materialiseSpells } = mod;
+	UUIDS.set('sp/a', { name: 'Ignis', toObject: () => ({ name: 'Ignis', type: 'spell', system: {} }) });
+	UUIDS.set('sp/b', { name: 'Glacies', toObject: () => ({ name: 'Glacies', type: 'spell', system: {} }) });
+	UUIDS.set('sp/c', { name: 'Ventus', toObject: () => ({ name: 'Ventus', type: 'spell', system: {} }) });
+	const created = [];
+	const actor = { system: { data: {} }, createEmbeddedDocuments: async (t, arr) => { for (const o of arr) created.push(o); return arr.map((_, i) => ({ id: `sp${i}` })); } };
+	const guiseItem = { id: 'g9', system: { data: { classes: [{ classUuid: 'c', skills: [{ skillUuid: 's', sl: 2, spellUuids: ['sp/a', 'sp/b', 'sp/c'] }] }] } } };
+	const ids = await materialiseSpells(actor, guiseItem);
+	assert.equal(ids.length, 2);                          // SL 2 → only 2 materialise
+	assert.equal(created.length, 2);
+	assert.equal(created[0].type, 'spell');
+	assert.equal(created[0].flags['rippers-guise'].kind, 'spell');   // flagged guise-origin → stripped on dismiss
+	assert.equal(created[0].flags['rippers-guise'].origin, 'g9');
+});
+
+test('spell-mat: spellsForSkill maps a granting skill key to its compendium spells', async () => {
+	const { spellsForSkill, spellGrantingSkillKeys } = mod;
+	const savedGame = globalThis.game;
+	globalThis.game = { ...savedGame, packs: { get: (name) => (name === 'rippers-compendium.spells' ? {
+		getIndex: async () => [
+			{ _id: 'A', name: 'Ignis', flags: { 'rippers-compendium': { spellKey: 'elementalism/ignis', discipline: 'elementalism', grantingSkillKey: 'elemental_magic' } } },
+			{ _id: 'B', name: 'Ebon Lacquer', flags: { 'rippers-compendium': { spellKey: 'entropism/ebon-lacquer', discipline: 'entropism', grantingSkillKey: 'entropic_magic' } } },
+		],
+	} : null) } };
+	try {
+		const keys = await spellGrantingSkillKeys();
+		assert.ok(keys.has('elemental_magic') && keys.has('entropic_magic'));
+		const spells = await spellsForSkill('elemental_magic');
+		assert.equal(spells.length, 1);
+		assert.equal(spells[0].name, 'Ignis');
+		assert.ok(spells[0].uuid.endsWith('rippers-compendium.spells.Item.A'));
+		assert.equal((await spellsForSkill('')).length, 0);      // no key → nothing
+	} finally { globalThis.game = savedGame; }
+});
+
 // ── v0.7.23 cabinet restore = atomic MOVE (bugfix: was duplicating) ──
 const _guiseDoc = (name, pack, onDelete) => ({
 	type: 'classFeature', name, pack,

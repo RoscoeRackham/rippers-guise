@@ -60,6 +60,19 @@
 							<input type="number" class="guise-skill-sl" data-key="{{key}}" value="{{sl}}" min="0" max="{{maxSl}}" title="Max SL {{maxSl}}" />
 							<span class="gb-maxsl">/ {{maxSl}}</span>
 						</div>
+						{{!-- v0.7.30 SPELL AUTO-MATERIALIZATION: a spellcasting skill picks up to SL spells --}}
+						{{#if isCaster}}
+							{{#if checked}}
+								<div class="gb-spellpick">
+									<div class="gb-spellpick-head">{{localize "RIPPERS.Builder.PickSpells"}} <em>{{pickedCount}} / {{spellCap}}</em></div>
+									{{#each spellOptions}}
+										<label class="gb-spellopt"><input type="checkbox" class="guise-spell-pick" data-key="{{../key}}" data-spell="{{uuid}}" {{#if picked}}checked{{/if}} /> {{name}}</label>
+									{{else}}
+										<p class="gb-empty">{{localize "RIPPERS.Builder.NoSpellsForSkill"}}</p>
+									{{/each}}
+								</div>
+							{{/if}}
+						{{/if}}
 					{{else}}
 						<p class="gb-empty">{{localize "RIPPERS.Builder.NoSkills"}}</p>
 					{{/each}}

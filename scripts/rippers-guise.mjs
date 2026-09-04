@@ -348,6 +348,36 @@ async function materialiseSkills(actor, item) {
 	return created.map((d) => d.id);
 }
 
+/** v0.7.30 SPELL AUTO-MATERIALIZATION: materialise a worn guise's PICKED spells as guise-origin owned
+ *  'spell' Items — mirrors materialiseSkills. The player picks spells at skill acquisition (guise editor);
+ *  the picked UUIDs live on each spellcasting skill's `spellUuids`. On bind they become castable actor
+ *  spell Items (the v0.7.16 Spells tab casts them via native item.roll()); on dismiss _dismissCore strips
+ *  them with the rest of the guise-origin owned set. QUIRK-granted spells are NOT materialised here — they
+ *  are character-level (attached via the Quirk, never flagged guise-origin) and persist across swaps.
+ *  Defensive cap: never more picked spells than the skill's allocated SL (the picker enforces it too). */
+async function materialiseSpells(actor, item) {
+	const data = item.system?.data ?? {};
+	const toCreate = [];
+	const seen = new Set();
+	for (const cls of data.classes ?? []) {
+		for (const s of cls.skills ?? []) {
+			const sl = Math.max(0, Math.floor(Number(s.sl ?? 0)));
+			for (const spellUuid of (s.spellUuids ?? []).slice(0, sl)) {
+				if (!spellUuid || seen.has(spellUuid)) continue; seen.add(spellUuid);
+				const src = await fromUuid(spellUuid);
+				if (!src) { console.warn(`[rippers-guise] spell ref not found: ${spellUuid}`); continue; }
+				const obj = src.toObject();
+				delete obj._id;
+				obj.flags = obj.flags ?? {};
+				obj.flags[MODULE_ID] = { origin: item.id, kind: 'spell' };
+				toCreate.push(obj);
+			}
+		}
+	}
+	const created = toCreate.length ? await actor.createEmbeddedDocuments('Item', toCreate) : [];
+	return created.map((d) => d.id);
+}
+
 /** #3 (v0.7.9): materialise a worn guise's attached ("signature") Heroic as an owned Item, flagged
  *  guise-origin. It carries its own ActiveEffect(s), so creating it on bind rides those onto the
  *  actor; _dismissCore removes it on dismiss (it is neither a guise nor the Hunter Weapon). Distinct
@@ -441,7 +471,9 @@ async function _bindCore(actor, item) {
 	const heroicIds = await materialiseAttachedHeroic(actor, item);
 	// #5 (v0.7.9): effects/abilities that travel with the guise ride on the same way.
 	const effectIds = await materialiseAttachedEffects(actor, item);
-	const owned = [...skillIds, ...equipIds, ...heroicIds, ...effectIds];
+	// v0.7.30: the guise's PICKED spells materialise as castable actor spell Items (stripped on dismiss).
+	const spellIds = await materialiseSpells(actor, item);
+	const owned = [...skillIds, ...equipIds, ...heroicIds, ...effectIds, ...spellIds];
 	await actor.update({
 		[`flags.${MODULE_ID}.${FLAG}`]: item.id,
 		[`flags.${MODULE_ID}.preBindEquip`]: preBindEquip,
@@ -2036,7 +2068,7 @@ function guiseStepErrors(draft, mode = 'worn', skillMax = {}, budget = SKILL_BUD
 function emptyGuiseDraft() {
 	return {
 		mode: 'worn', // 'worn' (a mask) | 'innate' (the face under the masks, Q1)
-		name: '', role: '', nature: '', notes: '', img: 'icons/svg/mystery-man.svg', color: '', classUuids: [], sl: {},
+		name: '', role: '', nature: '', notes: '', img: 'icons/svg/mystery-man.svg', color: '', classUuids: [], sl: {}, spells: {},
 		// worn-guise fields (Q1: none of these belong on the Innate Guise)
 		equipment: [], // [{itemUuid, slot}] — armor / two hands / accessory (was hardcoded [] — the P2 bug)
 		perk: '', bonusDescriptor: '', tell: '', bane: '', flaw: '',
@@ -2078,6 +2110,40 @@ async function skillsForClass(classRef) {
 	return parseClassSkills(doc.system?.description ?? '');
 }
 
+// ── v0.7.30 SPELL AUTO-MATERIALIZATION: compendium spell index (mirrors skillsForClass) ────────────
+// The compendium's `spells` pack (built by rippers-compendium PACK 4) is the single source: each spell
+// Item carries flags.rippers-compendium.{spellKey, discipline, classKey, grantingSkillKey, heroic}. We
+// build a grantingSkillKey → [{uuid,name,...}] map ONCE (index-only load, cached) so the guise editor's
+// spell picker and any "is this a caster skill?" check read from it synchronously. No spell values are
+// duplicated in this module; everything is read from the compendium the guise is already coupled to.
+const SPELL_PACK = 'rippers-compendium.spells';
+const SPELL_FLAG_NS = 'rippers-compendium';
+let _spellIndexCache = null;
+async function loadSpellIndex() {
+	if (_spellIndexCache) return _spellIndexCache;
+	const pack = globalThis.game?.packs?.get?.(SPELL_PACK);
+	if (!pack) return (_spellIndexCache = []);
+	let idx = [];
+	try { idx = [...(await pack.getIndex({ fields: [`flags.${SPELL_FLAG_NS}`] }))]; }
+	catch (err) { console.warn('[rippers-guise] spell index load failed:', err); return (_spellIndexCache = []); }
+	_spellIndexCache = idx.map((e) => {
+		const f = e.flags?.[SPELL_FLAG_NS] ?? {};
+		return { uuid: `Compendium.${SPELL_PACK}.Item.${e._id}`, name: e.name ?? '', spellKey: f.spellKey ?? '', discipline: f.discipline ?? '', grantingSkillKey: f.grantingSkillKey ?? '', heroic: !!f.heroic };
+	});
+	return _spellIndexCache;
+}
+/** The set of granting_skill_keys that have spells (i.e. which skill fuids are spellcasting). */
+async function spellGrantingSkillKeys() {
+	const idx = await loadSpellIndex();
+	return new Set(idx.map((s) => s.grantingSkillKey).filter(Boolean));
+}
+/** Spells a given granting skill (by its fuid/skill_key) can pick from, sorted by name. Async. */
+async function spellsForSkill(grantingSkillKey) {
+	if (!grantingSkillKey) return [];
+	const idx = await loadSpellIndex();
+	return idx.filter((s) => s.grantingSkillKey === grantingSkillKey).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Build GuiseDataModel data from a builder draft, applying the three SL caps (per-skill maxSl,
  *  per-class <=10, total <= budget). Pure. skillMax: {skillUuid: maxSl}. Caps mirror materialiseSkills. */
 function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
@@ -2095,7 +2161,9 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 			sl = Math.min(sl, Number(skillMax[sU] ?? 10), PER_CLASS_CAP - perClass, budget - spent);
 			if (sl <= 0) continue;
 			perClass += sl; spent += sl;
-			skills.push({ skillUuid: sU, sl });
+			// v0.7.30: carry the picked spells for a spellcasting skill, capped at the (clamped) SL.
+			const picked = (draft.spells?.[key] ?? []).filter(Boolean).slice(0, sl);
+			skills.push(picked.length ? { skillUuid: sU, sl, spellUuids: picked } : { skillUuid: sU, sl });
 		}
 		classes.push({ classUuid, skills });
 	}
@@ -2159,9 +2227,14 @@ function guiseDataToDraft(data = {}) {
 	// classes + the sl-map (classUuid␟skillUuid -> sl), rebuilt in the same order guiseDraftToData emits.
 	draft.classUuids = (data.classes ?? []).map((c) => c.classUuid).filter(Boolean);
 	draft.sl = {};
+	draft.spells = {};   // v0.7.30: rebuild the picked-spells map (draftKey -> [spellUuid]) for re-edit
 	for (const cls of data.classes ?? []) {
 		for (const sk of cls.skills ?? []) {
-			if (cls.classUuid && sk.skillUuid && Number(sk.sl) > 0) draft.sl[draftKey(cls.classUuid, sk.skillUuid)] = Number(sk.sl);
+			if (cls.classUuid && sk.skillUuid && Number(sk.sl) > 0) {
+				const k = draftKey(cls.classUuid, sk.skillUuid);
+				draft.sl[k] = Number(sk.sl);
+				if ((sk.spellUuids ?? []).length) draft.spells[k] = [...sk.spellUuids];
+			}
 		}
 	}
 	if (mode === 'innate') {
@@ -2462,6 +2535,20 @@ function getGuiseBuilderApp() {
 				.sort((a, b) => a.name.localeCompare(b.name));
 			const chosen = this._draft.classUuids.filter(Boolean);
 			for (const cU of chosen) if (!this._classSkills[cU]) this._classSkills[cU] = await skillsForClass(cU);
+			// v0.7.30 SPELL AUTO-MATERIALIZATION: which of the chosen classes' skills are spellcasting
+			// granting skills, and their pickable spells. Loaded ONCE, cached on the instance (skill fuids
+			// + the caster-key set + spells per granting key). No spell values duplicated — read from the
+			// compendium spells pack. Silently empty if the compendium/pack is absent (headless/tests).
+			if (!this._casterKeys) this._casterKeys = await spellGrantingSkillKeys();
+			this._skillFuid ??= {};
+			this._spellsBySkillKey ??= {};
+			for (const cU of chosen) {
+				for (const s of (this._classSkills[cU] ?? [])) {
+					if (this._skillFuid[s.uuid] === undefined) this._skillFuid[s.uuid] = (await safeFromUuid(s.uuid))?.system?.fuid ?? '';
+					const gk = this._skillFuid[s.uuid];
+					if (gk && this._casterKeys.has(gk) && !this._spellsBySkillKey[gk]) this._spellsBySkillKey[gk] = await spellsForSkill(gk);
+				}
+			}
 			const budget = budgetOf(this.actor);
 			const skillMax = this._skillMax();
 			const data = guiseDraftToData(this._draft, skillMax, budget);
@@ -2476,8 +2563,13 @@ function getGuiseBuilderApp() {
 				name: classOptions.find((o) => o.uuid === cU)?.name ?? '(class)',
 				skills: (this._classSkills[cU] ?? []).map((s) => {
 					// Display clamp (belt-and-suspenders with the input handler): never show an over-max SL.
-					const sl = Math.min(Math.max(0, Math.floor(Number(this._draft.sl[draftKey(cU, s.uuid)]) || 0)), Number(s.maxSl ?? PER_CLASS_CAP));
-					return { ...s, sl, key: draftKey(cU, s.uuid), checked: sl > 0 };
+					const key = draftKey(cU, s.uuid);
+					const sl = Math.min(Math.max(0, Math.floor(Number(this._draft.sl[key]) || 0)), Number(s.maxSl ?? PER_CLASS_CAP));
+					const gk = this._skillFuid[s.uuid];
+					const isCaster = !!(gk && this._casterKeys.has(gk));
+					const picked = (this._draft.spells?.[key] ?? []).filter(Boolean);
+					const spellOptions = isCaster ? (this._spellsBySkillKey[gk] ?? []).map((sp) => ({ uuid: sp.uuid, name: sp.name, picked: picked.includes(sp.uuid) })) : [];
+					return { ...s, sl, key, checked: sl > 0, isCaster, spellCap: sl, pickedCount: Math.min(picked.length, sl), spellOptions };
 				}),
 			}));
 
@@ -2634,6 +2726,17 @@ function getGuiseBuilderApp() {
 				const maxSl = Number(this._skillMax()[skillUuid] ?? PER_CLASS_CAP);
 				const v = Math.min(Math.max(0, Math.floor(Number(inp.value) || 0)), maxSl);
 				if (v > 0) this._draft.sl[key] = v; else delete this._draft.sl[key];
+				this.render();
+			}));
+			// v0.7.30 SPELL AUTO-MATERIALIZATION: pick/unpick a spell for a caster skill (capped at its SL).
+			root.querySelectorAll('input.guise-spell-pick').forEach((cb) => cb.addEventListener('change', () => {
+				const key = cb.dataset.key, spell = cb.dataset.spell;
+				this._draft.spells ??= {};
+				const cur = new Set(this._draft.spells[key] ?? []);
+				const cap = Math.max(0, Math.floor(Number(this._draft.sl[key]) || 0));
+				if (cb.checked) { if (cur.size >= cap) { cb.checked = false; ui.notifications?.warn(game.i18n.format('RIPPERS.Builder.SpellPickCap', { n: cap })); return; } cur.add(spell); }
+				else cur.delete(spell);
+				this._draft.spells[key] = [...cur];
 				this.render();
 			}));
 
@@ -3004,6 +3107,10 @@ function defineGuiseModel() {
 					skills: new ArrayField(new SchemaField({
 						skillUuid: new StringField({ initial: '' }),
 						sl: new NumberField({ initial: 1, min: 0, integer: true, nullable: false }),
+						// v0.7.30 SPELL AUTO-MATERIALIZATION: a spellcasting GRANTING skill (fuid in the compendium
+						// granting_skill_keys) picks up to SL spells from its discipline list; the picked spell UUIDs
+						// live here and auto-materialise on bind / strip on dismiss. Empty for a non-caster skill.
+						spellUuids: new ArrayField(new StringField({ initial: '' })),
 					})),
 				})),
 				// equipment (D3: guise carries its own loadout)
@@ -5238,7 +5345,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };
