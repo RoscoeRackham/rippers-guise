@@ -2991,6 +2991,60 @@ const RS_TAB_STUBS = {
 };
 const rsAffFlags = (lvl) => ({ good: lvl >= 1, bad: lvl === -1 });
 
+// ── Deeper Bonds native integration (SHEET-INJECTION-AUDIT.md, arch B) ────────────────────────────
+// Exactly one module decorates the character sheet — rippers-deeper-bonds — via FU's
+// renderFUStandardActorSheet hook, which does NOT fire on RippersSheet. So its per-bond controls vanish.
+// We render the Bonds panel NATIVELY here, driving the module's published API (game.modules.get(
+// 'rippers-deeper-bonds').api). Data lives in the module's flags + the FU bond `bonus`; we READ and
+// RECONCILE through the API (getRecords / bondStrength / ladderAbilities) and never duplicate its state.
+// Everything is GM-authoritative — the API no-ops non-GM callers; we also hide the controls off-GM.
+const DEEPER_BONDS_ID = 'rippers-deeper-bonds';
+const SOLID_BOND_CAP = 6; // DEFAULT_SOLID_CAP (canon; the API is the authority and refuses over-cap regardless).
+/** The Deeper Bonds runtime API, or null when the module is absent/inactive (headless tests included). */
+function deeperBondsApi() { return globalThis.game?.modules?.get?.(DEEPER_BONDS_ID)?.api ?? null; }
+
+/** PURE: a bond clock's four sections as fill flags (filled up to `clock`). */
+function bondClockPips(clock, sections = 4) {
+	const n = Math.max(0, Math.min(sections, Number(clock) || 0));
+	return Array.from({ length: sections }, (_, i) => ({ filled: i < n }));
+}
+/** PURE: one Bonds-panel row VM from an FU bond + its Deeper record + strength + unlocked ladder. Only
+ *  solid bonds carry a clock (fillClock refuses others); Solidify shows on fleeting and disables at cap. */
+function bondPanelRow(fuBond, record, strength, ladder, { cap = SOLID_BOND_CAP, solidCount = 0 } = {}) {
+	const tier = record?.tier ?? 'fleeting';
+	const isFleeting = tier === 'fleeting', isSolid = tier === 'solid', isEternal = tier === 'eternal';
+	const s = Number(strength) || 0;
+	return {
+		name: fuBond?.name ?? '',
+		emotions: [fuBond?.admInf, fuBond?.loyMis, fuBond?.affHat].filter(Boolean),
+		strength: s,
+		tier, isFleeting, isSolid, isEternal,
+		clock: Math.max(0, Math.min(4, Number(record?.clock) || 0)),
+		clockPips: bondClockPips(record?.clock),
+		showClock: isSolid,
+		solidifyShow: isFleeting,
+		solidifyDisabled: isFleeting && solidCount >= cap,
+		canEternal: isSolid,
+		ladder: {
+			cleanse: !!ladder?.cleanse, coverRegen: !!ladder?.coverRegen,
+			attrDieUp: !!ladder?.attrDieUp, skillGrant: !!ladder?.skillGrant,
+		},
+		grantedSkill: record?.grantedSkill?.skillName ?? '',
+	};
+}
+/** PURE: assemble the native Bonds-panel rows from FU bonds + Deeper records + an api-shaped reader
+ *  ({ strengthOf(name), ladderOf(strength, tier) }). Keeps the Foundry reads out of the row shaping so
+ *  the panel VM is unit-testable. Filters out fully-empty bonds, mirroring the fallback grid. */
+function buildBondPanelRows(fuBonds, records, api, { cap = SOLID_BOND_CAP } = {}) {
+	const solidCount = (records ?? []).filter((r) => r?.tier === 'solid').length;
+	return (fuBonds ?? []).map((b) => {
+		const rec = (records ?? []).find((r) => r?.name === b?.name) ?? null;
+		const strength = api.strengthOf(b?.name);
+		const ladder = api.ladderOf(strength, rec?.tier ?? 'fleeting');
+		return bondPanelRow(b, rec, strength, ladder, { cap, solidCount });
+	}).filter((b) => b.name || b.emotions.length);
+}
+
 /** Build the read-only view-model for the Rippers character sheet from a live FU actor. Async (resolves
  *  each guise's heroic name). Binds ONLY real actor.system.* + our guise API — invents nothing. `ui`
  *  carries the sheet's own view state (activeTab / statusSelf / showConditions). Exported for headless
@@ -3054,10 +3108,30 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		});
 	}
 	guises.sort((a, b) => (Number(b.worn) - Number(a.worn)) || (Number(a.innate) - Number(b.innate)));
-	const bonds = (sys.bonds ?? []).map((b) => ({
-		name: b.name ?? '', strength: Number(b.strength ?? 0),
-		emotions: [b.admInf, b.loyMis, b.affHat].filter(Boolean),
-	})).filter((b) => b.name || b.emotions.length);
+	// Bonds tab: render the Deeper Bonds panel NATIVELY when the module is active (per-bond tier/clock/
+	// ladder + section controls, all GM-authoritative); otherwise fall back to the plain read-only grid.
+	const dbApi = deeperBondsApi();
+	let bonds, bondsNative = false, bondsIsGM = false;
+	if (dbApi?.getRecords && dbApi?.bondStrength && dbApi?.ladderAbilities) {
+		try {
+			bondsNative = true;
+			bondsIsGM = !!globalThis.game?.user?.isActiveGM;
+			const records = dbApi.getRecords(actor) ?? [];
+			bonds = buildBondPanelRows(sys.bonds ?? [], records, {
+				strengthOf: (name) => dbApi.bondStrength(actor, name),
+				ladderOf: (strength, tier) => dbApi.ladderAbilities(strength, tier),
+			}, { cap: SOLID_BOND_CAP });
+		} catch (err) {
+			console.warn('[rippers-guise] Deeper Bonds panel unavailable — plain bond grid:', err);
+			bondsNative = false;
+		}
+	}
+	if (!bondsNative) {
+		bonds = (sys.bonds ?? []).map((b) => ({
+			name: b.name ?? '', strength: Number(b.strength ?? 0),
+			emotions: [b.admInf, b.loyMis, b.affHat].filter(Boolean),
+		})).filter((b) => b.name || b.emotions.length);
+	}
 	const activeStatuses = actor.statuses ? new Set([...actor.statuses]) : new Set();
 	const statuses = [...activeStatuses];
 	const statusChips = RS_STATUS_IDS.map((id) => ({ id, label: id, active: activeStatuses.has(id) }));
@@ -3079,7 +3153,8 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', kit: activeTab === 'kit', edit: activeTab === 'edit' };
 	if (!tab.form && !tab.bonds && !tab.study && !tab.kit && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
 	return {
-		masthead, vitals, derived, attributes, affinities, guises, bonds, statuses, statusChips, condGroups,
+		masthead, vitals, derived, attributes, affinities, guises, bonds, bondsNative, bondsIsGM,
+		statuses, statusChips, condGroups,
 		weapons, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
 	};
 }
@@ -3249,6 +3324,116 @@ async function sheetHandOffGuise(actor, guiseId, recipient) {
 	return { ok: true, reason: 'ok' };
 }
 
+// ── Deeper Bonds native controls (thin wrappers over the module's API; GM-authoritative) ──────────
+// Each is a thin wrapper over game.modules.get('rippers-deeper-bonds').api — the module owns all state.
+// The API itself no-ops non-GM callers; these supply the DOM pickers the API expects the caller to gather.
+const _bondNote = (msg) => ui.notifications?.info(msg);
+const _bondWarn = (msg) => ui.notifications?.warn(msg);
+
+/** Minimal text-input prompt (DialogV2 with a classic-Dialog fallback). Resolves to a trimmed string or null. */
+async function promptBondText(title, prompt, { placeholder = '' } = {}) {
+	const content = `<p>${prompt}</p><div class="form-group"><input type="text" name="val" placeholder="${placeholder}" autofocus></div>`;
+	const DV2 = foundry?.applications?.api?.DialogV2;
+	if (DV2?.prompt) {
+		return DV2.prompt({ window: { title }, content, ok: { label: game.i18n?.localize?.('RIPPERS.Sheet.OK') ?? 'OK', callback: (_e, b) => (b.form?.elements?.val?.value ?? '').trim() || null }, rejectClose: false }).catch(() => null);
+	}
+	const Dlg = globalThis.Dialog;
+	if (!Dlg) return null;
+	return new Promise((resolve) => new Dlg({ title, content, buttons: { ok: { label: 'OK', callback: (h) => resolve(((h[0] ?? h).querySelector('input[name=val]')?.value ?? '').trim() || null) }, cancel: { label: 'Cancel', callback: () => resolve(null) } }, default: 'ok', close: () => resolve(null) }).render(true));
+}
+/** Pick one value from a list (radio). Resolves to the chosen value or null. */
+async function promptBondPick(title, prompt, options) {
+	if (!options?.length) return null;
+	const rows = options.map((o, i) => `<label style="display:block"><input type="radio" name="pick" value="${o.value}"${i === 0 ? ' checked' : ''}> ${o.label}</label>`).join('');
+	const content = `<p>${prompt}</p><div class="form-group">${rows}</div>`;
+	const DV2 = foundry?.applications?.api?.DialogV2;
+	if (DV2?.prompt) {
+		return DV2.prompt({ window: { title }, content, ok: { label: game.i18n?.localize?.('RIPPERS.Sheet.OK') ?? 'OK', callback: (_e, b) => b.form?.querySelector('input[name=pick]:checked')?.value ?? null }, rejectClose: false }).catch(() => null);
+	}
+	const Dlg = globalThis.Dialog;
+	if (!Dlg) return null;
+	return new Promise((resolve) => new Dlg({ title, content, buttons: { ok: { label: 'OK', callback: (h) => resolve((h[0] ?? h).querySelector('input[name=pick]:checked')?.value ?? null) }, cancel: { label: 'Cancel', callback: () => resolve(null) } }, default: 'ok', close: () => resolve(null) }).render(true));
+}
+/** Pick many from a checklist. Resolves to an array of chosen values (possibly empty) or null on cancel. */
+async function promptBondChecklist(title, prompt, options) {
+	const rows = (options ?? []).map((o) => `<label style="display:block"><input type="checkbox" name="sel" value="${o.value}"> ${o.label}</label>`).join('');
+	const content = `<p>${prompt}</p><div class="form-group">${rows || '<em>No fleeting bonds.</em>'}</div>`;
+	const collect = (root) => Array.from(root.querySelectorAll('input[name=sel]:checked')).map((el) => el.value);
+	const DV2 = foundry?.applications?.api?.DialogV2;
+	if (DV2?.prompt) {
+		return DV2.prompt({ window: { title }, content, ok: { label: game.i18n?.localize?.('RIPPERS.Sheet.BondSolidifyRest') ?? 'Solidify', callback: (_e, b) => collect(b.form) }, rejectClose: false }).catch(() => null);
+	}
+	const Dlg = globalThis.Dialog;
+	if (!Dlg) return null;
+	return new Promise((resolve) => new Dlg({ title, content, buttons: { ok: { label: 'Solidify', callback: (h) => resolve(collect(h[0] ?? h)) }, cancel: { label: 'Cancel', callback: () => resolve(null) } }, default: 'ok', close: () => resolve(null) }).render(true));
+}
+
+async function sheetBondCreate(actor) {
+	const api = deeperBondsApi(); if (!api?.createFleetingBond) return;
+	const name = await promptBondText(game.i18n?.localize?.('RIPPERS.Sheet.BondNew') ?? 'New fleeting bond', game.i18n?.localize?.('RIPPERS.Sheet.BondNamePrompt') ?? 'Name the bonded character.');
+	if (!name) return;
+	const ok = await api.createFleetingBond(actor, { name });
+	if (!ok) _bondWarn(game.i18n?.localize?.('RIPPERS.Sheet.BondRefused') ?? 'Bond change refused (GM only).');
+}
+async function sheetBondSolidify(actor, name) {
+	const api = deeperBondsApi(); if (!api?.solidifyBond || !name) return;
+	const ok = await api.solidifyBond(actor, name);
+	if (!ok) _bondWarn(game.i18n?.localize?.('RIPPERS.Sheet.BondSolidifyRefused') ?? 'Cannot solidify (cap reached, not fleeting, or GM only).');
+}
+async function sheetBondEternal(actor, name) {
+	const api = deeperBondsApi(); if (!api?.promoteEternal || !name) return;
+	const ok = await api.promoteEternal(actor, name);
+	if (!ok) _bondWarn(game.i18n?.localize?.('RIPPERS.Sheet.BondEternalRefused') ?? 'Cannot promote to eternal (not solid, or GM only).');
+}
+async function sheetBondClockFill(actor, name) {
+	const api = deeperBondsApi(); if (!api?.fillClock || !name) return;
+	const res = await api.fillClock(actor, name, 1);
+	if (!res) { _bondWarn(game.i18n?.localize?.('RIPPERS.Sheet.BondClockRefused') ?? 'Only solid bonds carry a clock (GM only).'); return; }
+	if (res.emotionDelta) _bondNote(game.i18n?.localize?.('RIPPERS.Sheet.BondClockEmotion') ?? 'Clock filled — the player adds one emotion (their choice of axis).');
+}
+async function sheetBondCoverRegen(actor, name) {
+	const api = deeperBondsApi(); if (!api?.coverRegen || !name) return;
+	const res = await api.coverRegen(actor, [name]);
+	_bondNote(res ? `${game.i18n?.localize?.('RIPPERS.Sheet.BondCoverRegen') ?? 'Cover-regen'}: +${res.amount} MP (${res.bond}).` : (game.i18n?.localize?.('RIPPERS.Sheet.BondCoverRegenNone') ?? 'No qualifying bond for cover-regen.'));
+}
+async function sheetBondRaiseDie(actor, name) {
+	const api = deeperBondsApi(); if (!api?.raiseAttributeDie || !name) return;
+	const attr = await promptSpecialtyAttribute(); // reuse the DEX/INS/MIG/WLP picker
+	if (!attr) return;
+	const r = await api.raiseAttributeDie(actor, name, attr);
+	const msg = { raised: game.i18n?.localize?.('RIPPERS.Sheet.BondDieRaised') ?? 'Attribute die raised for the scene.', 'too-weak': 'Bond is below strength 3.', 'used-this-scene': 'Already raised a die this scene.', noop: 'No change (unknown attribute or already d12).' }[r] ?? 'No change.';
+	(r === 'raised' ? _bondNote : _bondWarn)(msg);
+}
+async function sheetBondSkillGrant(actor, name) {
+	const api = deeperBondsApi(); if (!api?.setEternalSkillGrant || !name) return;
+	const skillName = await promptBondText(game.i18n?.localize?.('RIPPERS.Sheet.BondSkillGrant') ?? 'Eternal skill grant', game.i18n?.localize?.('RIPPERS.Sheet.BondSkillPrompt') ?? 'Name the granted skill (apply it manually).');
+	if (!skillName) return;
+	const ok = await api.setEternalSkillGrant(actor, name, { skillName });
+	if (!ok) _bondWarn(game.i18n?.localize?.('RIPPERS.Sheet.BondSkillRefused') ?? 'Only an eternal bond grants a skill (GM only).');
+}
+async function sheetBondCleanse(actor, name) {
+	const api = deeperBondsApi(); if (!api?.cleanseWithBond || !name) return;
+	let res = await api.cleanseWithBond(actor, name);
+	if (res === 'ambiguous') {
+		const target = globalThis.game?.actors?.getName?.(name) ?? actor;
+		const statuses = target?.statuses ? [...target.statuses] : [];
+		const pick = await promptBondPick(game.i18n?.localize?.('RIPPERS.Sheet.BondCleanse') ?? 'Cleanse a status', game.i18n?.localize?.('RIPPERS.Sheet.BondCleansePrompt') ?? 'Which status does the bond cleanse?', statuses.map((s) => ({ value: s, label: s })));
+		if (!pick) return;
+		res = await api.cleanseWithBond(actor, name, { statusId: pick });
+	}
+	const msg = { cleansed: game.i18n?.localize?.('RIPPERS.Sheet.BondCleansed') ?? 'Status cleansed.', 'too-weak': 'Bond is below strength 2.', exhausted: 'No cleanse uses left this rest.', noop: 'Nothing to cleanse.' }[res] ?? '';
+	if (msg) (res === 'cleansed' ? _bondNote : _bondWarn)(msg);
+}
+async function sheetBondSolidifyRest(actor) {
+	const api = deeperBondsApi(); if (!api?.getRecords || !api?.solidifyAtRest) return;
+	const records = api.getRecords(actor) ?? [];
+	const fleeting = records.filter((r) => r.tier === 'fleeting').map((r) => ({ value: r.name, label: r.name }));
+	const sel = await promptBondChecklist(game.i18n?.localize?.('RIPPERS.Sheet.BondSolidifyRest') ?? 'Solidify at rest', game.i18n?.localize?.('RIPPERS.Sheet.BondSolidifyRestPrompt') ?? 'Choose fleeting bonds to solidify — the rest are erased.', fleeting);
+	if (sel === null) return; // cancelled
+	const ok = await api.solidifyAtRest(actor, sel);
+	if (!ok) _bondWarn(game.i18n?.localize?.('RIPPERS.Sheet.BondRefused') ?? 'Bond change refused (GM only).');
+}
+
 let _RippersActorSheet = null;
 function getRippersActorSheetClass() {
 	if (_RippersActorSheet) return _RippersActorSheet;
@@ -3278,6 +3463,15 @@ function getRippersActorSheetClass() {
 				openEditor: RippersActorSheet.onOpenEditor,
 				stashGuise: RippersActorSheet.onStashGuise,
 				handOffGuise: RippersActorSheet.onHandOffGuise,
+				bondCreate: RippersActorSheet.onBondCreate,
+				bondSolidify: RippersActorSheet.onBondSolidify,
+				bondEternal: RippersActorSheet.onBondEternal,
+				bondClockFill: RippersActorSheet.onBondClockFill,
+				bondCleanse: RippersActorSheet.onBondCleanse,
+				bondCoverRegen: RippersActorSheet.onBondCoverRegen,
+				bondRaiseDie: RippersActorSheet.onBondRaiseDie,
+				bondSkillGrant: RippersActorSheet.onBondSkillGrant,
+				bondSolidifyRest: RippersActorSheet.onBondSolidifyRest,
 			},
 		};
 		static PARTS = { body: { template: `modules/${MODULE_ID}/templates/rippers-actor-sheet.hbs` } };
@@ -3285,6 +3479,13 @@ function getRippersActorSheetClass() {
 			const ctx = await super._prepareContext(options);
 			const vm = await buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions });
 			return { ...ctx, actor: this.document, vm };
+		}
+		// Forward-compat hedge (SHEET-INJECTION-AUDIT.md): one class-independent post-render hook so a
+		// FUTURE sheet-injecting module has a clean mount point. Deeper Bonds is NOT routed through it —
+		// it renders natively in the Bonds tab. One line of insurance, nothing depends on it today.
+		_onRender(context, options) {
+			super._onRender?.(context, options);
+			try { Hooks.callAll('rippers-sheet:rendered', this, this.element); } catch (err) { console.warn('[rippers-guise] rippers-sheet:rendered hook failed:', err); }
 		}
 		// ── actions (AppV2 binds `this` to the app instance) ──
 		static async onResAdjust(event, target) {
@@ -3314,6 +3515,16 @@ function getRippersActorSheetClass() {
 			const recipient = [...(globalThis.game?.user?.targets ?? [])][0]?.actor ?? null;
 			await sheetHandOffGuise(this.document, id, recipient); this.render();
 		}
+		// ── Deeper Bonds native controls (data-bond = the bond name) ──
+		static async onBondCreate() { await sheetBondCreate(this.document); this.render(); }
+		static async onBondSolidify(event, target) { await sheetBondSolidify(this.document, target?.dataset?.bond); this.render(); }
+		static async onBondEternal(event, target) { await sheetBondEternal(this.document, target?.dataset?.bond); this.render(); }
+		static async onBondClockFill(event, target) { await sheetBondClockFill(this.document, target?.dataset?.bond); this.render(); }
+		static async onBondCleanse(event, target) { await sheetBondCleanse(this.document, target?.dataset?.bond); this.render(); }
+		static async onBondCoverRegen(event, target) { await sheetBondCoverRegen(this.document, target?.dataset?.bond); this.render(); }
+		static async onBondRaiseDie(event, target) { await sheetBondRaiseDie(this.document, target?.dataset?.bond); this.render(); }
+		static async onBondSkillGrant(event, target) { await sheetBondSkillGrant(this.document, target?.dataset?.bond); this.render(); }
+		static async onBondSolidifyRest() { await sheetBondSolidifyRest(this.document); this.render(); }
 	}
 	_RippersActorSheet = RippersActorSheet;
 	return RippersActorSheet;
@@ -3594,3 +3805,4 @@ export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, R
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };
 export { sheetOpenEditor, sheetStashGuise, handOffDecision, sheetHandOffGuise };
+export { deeperBondsApi, bondClockPips, bondPanelRow, buildBondPanelRows, SOLID_BOND_CAP, DEEPER_BONDS_ID };

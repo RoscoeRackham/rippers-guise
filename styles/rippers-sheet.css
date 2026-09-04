@@ -119,6 +119,17 @@
 .rippers-sheet .rs-bond-strength { font-family: var(--rs-mono); font-size: 12px; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-emos { display: flex; gap: 6px; flex-wrap: wrap; }
 .rippers-sheet .rs-emo { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; padding: 4px 9px; border: 1px solid var(--rs-border); color: var(--rs-bone-dim); }
+/* Deeper Bonds native panel — thin structure only (Austin owns layout; reuses the module's rdb-* skin where present). */
+.rippers-sheet .rs-bond-section-controls { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.rippers-sheet .rs-bond-tier { font-family: var(--rs-mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rs-red); }
+.rippers-sheet .rs-bond-clock { display: inline-flex; gap: 4px; }
+.rippers-sheet .rs-pip { width: 8px; height: 8px; border: 1px solid var(--rs-border-red); border-radius: 50%; background: transparent; }
+.rippers-sheet .rs-pip.filled { background: var(--rs-red); }
+.rippers-sheet .rs-bond-skill { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-green); }
+.rippers-sheet .rs-bond-controls { display: flex; gap: 5px; flex-wrap: wrap; }
+.rippers-sheet .rs-btn { font-family: var(--rs-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .08em; padding: 3px 8px; border: 1px solid var(--rs-border-red); background: var(--rs-panel); color: var(--rs-bone-dim); cursor: pointer; }
+.rippers-sheet .rs-btn:hover { color: var(--rs-bone); border-color: var(--rs-red); }
+.rippers-sheet .rs-btn:disabled { opacity: .4; cursor: not-allowed; }
 .rippers-sheet .rs-study { display: grid; grid-template-columns: 100px 1fr; gap: 6px 14px; background: var(--rs-card); border: 1px solid var(--rs-border); padding: 14px; }
 .rippers-sheet .rs-study-label { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .16em; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-study-val { font-family: var(--rs-body); font-size: 15px; line-height: 1.55; color: var(--rs-bone); }

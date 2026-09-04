@@ -304,3 +304,87 @@ test('sheetHandOffGuise: refuses cleanly (no mutation) without write access; mov
 	assert.equal(created[0].system.data.mode, 'worn');   // guise data (lent layer/satchel would ride here too)
 	assert.equal(item._deleted, true);
 });
+
+// ── Deeper Bonds native panel (SHEET-INJECTION-AUDIT.md, arch B) ──────────────
+const { bondClockPips, bondPanelRow, buildBondPanelRows, SOLID_BOND_CAP, deeperBondsApi } = mod;
+
+// The real module's ladder logic (mirrored for the shim): cleanse/coverRegen s>=2, attrDieUp s>=3, skillGrant=eternal.
+const fakeLadder = (s, tier) => ({ cleanse: s >= 2, coverRegen: s >= 2, attrDieUp: s >= 3, skillGrant: tier === 'eternal' });
+
+test('bondClockPips: fills sections up to clock, clamped 0..4', () => {
+	assert.deepEqual(bondClockPips(0).map((p) => p.filled), [false, false, false, false]);
+	assert.deepEqual(bondClockPips(2).map((p) => p.filled), [true, true, false, false]);
+	assert.deepEqual(bondClockPips(9).map((p) => p.filled), [true, true, true, true]); // clamp
+	assert.equal(bondClockPips().length, 4);
+});
+
+test('bondPanelRow: tier flags, clock only on solid, solidify gating, ladder passthrough', () => {
+	const fleeting = bondPanelRow({ name: 'A', admInf: 'Admiration' }, { tier: 'fleeting', clock: 0 }, 1, fakeLadder(1, 'fleeting'), { solidCount: 0 });
+	assert.equal(fleeting.isFleeting, true);
+	assert.equal(fleeting.showClock, false);           // fleeting carries no clock
+	assert.equal(fleeting.solidifyShow, true);
+	assert.equal(fleeting.solidifyDisabled, false);
+	assert.deepEqual(fleeting.emotions, ['Admiration']);
+
+	const capped = bondPanelRow({ name: 'B' }, { tier: 'fleeting' }, 1, fakeLadder(1, 'fleeting'), { solidCount: SOLID_BOND_CAP });
+	assert.equal(capped.solidifyDisabled, true);       // at the solid cap
+
+	const solid = bondPanelRow({ name: 'C' }, { tier: 'solid', clock: 3 }, 3, fakeLadder(3, 'solid'), {});
+	assert.equal(solid.isSolid, true);
+	assert.equal(solid.showClock, true);
+	assert.equal(solid.canEternal, true);
+	assert.equal(solid.solidifyShow, false);
+	assert.deepEqual(solid.clockPips.map((p) => p.filled), [true, true, true, false]);
+	assert.deepEqual(solid.ladder, { cleanse: true, coverRegen: true, attrDieUp: true, skillGrant: false });
+
+	const eternal = bondPanelRow({ name: 'D' }, { tier: 'eternal', grantedSkill: { skillName: 'Riposte' } }, 4, fakeLadder(4, 'eternal'), {});
+	assert.equal(eternal.isEternal, true);
+	assert.equal(eternal.ladder.skillGrant, true);
+	assert.equal(eternal.grantedSkill, 'Riposte');
+});
+
+test('buildBondPanelRows: assembles a row per bond, counts solids for the cap, drops empty bonds', () => {
+	const fuBonds = [{ name: 'Solid1', admInf: 'X' }, { name: 'Solid2' }, { name: 'Fleet' }, { name: '', admInf: '', loyMis: '', affHat: '' }];
+	const records = [{ name: 'Solid1', tier: 'solid', clock: 1 }, { name: 'Solid2', tier: 'solid' }, { name: 'Fleet', tier: 'fleeting' }];
+	const rows = buildBondPanelRows(fuBonds, records, { strengthOf: (n) => (n === 'Fleet' ? 1 : 3), ladderOf: fakeLadder }, { cap: 2 });
+	assert.equal(rows.length, 3);                       // the empty bond is dropped
+	const fleet = rows.find((r) => r.name === 'Fleet');
+	assert.equal(fleet.solidifyDisabled, true);         // 2 solids already == cap 2
+});
+
+test('deeperBondsApi: null when the module is absent (fallback path)', () => {
+	assert.equal(deeperBondsApi(), null); // harness game.modules.get returns null
+});
+
+test('buildRippersSheetVM: native Deeper Bonds panel when the module API is present', async () => {
+	const savedGame = globalThis.game;
+	try {
+		const api = {
+			getRecords: () => [{ name: 'Dr. Vane', tier: 'solid', clock: 2 }],
+			bondStrength: (_a, name) => (name === 'Dr. Vane' ? 3 : 0),
+			ladderAbilities: fakeLadder,
+		};
+		globalThis.game = { modules: { get: (id) => (id === 'rippers-deeper-bonds' ? { api } : null) }, user: { isActiveGM: true } };
+		const vm = await buildRippersSheetVM(actorStub());
+		assert.equal(vm.bondsNative, true);
+		assert.equal(vm.bondsIsGM, true);
+		assert.equal(vm.bonds.length, 1);
+		const row = vm.bonds[0];
+		assert.equal(row.name, 'Dr. Vane');
+		assert.equal(row.tier, 'solid');
+		assert.equal(row.strength, 3);
+		assert.equal(row.showClock, true);
+		assert.deepEqual(row.clockPips.map((p) => p.filled), [true, true, false, false]);
+		assert.equal(row.ladder.attrDieUp, true);       // strength 3 unlocks the die-up
+	} finally {
+		globalThis.game = savedGame;
+	}
+});
+
+test('buildRippersSheetVM: falls back to the plain grid when no Deeper Bonds API', async () => {
+	const vm = await buildRippersSheetVM(actorStub()); // harness game has no module api
+	assert.equal(vm.bondsNative, false);
+	assert.equal(vm.bonds.length, 1);
+	assert.equal(vm.bonds[0].name, 'Dr. Vane');
+	assert.equal(vm.bonds[0].strength, 3);              // simple shape preserved
+});

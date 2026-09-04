@@ -54,6 +54,13 @@
         "id": "projectfu",
         "type": "system"
       }
+    ],
+    "recommends": [
+      {
+        "id": "rippers-deeper-bonds",
+        "type": "module",
+        "reason": "The Bonds tab renders Deeper Bonds natively via its API when present; without it the tab shows a plain read-only bond list."
+      }
     ]
   },
   "flags": {

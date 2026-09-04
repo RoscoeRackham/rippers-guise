@@ -125,17 +125,53 @@
 			{{/if}}
 
 			{{#if vm.tab.bonds}}
-				{{#if vm.bonds.length}}
-					<div class="rs-bondgrid">
-						{{#each vm.bonds as |b|}}
-							<div class="rs-bondcard">
-								<span class="rs-bond-name">{{b.name}}</span>
-								<span class="rs-bond-strength">{{localize 'RIPPERS.Sheet.Strength'}} {{b.strength}}</span>
-								<span class="rs-emos">{{#each b.emotions as |e|}}<span class="rs-emo">{{e}}</span>{{/each}}</span>
-							</div>
-						{{/each}}
-					</div>
-				{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoBonds'}}</p>{{/if}}
+				{{#if vm.bondsNative}}
+					{{#if vm.bondsIsGM}}
+						<div class="rs-bond-section-controls">
+							<button type="button" class="rs-btn rdb-btn" data-action="bondCreate">＋ {{localize 'RIPPERS.Sheet.BondNew'}}</button>
+							<button type="button" class="rs-btn rdb-btn" data-action="bondSolidifyRest">{{localize 'RIPPERS.Sheet.BondSolidifyRest'}}</button>
+						</div>
+					{{/if}}
+					{{#if vm.bonds.length}}
+						<div class="rs-bondgrid">
+							{{#each vm.bonds as |b|}}
+								<div class="rs-bondcard rdb-bar rdb-tier-{{b.tier}}">
+									<span class="rs-bond-name">{{b.name}}</span>
+									<span class="rs-bond-tier rdb-tier-tag">{{b.tier}}</span>
+									<span class="rs-bond-strength">{{localize 'RIPPERS.Sheet.Strength'}} {{b.strength}}</span>
+									<span class="rs-emos">{{#each b.emotions as |e|}}<span class="rs-emo">{{e}}</span>{{/each}}</span>
+									{{#if b.showClock}}
+										<span class="rs-bond-clock rdb-clock">{{#each b.clockPips as |p|}}<span class="rs-pip rdb-clock-pip{{#if p.filled}} filled{{/if}}"></span>{{/each}}</span>
+									{{/if}}
+									{{#if b.grantedSkill}}<span class="rs-bond-skill">✦ {{b.grantedSkill}}</span>{{/if}}
+									{{#if ../vm.bondsIsGM}}
+										<span class="rs-bond-controls">
+											{{#if b.solidifyShow}}<button type="button" class="rs-btn rdb-btn" data-action="bondSolidify" data-bond="{{b.name}}" {{#if b.solidifyDisabled}}disabled title="{{localize 'RIPPERS.Sheet.BondCapReached'}}"{{/if}}>{{localize 'RIPPERS.Sheet.BondSolidify'}}</button>{{/if}}
+											{{#if b.canEternal}}<button type="button" class="rs-btn rdb-btn" data-action="bondEternal" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondEternal'}}</button>{{/if}}
+											{{#if b.showClock}}<button type="button" class="rs-btn rdb-btn" data-action="bondClockFill" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondClockFill'}}</button>{{/if}}
+											{{#if b.ladder.cleanse}}<button type="button" class="rs-btn rdb-btn" data-action="bondCleanse" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondCleanse'}}</button>{{/if}}
+											{{#if b.ladder.coverRegen}}<button type="button" class="rs-btn rdb-btn" data-action="bondCoverRegen" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondCoverRegen'}}</button>{{/if}}
+											{{#if b.ladder.attrDieUp}}<button type="button" class="rs-btn rdb-btn" data-action="bondRaiseDie" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondRaiseDie'}}</button>{{/if}}
+											{{#if b.ladder.skillGrant}}<button type="button" class="rs-btn rdb-btn" data-action="bondSkillGrant" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondSkillGrant'}}</button>{{/if}}
+										</span>
+									{{/if}}
+								</div>
+							{{/each}}
+						</div>
+					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoBonds'}}</p>{{/if}}
+				{{else}}
+					{{#if vm.bonds.length}}
+						<div class="rs-bondgrid">
+							{{#each vm.bonds as |b|}}
+								<div class="rs-bondcard">
+									<span class="rs-bond-name">{{b.name}}</span>
+									<span class="rs-bond-strength">{{localize 'RIPPERS.Sheet.Strength'}} {{b.strength}}</span>
+									<span class="rs-emos">{{#each b.emotions as |e|}}<span class="rs-emo">{{e}}</span>{{/each}}</span>
+								</div>
+							{{/each}}
+						</div>
+					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoBonds'}}</p>{{/if}}
+				{{/if}}
 			{{/if}}
 
 			{{#if vm.tab.study}}
