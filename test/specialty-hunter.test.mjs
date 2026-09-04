@@ -23,6 +23,7 @@ const {
 	actorSpecialties, armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG, draftKey,
 	actorHunterWeapon, isHunterWeapon,
 	CHECK_BUMP_KINDS, checkBumpEligible, flatCheckModifier,
+	armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG,
 } = mod;
 
 const CU = (n) => `Compendium.x.classes.Item.${n}`;
@@ -214,4 +215,46 @@ test('flatCheckModifier builds the FU check.modifiers {label,value:int} entry, o
 	assert.equal(flatCheckModifier(0, 'z'), null);                              // adds nothing → null
 	assert.equal(flatCheckModifier('nope', 'z'), null);                        // non-numeric → null
 	assert.equal(flatCheckModifier(1).label, 'RIPPERS.Specialty.Arm');         // default label
+});
+
+// --- Phase 2a: the flat check-bump runtime (Robot rides the player-armed toggle) ----
+function stubActorFlags() {
+	const flags = {};
+	return { getFlag: (_m, k) => flags[k], setFlag: async (_m, k, v) => { flags[k] = v; }, unsetFlag: async (_m, k) => { delete flags[k]; }, _flags: flags };
+}
+
+test('armCheckFlatBump arms a non-zero +N; zero/blank is refused; disarm clears', async () => {
+	const a = stubActorFlags();
+	const r = await armCheckFlatBump(a, { value: 2, label: 'RIPPERS.Quirk.Robot' });
+	assert.equal(r.ok, true);
+	assert.deepEqual(a.getFlag('rippers-guise', CHECK_FLAT_ARM_FLAG), { value: 2, label: 'RIPPERS.Quirk.Robot' });
+	await disarmCheckFlatBump(a);
+	assert.equal(a.getFlag('rippers-guise', CHECK_FLAT_ARM_FLAG), undefined);
+	const z = await armCheckFlatBump(a, { value: 0 });
+	assert.equal(z.ok, false);
+	assert.equal(a.getFlag('rippers-guise', CHECK_FLAT_ARM_FLAG), undefined); // nothing armed
+});
+
+test('armCheckBump dispatches by kind: flat → flat flag, die → the Specialty arm', async () => {
+	const flat = stubActorFlags();
+	await armCheckBump(flat, { kind: 'flat', amount: 3, label: 'x' });
+	assert.deepEqual(flat.getFlag('rippers-guise', CHECK_FLAT_ARM_FLAG), { value: 3, label: 'x' });
+	assert.equal(flat.getFlag('rippers-guise', 'specialtyBump'), undefined); // not the die path
+	// 'die' path defers to armSpecialtyDieBump (needs an Innate guise with Specialties)
+	const die = stubActorWithSpecialties(['Arts', 'Seamanship']);
+	await armCheckBump(die, { kind: 'die', attribute: 'mig' });
+	assert.deepEqual(die.getFlag('rippers-guise', 'specialtyBump'), { attribute: 'mig' });
+	assert.equal(die.getFlag('rippers-guise', CHECK_FLAT_ARM_FLAG), undefined);
+});
+
+test('pendingFlatModifier: armed+eligible → {label,value}; ineligible or unarmed → null', () => {
+	const a = stubActorFlags();
+	a._flags[CHECK_FLAT_ARM_FLAG] = { value: 2, label: 'RIPPERS.Quirk.Robot' };
+	assert.deepEqual(pendingFlatModifier(a, 'open'), { label: 'RIPPERS.Quirk.Robot', value: 2 });
+	assert.deepEqual(pendingFlatModifier(a, 'accuracy'), { label: 'RIPPERS.Quirk.Robot', value: 2 }); // flat has no magic/accuracy carve-out
+	assert.equal(pendingFlatModifier(a, 'display'), null);  // not a real check
+	assert.equal(pendingFlatModifier(stubActorFlags(), 'open'), null); // nothing armed
+	// default label when none was stored
+	a._flags[CHECK_FLAT_ARM_FLAG] = { value: 1, label: null };
+	assert.equal(pendingFlatModifier(a, 'open').label, 'RIPPERS.Specialty.Arm');
 });

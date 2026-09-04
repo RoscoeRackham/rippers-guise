@@ -2688,6 +2688,11 @@ Hooks.once('setup', () => {
 // unsetFlag re-derives .current from .base anyway). No persisted write happens before the roll.
 const SPECIALTY_ARM_FLAG = 'specialtyBump';        // {attribute?} — armed for the actor's next check
 const _specialtyBumped = new Map();                // check.id -> { actorId, attr, old }
+// Phase 2a: the 'flat' consumer's arm flag. Robot's "+2 to Checks involving machines/technology/
+// constructs" is PLAYER-ARMED like a Specialty (god's arm-model ruling (a), 4 Sep 2026 — FU exposes
+// no subject tag and the scope covers targetless checks, so full-auto is impossible; the player judges
+// relevance and arms it). One-shot, consumed post-roll, exactly like the die arm. {value, label}.
+const CHECK_FLAT_ARM_FLAG = 'checkFlatBump';
 // The four FU attributes whose die the player may nominate for the Specialty bump (v0.7.6 —
 // Austin: "the specialty button works but doesn't let you pick which die size to increase").
 const SPECIALTY_ATTRIBUTES = [
@@ -2758,6 +2763,36 @@ async function armSpecialtyDieBump(actor, { attribute } = {}) {
 }
 async function disarmSpecialtyDieBump(actor) { if (actor?.getFlag?.(MODULE_ID, SPECIALTY_ARM_FLAG)) await actor.unsetFlag(MODULE_ID, SPECIALTY_ARM_FLAG); }
 
+// ── Phase 2a: the 'flat' check-bump runtime (player-armed, like the die bump) ──
+/** Arm a flat +N check bonus for the actor's NEXT eligible check (macro/API/consumer). One-shot,
+ *  consumed post-roll. `label` is an i18n key or string for the modifier line. The player judges
+ *  whether the check qualifies (Robot's narrative subject-scope) — this seam does not infer it. */
+async function armCheckFlatBump(actor, { value, label } = {}) {
+	if (!actor) { ui.notifications?.warn('No actor to arm the check bonus on.'); return { ok: false }; }
+	const v = Math.trunc(Number(value) || 0);
+	if (!v) { ui.notifications?.warn('A flat check bonus needs a non-zero value.'); return { ok: false, reason: 'zero' }; }
+	await actor.setFlag(MODULE_ID, CHECK_FLAT_ARM_FLAG, { value: v, label: label ? String(label) : null });
+	ui.notifications?.info(`Check bonus armed: +${v} to your next eligible Check.`);
+	return { ok: true };
+}
+async function disarmCheckFlatBump(actor) { if (actor?.getFlag?.(MODULE_ID, CHECK_FLAT_ARM_FLAG)) await actor.unsetFlag(MODULE_ID, CHECK_FLAT_ARM_FLAG); }
+/** The FU check-modifier {label,value} to push for an actor's armed flat bump on a check of `checkType`,
+ *  or null if none is armed / the check is ineligible. Pure (reads only the flag). Testable headless. */
+function pendingFlatModifier(actor, checkType) {
+	const armed = actor?.getFlag?.(MODULE_ID, CHECK_FLAT_ARM_FLAG);
+	if (!armed) return null;
+	if (!checkBumpEligible('flat', checkType)) return null;
+	return flatCheckModifier(armed.value, armed.label ?? 'RIPPERS.Specialty.Arm');
+}
+/** The generalized check-bump API (god's {kind, amount, predicate}): dispatch a player-armed bump.
+ *  kind 'die' improves one attribute die (Specialties/Talented/Innate); 'flat' adds +amount to the
+ *  Check total (Robot). The "predicate" for player-armed bumps is the player's judgment (arming) plus
+ *  checkBumpEligible(kind, type); no code subject-predicate is needed under arm-model (a). */
+async function armCheckBump(actor, { kind = 'die', amount, attribute, label } = {}) {
+	if (kind === 'flat') return armCheckFlatBump(actor, { value: amount, label });
+	return armSpecialtyDieBump(actor, { attribute }); // 'die' (default)
+}
+
 /** prepareCheck handler: apply an armed, eligible Specialty die-bump by transiently raising the die. */
 function onPrepareCheckSpecialty(check, actor) {
 	try {
@@ -2797,17 +2832,38 @@ async function onProcessCheckSpecialty(result, actor) {
 		}
 	} catch (err) { console.error('[rippers-guise] specialty die-bump (processCheck) failed:', err); }
 }
+/** prepareCheck handler: apply an armed, eligible FLAT bump by pushing a check.modifiers entry.
+ *  No transient record / restore — check.modifiers rides the per-roll check object (FU checks.mjs). */
+function onPrepareCheckFlat(check, actor) {
+	try {
+		if (!actor || !check) return;
+		if (!actor.getFlag?.(MODULE_ID, CHECK_FLAT_ARM_FLAG)) return;
+		if (!checkBumpEligible('flat', check.type)) return; // leave armed for a later eligible check
+		const mod = pendingFlatModifier(actor, check.type);
+		if (mod) { (check.modifiers ??= []).push(mod); }
+	} catch (err) { console.error('[rippers-guise] flat check-bump (prepareCheck) failed:', err); }
+}
+/** processCheck handler: consume the flat arm post-roll (one-shot, like the die bump). */
+async function onProcessCheckFlat(result, actor) {
+	try {
+		if (!actor?.getFlag?.(MODULE_ID, CHECK_FLAT_ARM_FLAG)) return;
+		await actor.unsetFlag(MODULE_ID, CHECK_FLAT_ARM_FLAG); // consume
+	} catch (err) { console.error('[rippers-guise] flat check-bump (processCheck) failed:', err); }
+}
 /** Register the FU check hooks. Resolves CheckHooks at ready (FU is live), falls back to the string names. */
 function registerSpecialtyBumpHooks() {
 	const CH = globalThis.game?.projectfu?.CheckHooks ?? {};
 	Hooks.on(CH.prepareCheck ?? 'projectfu.prepareCheck', onPrepareCheckSpecialty);
 	Hooks.on(CH.processCheck ?? 'projectfu.processCheck', onProcessCheckSpecialty);
+	// Phase 2a: the generalized 'flat' consumer rides the same prepareCheck/processCheck hooks.
+	Hooks.on(CH.prepareCheck ?? 'projectfu.prepareCheck', onPrepareCheckFlat);
+	Hooks.on(CH.processCheck ?? 'projectfu.processCheck', onProcessCheckFlat);
 }
 
 Hooks.once('ready', async () => {
 	registerSpecialtyBumpHooks();
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, actorSpecialties, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -2834,3 +2890,5 @@ export { CHECK_BUMP_KINDS, checkBumpEligible, flatCheckModifier };
 export { actorHunterWeapon };
 // v0.7.3 — Specialty arm/disarm (sheet button + macro/API).
 export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
+// Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
+export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
