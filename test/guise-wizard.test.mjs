@@ -429,3 +429,163 @@ test('#4 override does not fabricate warnings for an already-valid draft', () =>
 	assert.equal(soft.ok, true);
 	assert.deepEqual(soft.warnings, []);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #2 (v0.7.9) — innate-kit swap post-creation: the PURE reconcile plan + the
+// destructive apply, with the creation-heroic dormant-while-masked CARE POINT.
+// ─────────────────────────────────────────────────────────────────────────────
+const {
+	innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit,
+	getHeroicSlots, suppressCreationHeroic, isHunterWeapon,
+} = mod;
+const RGID = 'rippers-guise';
+const DORMANT_HEROIC_FLAG = 'dormantCreationHeroic';
+
+// --- the pure planner ---------------------------------------------------------
+test('#2 planner: identical kit → empty plan (no destructive reconcile)', () => {
+	const d = { innateHeroicUuid: 'H', hunterWeaponUuid: 'W', hunterMaterial: 'silver', hunterOrigin: 'o', armorUuid: 'A', accessoryUuid: 'C' };
+	const p = innateKitReconcilePlan(d, { ...d });
+	assert.equal(innateKitPlanIsEmpty(p), true);
+	assert.deepEqual(p, { heroic: null, hunterWeapon: null, armor: null, accessory: null });
+});
+
+test('#2 planner: a swapped/added/cleared ref each yields an entry', () => {
+	const p = innateKitReconcilePlan(
+		{ innateHeroicUuid: 'H1', hunterWeaponUuid: 'W', armorUuid: 'A1', accessoryUuid: '' },
+		{ innateHeroicUuid: 'H2', hunterWeaponUuid: 'W', armorUuid: '', accessoryUuid: 'C1' },
+	);
+	assert.deepEqual(p.heroic, { from: 'H1', to: 'H2' });      // swapped
+	assert.equal(p.hunterWeapon, null);                         // unchanged
+	assert.deepEqual(p.armor, { from: 'A1', to: '' });          // cleared
+	assert.deepEqual(p.accessory, { from: '', to: 'C1' });      // added
+	assert.equal(innateKitPlanIsEmpty(p), false);
+});
+
+test('#2 planner: Hunter Weapon — uuid change → remake; same uuid, material/origin moved → retag', () => {
+	const remake = innateKitReconcilePlan({ hunterWeaponUuid: 'W1', hunterMaterial: 'silver' }, { hunterWeaponUuid: 'W2', hunterMaterial: 'silver' });
+	assert.equal(remake.hunterWeapon.op, 'remake');
+	assert.equal(remake.hunterWeapon.to, 'W2');
+	const retag = innateKitReconcilePlan({ hunterWeaponUuid: 'W', hunterMaterial: 'silver', hunterOrigin: '' }, { hunterWeaponUuid: 'W', hunterMaterial: 'cold_iron', hunterOrigin: 'forge' });
+	assert.equal(retag.hunterWeapon.op, 'retag');
+	assert.equal(retag.hunterWeapon.material, 'cold_iron');
+	assert.equal(retag.hunterWeapon.origin, 'forge');
+	// no weapon at all, nothing moved → null
+	assert.equal(innateKitReconcilePlan({ hunterWeaponUuid: '' }, { hunterWeaponUuid: '' }).hunterWeapon, null);
+});
+
+// --- a compact Foundry actor stub for the destructive apply -------------------
+function foundrySet(obj, path, value) {
+	const parts = path.split('.'); let o = obj;
+	for (let i = 0; i < parts.length - 1; i++) o = (o[parts[i]] ??= {});
+	o[parts[parts.length - 1]] = value;
+}
+const UUID_SRC = new Map();
+globalThis.fromUuid = async (uuid) => UUID_SRC.get(uuid) ?? null;
+function srcHeroic(name, { effects = [{ _id: 'e0', disabled: false, changes: [] }] } = {}) {
+	return { type: 'heroic', name, toObject: () => ({ type: 'heroic', name, system: {}, flags: {}, effects: effects.map((e) => ({ ...e })) }) };
+}
+function srcWeapon(name) { return { type: 'weapon', name, toObject: () => ({ type: 'weapon', name, system: {}, flags: {} }) }; }
+function srcEquip(slot, name) { return { type: slot, name, toObject: () => ({ type: slot, name, system: {}, flags: {} }) }; }
+
+function makeItemDoc(id, o, actor) {
+	const flags = JSON.parse(JSON.stringify(o.flags ?? {}));
+	const efx = (o.effects ?? []).map((e, i) => ({ id: e._id || e.id || `${id}e${i}`, disabled: !!e.disabled, changes: e.changes ?? [] }));
+	const effects = { filter: (fn) => efx.filter(fn), get: (eid) => efx.find((e) => e.id === eid) ?? null, map: (fn) => efx.map(fn), get length() { return efx.length; } };
+	const doc = {
+		id, type: o.type, name: o.name ?? '', system: JSON.parse(JSON.stringify(o.system ?? {})), flags, effects, _efx: efx,
+		getFlag: (m, k) => flags[m]?.[k],
+		setFlag: async (m, k, v) => { (flags[m] ??= {})[k] = v; },
+		update: async (patch) => { for (const [k, v] of Object.entries(patch)) foundrySet(doc, k, v); },
+		updateEmbeddedDocuments: async (_t, ups) => { for (const u of ups) { const e = efx.find((x) => x.id === u._id); if (e) e.disabled = !!u.disabled; } },
+		toObject: () => ({ type: o.type, name: o.name, system: doc.system, flags: JSON.parse(JSON.stringify(flags)), effects: efx.map((e) => ({ _id: e.id, disabled: e.disabled, changes: e.changes })) }),
+		delete: async () => { const i = actor.items._docs.indexOf(doc); if (i >= 0) actor.items._docs.splice(i, 1); },
+	};
+	return doc;
+}
+function stubActor({ level = 5 } = {}) {
+	const flags = { [RGID]: {} };
+	const docs = [];
+	let n = 1;
+	const items = { _docs: docs, get: (id) => docs.find((d) => d.id === id) ?? null, find: (fn) => docs.find(fn) ?? null, filter: (fn) => docs.filter(fn) };
+	const actor = {
+		system: { level: { value: level }, equipped: {} }, items,
+		getFlag: (m, k) => (m === RGID ? flags[RGID][k] : undefined),
+		setFlag: async (m, k, v) => { if (m === RGID) flags[RGID][k] = v; },
+		unsetFlag: async (m, k) => { if (m === RGID) delete flags[RGID][k]; },
+		update: async (patch) => { for (const [k, v] of Object.entries(patch)) foundrySet(actor, k, v); },
+		createEmbeddedDocuments: async (_t, objs) => objs.map((o) => { const d = makeItemDoc(`it${n++}`, o, actor); docs.push(d); return d; }),
+	};
+	return { actor, flags, docs };
+}
+
+// --- the destructive apply ----------------------------------------------------
+test('#2 apply: swapping the creation heroic while masked keeps the new one DORMANT (care point)', async () => {
+	UUID_SRC.set('H1', srcHeroic('Old Heroic'));
+	UUID_SRC.set('H2', srcHeroic('New Heroic'));
+	const { actor, flags, docs } = stubActor();
+	// seed: old creation heroic materialised, seated, and ASLEEP under a worn mask
+	const [old] = await actor.createEmbeddedDocuments('Item', [(await fromUuid('H1')).toObject()]);
+	flags[RGID].heroicSlots = { creation: old.id, level40: null, level50: null, earned: [] };
+	old._efx[0].disabled = true; // slept
+	flags[RGID][DORMANT_HEROIC_FLAG] = { id: old.id, effects: ['e0'] };
+
+	const { changed } = await reconcileInnateKit(actor, { innateHeroicUuid: 'H1' }, { innateHeroicUuid: 'H2' });
+	assert.ok(changed.includes('heroic'));
+	assert.equal(actor.items.get(old.id), null);                       // old deleted
+	const newId = getHeroicSlots(actor).creation;
+	const fresh = actor.items.get(newId);
+	assert.equal(fresh.name, 'New Heroic');                            // new seated in the creation slot
+	assert.equal(fresh._efx[0].disabled, true);                        // RE-SLEPT — dormancy preserved
+	const snap = actor.getFlag(RGID, DORMANT_HEROIC_FLAG);
+	assert.equal(snap.id, newId);                                      // snapshot points at the NEW heroic, not a deleted id
+	assert.equal(docs.filter((d) => d.type === 'heroic').length, 1);   // no orphan left behind
+});
+
+test('#2 apply: swapping the creation heroic while UNMASKED leaves the new one awake (no dormancy)', async () => {
+	UUID_SRC.set('H1', srcHeroic('Old'));
+	UUID_SRC.set('H2', srcHeroic('New'));
+	const { actor } = stubActor();
+	const [old] = await actor.createEmbeddedDocuments('Item', [(await fromUuid('H1')).toObject()]);
+	actor.flags = null; // (unused) — no dormant flag set; not masked
+	await actor.setFlag(RGID, 'heroicSlots', { creation: old.id, level40: null, level50: null, earned: [] });
+	const { changed } = await reconcileInnateKit(actor, { innateHeroicUuid: 'H1' }, { innateHeroicUuid: 'H2' });
+	assert.ok(changed.includes('heroic'));
+	const fresh = actor.items.get(getHeroicSlots(actor).creation);
+	assert.equal(fresh.name, 'New');
+	assert.equal(fresh._efx[0].disabled, false);                       // awake — not slept
+	assert.equal(actor.getFlag(RGID, DORMANT_HEROIC_FLAG), undefined); // no snapshot created
+});
+
+test('#2 apply: armour swap unequips + deletes the old and equips the new; accessory untouched', async () => {
+	UUID_SRC.set('A1', srcEquip('armor', 'Plate'));
+	UUID_SRC.set('A2', srcEquip('armor', 'Mail'));
+	const { actor } = stubActor();
+	// seed an old innate armour, equipped
+	const obj = (await fromUuid('A1')).toObject(); obj.flags[RGID] = { innateEquip: 'armor' };
+	const [oldArmor] = await actor.createEmbeddedDocuments('Item', [obj]);
+	await actor.update({ 'system.equipped.armor': oldArmor.id });
+	const { changed } = await reconcileInnateKit(actor, { armorUuid: 'A1', accessoryUuid: '' }, { armorUuid: 'A2', accessoryUuid: '' });
+	assert.deepEqual(changed, ['armor']);                              // accessory unchanged → not touched
+	assert.equal(actor.items.get(oldArmor.id), null);                 // old deleted
+	const equippedId = actor.system.equipped.armor;
+	assert.equal(actor.items.get(equippedId).name, 'Mail');           // new equipped
+	assert.equal(actor.items.get(equippedId).getFlag(RGID, 'innateEquip'), 'armor');
+});
+
+test('#2 apply: Hunter Weapon remake vs retag — retag keeps the SAME weapon Item (hoplospheres survive)', async () => {
+	UUID_SRC.set('W1', srcWeapon('Blade'));
+	UUID_SRC.set('W2', srcWeapon('Axe'));
+	const { actor } = stubActor();
+	const [old] = await actor.createEmbeddedDocuments('Item', [(await fromUuid('W1')).toObject()]);
+	await mod.setHunterWeapon(old, { material: 'silver' });
+	// retag: same uuid, new material → the SAME item Item is updated in place, not replaced
+	await reconcileInnateKit(actor, { hunterWeaponUuid: 'W1', hunterMaterial: 'silver' }, { hunterWeaponUuid: 'W1', hunterMaterial: 'cold_iron' });
+	assert.equal(actor.items.find((i) => isHunterWeapon(i)).id, old.id); // same Item
+	assert.equal(actor.items.find((i) => isHunterWeapon(i)).getFlag(RGID, 'hunter').material, 'cold_iron');
+	// remake: uuid change → old deleted, new materialised + marked
+	await reconcileInnateKit(actor, { hunterWeaponUuid: 'W1', hunterMaterial: 'cold_iron' }, { hunterWeaponUuid: 'W2', hunterMaterial: 'silver' });
+	assert.equal(actor.items.get(old.id), null);                        // old gone
+	const hw = actor.items.find((i) => isHunterWeapon(i));
+	assert.equal(hw.name, 'Axe');
+	assert.equal(hw.getFlag(RGID, 'hunter').material, 'silver');
+});

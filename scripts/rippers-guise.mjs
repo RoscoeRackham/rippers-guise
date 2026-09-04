@@ -1755,6 +1755,61 @@ async function draftFromGuiseItem(item) {
 	return draft;
 }
 
+// ── Innate-kit materialisation (shared by createGuiseFromDraft + reconcileInnateKit, #2 v0.7.9) ──
+// The innate guise's char-side kit — creation heroic / Hunter Weapon / innate armour + accessory —
+// belongs to the CHARACTER (the face under the masks), not the guise. These three helpers own the
+// "make it real on the actor" step so create and the post-creation edit reconcile can never diverge.
+
+/** Materialise the creation Heroic as an owned Item and seat it in the `creation` heroic slot
+ *  (assignHeroicSlot refuses creation_banned heroics). A worn guise NEVER carries a heroic — "No
+ *  Guise grants a Heroic Skill, ever" (core). Returns the heroic Item, or null. */
+async function materialiseCreationHeroic(actor, uuid) {
+	if (!actor || !uuid) return null;
+	try {
+		const src = await safeFromUuid(uuid);
+		if (!src || src.type !== 'heroic') { ui.notifications?.warn('The creation Heroic must be a heroic Item.'); return null; }
+		const obj = src.toObject(); delete obj._id;
+		const [heroic] = await actor.createEmbeddedDocuments('Item', [obj]);
+		if (!heroic) return null;
+		const res = await assignHeroicSlot(actor, 'creation', heroic);
+		if (!res?.ok) { await heroic.delete(); return null; } // banned/refused — don't leave an orphan
+		return heroic;
+	} catch (err) { console.warn('[rippers-guise] innate creation-heroic assignment failed:', err); return null; }
+}
+
+/** Materialise the Hunter Weapon as an owned Item and mark it (setHunterWeapon sets isHunterWeapon +
+ *  material→bane key + origin). It belongs to the CHARACTER, so it is a plain owned weapon (not a
+ *  guise-origin item). Returns the weapon Item, or null. */
+async function materialiseHunterWeapon(actor, uuid, { material, origin } = {}) {
+	if (!actor || !uuid) return null;
+	try {
+		const src = await safeFromUuid(uuid);
+		if (!src || !(src.type === 'weapon' || src.type === 'customWeapon')) { ui.notifications?.warn('The Hunter Weapon must be a weapon Item.'); return null; }
+		const obj = src.toObject(); delete obj._id;
+		const [weapon] = await actor.createEmbeddedDocuments('Item', [obj]);
+		if (weapon) await setHunterWeapon(weapon, { material: material || undefined, origin: origin || undefined });
+		return weapon ?? null;
+	} catch (err) { console.warn('[rippers-guise] Hunter Weapon materialisation failed:', err); return null; }
+}
+
+/** Materialise one innate equip slot (armor|accessory) as an owned Item flagged innateEquip and equip
+ *  it. Like the Hunter Weapon these belong to the CHARACTER; a worn mask's own equipment displaces
+ *  them on bind and preBindEquip restores them on dismiss (existing snapshot/restore machinery). */
+async function materialiseInnateEquip(actor, slot, uuid) {
+	if (!actor || !uuid || !EQUIP_INNATE_SLOTS.includes(slot)) return null;
+	try {
+		const src = await safeFromUuid(uuid);
+		if (!src) { console.warn(`[rippers-guise] innate ${slot} ref not found: ${uuid}`); return null; }
+		if (src.type !== slot) { ui.notifications?.warn(`The Innate Guise ${slot} must be ${slot === 'armor' ? 'an armor' : 'an accessory'} Item.`); return null; }
+		const obj = src.toObject(); delete obj._id;
+		obj.flags = obj.flags ?? {}; obj.flags[MODULE_ID] = { innateEquip: slot };
+		const [created] = await actor.createEmbeddedDocuments('Item', [obj]);
+		if (created) await actor.update({ [`system.equipped.${slot}`]: created.id });
+		return created ?? null;
+	} catch (err) { console.warn(`[rippers-guise] innate ${slot} materialisation failed:`, err); return null; }
+}
+const EQUIP_INNATE_SLOTS = ['armor', 'accessory'];
+
 /** Create the guise classFeature Item on the actor from a draft; optionally bind it. Async. */
 async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false } = {}) {
 	if (!actor) return null;
@@ -1767,57 +1822,100 @@ async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false 
 		system: { featureType: FEATURE_TYPE, data },
 		flags: { [MODULE_ID]: { schemaVersion: 2, isInnate: mode === 'innate', ...(draft.color ? { color: draft.color } : {}) } },
 	}]);
-	// Innate-Guise mode (Q1): materialise the creation Heroic as an owned Item and seat it in the
-	// character's `creation` heroic slot (assignHeroicSlot refuses creation_banned heroics). A worn
-	// guise NEVER carries a heroic — "No Guise grants a Heroic Skill, ever" (core).
-	if (item && mode === 'innate' && draft.innateHeroicUuid) {
-		try {
-			const src = await safeFromUuid(draft.innateHeroicUuid);
-			if (src && src.type === 'heroic') {
-				const obj = src.toObject(); delete obj._id;
-				const [heroic] = await actor.createEmbeddedDocuments('Item', [obj]);
-				if (heroic) {
-					const res = await assignHeroicSlot(actor, 'creation', heroic);
-					if (!res?.ok) { await heroic.delete(); } // banned/refused — don't leave an orphan
-				}
-			}
-		} catch (err) { console.warn('[rippers-guise] innate creation-heroic assignment failed:', err); }
-	}
-	// Innate-Guise mode (v0.7.1): materialise the Hunter Weapon as an owned Item and mark it
-	// (setHunterWeapon sets isHunterWeapon + material→bane key + origin). The Hunter Weapon belongs
-	// to the CHARACTER, not the guise, so it is a plain owned weapon (not a guise-origin item).
-	if (item && mode === 'innate' && draft.hunterWeaponUuid) {
-		try {
-			const src = await safeFromUuid(draft.hunterWeaponUuid);
-			if (src && (src.type === 'weapon' || src.type === 'customWeapon')) {
-				const obj = src.toObject(); delete obj._id;
-				const [weapon] = await actor.createEmbeddedDocuments('Item', [obj]);
-				if (weapon) await setHunterWeapon(weapon, { material: data.hunterMaterial || undefined, origin: data.hunterOrigin || undefined });
-			} else {
-				ui.notifications?.warn('The Hunter Weapon must be a weapon Item.');
-			}
-		} catch (err) { console.warn('[rippers-guise] Hunter Weapon materialisation failed:', err); }
-	}
-	// Innate-Guise mode (#2, v0.7.9): materialise the innate armor + accessory as owned Items and
-	// EQUIP them on the actor. Like the Hunter Weapon they belong to the CHARACTER (the face under
-	// the masks), so they are plain owned equipped items — a worn mask's own equipment displaces them
-	// on bind and preBindEquip restores them on dismiss (the existing snapshot/restore machinery).
+	// Innate-Guise mode (Q1 / v0.7.1 / #2): materialise the char-side kit — creation heroic, Hunter
+	// Weapon, innate armour + accessory. A worn guise never carries any of these.
 	if (item && mode === 'innate') {
-		for (const [slot, uuid] of [['armor', data.armorUuid], ['accessory', data.accessoryUuid]]) {
-			if (!uuid) continue;
-			try {
-				const src = await safeFromUuid(uuid);
-				if (!src) { console.warn(`[rippers-guise] innate ${slot} ref not found: ${uuid}`); continue; }
-				if (src.type !== slot) { ui.notifications?.warn(`The Innate Guise ${slot} must be ${slot === 'armor' ? 'an armor' : 'an accessory'} Item.`); continue; }
-				const obj = src.toObject(); delete obj._id;
-				obj.flags = obj.flags ?? {}; obj.flags[MODULE_ID] = { innateEquip: slot };
-				const [created] = await actor.createEmbeddedDocuments('Item', [obj]);
-				if (created) await actor.update({ [`system.equipped.${slot}`]: created.id });
-			} catch (err) { console.warn(`[rippers-guise] innate ${slot} materialisation failed:`, err); }
+		if (data.innateHeroicUuid) await materialiseCreationHeroic(actor, data.innateHeroicUuid);
+		if (data.hunterWeaponUuid) await materialiseHunterWeapon(actor, data.hunterWeaponUuid, { material: data.hunterMaterial, origin: data.hunterOrigin });
+		for (const slot of EQUIP_INNATE_SLOTS) {
+			const uuid = slot === 'armor' ? data.armorUuid : data.accessoryUuid;
+			if (uuid) await materialiseInnateEquip(actor, slot, uuid);
 		}
 	}
 	if (item && bind) await bindGuise(actor, item);
 	return item;
+}
+
+/** The PURE reconcile decision (#2, v0.7.9): compare an innate guise's OLD vs NEW authored kit refs
+ *  and report which char-side items must change. Kept pure + exported so the destructive reconcile's
+ *  logic is unit-testable headless. A Hunter Weapon whose UUID is unchanged but whose material/origin
+ *  moved is RETAGGED in place (op:'retag') — never delete+remade — so its slotted hoplospheres survive.
+ *  Any ref that changed (added, cleared, or swapped) yields an entry; unchanged refs yield null. */
+function innateKitReconcilePlan(oldData = {}, newData = {}) {
+	const s = (v) => String(v ?? '');
+	const plan = { heroic: null, hunterWeapon: null, armor: null, accessory: null };
+	if (s(oldData.innateHeroicUuid) !== s(newData.innateHeroicUuid)) {
+		plan.heroic = { from: s(oldData.innateHeroicUuid), to: s(newData.innateHeroicUuid) };
+	}
+	const owUuid = s(oldData.hunterWeaponUuid), nwUuid = s(newData.hunterWeaponUuid);
+	if (owUuid !== nwUuid) {
+		plan.hunterWeapon = { op: 'remake', from: owUuid, to: nwUuid, material: s(newData.hunterMaterial), origin: s(newData.hunterOrigin) };
+	} else if (nwUuid && (s(oldData.hunterMaterial) !== s(newData.hunterMaterial) || s(oldData.hunterOrigin) !== s(newData.hunterOrigin))) {
+		plan.hunterWeapon = { op: 'retag', material: s(newData.hunterMaterial), origin: s(newData.hunterOrigin) };
+	}
+	for (const slot of EQUIP_INNATE_SLOTS) {
+		const key = slot === 'armor' ? 'armorUuid' : 'accessoryUuid';
+		if (s(oldData[key]) !== s(newData[key])) plan[slot] = { from: s(oldData[key]), to: s(newData[key]) };
+	}
+	return plan;
+}
+const innateKitPlanIsEmpty = (p) => !p.heroic && !p.hunterWeapon && !p.armor && !p.accessory;
+
+/** Apply the reconcile plan destructively on the actor (#2, v0.7.9). Post-creation edits to an innate
+ *  guise's kit delete the stale char-side Item and materialise the new one, EXACTLY as create does.
+ *  THE CARE POINT: the creation heroic is dormant-while-masked (a worn mask sleeps it via
+ *  suppressCreationHeroic → DORMANT_HEROIC_FLAG). A swap must NOT wake it: we capture whether the
+ *  heroic is currently dormant, clear the stale snapshot before deleting (so a later dismiss never
+ *  targets a deleted id), then RE-SLEEP the new heroic if it was dormant — preserving the invariant. */
+async function reconcileInnateKit(actor, oldData = {}, newData = {}) {
+	if (!actor) return { changed: [] };
+	const plan = innateKitReconcilePlan(oldData, newData);
+	if (innateKitPlanIsEmpty(plan)) return { changed: [] };
+	const changed = [];
+
+	// --- Creation heroic (dormancy-sensitive) ---
+	if (plan.heroic) {
+		const wasDormant = !!actor.getFlag(MODULE_ID, DORMANT_HEROIC_FLAG);
+		const curId = getHeroicSlots(actor).creation;
+		const cur = curId ? actor.items.get(curId) : null;
+		if (cur) {
+			// clear the dormancy snapshot FIRST so a later dismiss can't restore a deleted heroic
+			if (wasDormant) await actor.unsetFlag(MODULE_ID, DORMANT_HEROIC_FLAG);
+			await clearHeroicSlot(actor, 'creation');
+			await cur.delete();
+		}
+		if (plan.heroic.to) {
+			const heroic = await materialiseCreationHeroic(actor, plan.heroic.to);
+			// preserve dormant-while-masked: if the old heroic slept under a worn mask, sleep the new one too
+			if (heroic && wasDormant) await suppressCreationHeroic(actor);
+		}
+		changed.push('heroic');
+	}
+
+	// --- Hunter Weapon (retag in place, or remake) ---
+	if (plan.hunterWeapon) {
+		const existing = actor.items.find((i) => isHunterWeapon(i)) ?? null;
+		if (plan.hunterWeapon.op === 'retag') {
+			if (existing) await setHunterWeapon(existing, { material: plan.hunterWeapon.material || undefined, origin: plan.hunterWeapon.origin || undefined });
+		} else {
+			if (existing) await existing.delete();
+			if (plan.hunterWeapon.to) await materialiseHunterWeapon(actor, plan.hunterWeapon.to, { material: plan.hunterWeapon.material, origin: plan.hunterWeapon.origin });
+		}
+		changed.push('hunterWeapon');
+	}
+
+	// --- Innate armour + accessory (unequip + delete the old, equip the new) ---
+	for (const slot of EQUIP_INNATE_SLOTS) {
+		if (!plan[slot]) continue;
+		for (const it of actor.items.filter((i) => i?.getFlag?.(MODULE_ID, 'innateEquip') === slot)) {
+			if (actor.system?.equipped?.[slot] === it.id) await actor.update({ [`system.equipped.${slot}`]: null });
+			await it.delete();
+		}
+		if (plan[slot].to) await materialiseInnateEquip(actor, slot, plan[slot].to);
+		changed.push(slot);
+	}
+
+	return { changed };
 }
 
 // ---------------------------------------------------------------------------
@@ -2199,13 +2297,17 @@ function getGuiseBuilderApp() {
 				const isBound = this.actor.getFlag(MODULE_ID, FLAG) === item.id;
 				if (isBound && !override) { ui.notifications?.warn(game.i18n.localize('RIPPERS.Builder.DismissFirst')); return; }
 				if (isBound && override) ui.notifications?.warn(game.i18n.localize('RIPPERS.Builder.EditBoundWarn'));
+				const oldData = item.system?.data ?? {};
 				const data = guiseDraftToData(this._draft, this._skillMax(), budgetOf(this.actor));
 				await item.update({ name: data.identity || item.name, img: this._draft.img || item.img, 'system.data': data });
-				// NOTE (#4 scope, flagged to god): the record is updated fully (classes, skills, specialties,
-				// talented, narrative, affinity trio, all authored refs). A WORN guise's kit re-materialises
-				// on the next bind. Swapping an INNATE guise's already-materialised char-side kit items
-				// (creation heroic / Hunter Weapon / armour / accessory) post-creation is intentionally out
-				// of scope here (a singleton, dormancy-sensitive, destructive reconcile) — refs are stored.
+				// #2 (v0.7.9): an INNATE guise's char-side kit is materialised on the actor, so a post-creation
+				// edit must reconcile it — delete the stale creation heroic / Hunter Weapon / armour / accessory
+				// and materialise the new refs, preserving the creation heroic's dormant-while-masked state. A
+				// WORN guise carries no char-side kit (its loadout re-materialises on the next bind), so skip.
+				if (data.mode === 'innate') {
+					const { changed } = await reconcileInnateKit(this.actor, oldData, data);
+					if (changed.length) ui.notifications?.info(`Reconciled innate kit: ${changed.join(', ')}.`);
+				}
 				ui.notifications?.info(`Guise "${item.name}" updated.`);
 				this.close();
 				return;
@@ -2890,7 +2992,7 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, createGuiseFromDraft, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.
