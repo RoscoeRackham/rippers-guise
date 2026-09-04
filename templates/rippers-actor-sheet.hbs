@@ -385,12 +385,15 @@
 					{{#each vm.editable.bonds as |b|}}
 						<div class="rs-edit-bond">
 							<input type="text" placeholder="{{localize 'RIPPERS.Sheet.BondWith'}}" data-bond-index="{{b.i}}" data-bond-field="name" value="{{b.name}}">
-							<input type="text" placeholder="Admiration/Inferiority" data-bond-index="{{b.i}}" data-bond-field="admInf" value="{{b.admInf}}">
-							<input type="text" placeholder="Loyalty/Mistrust" data-bond-index="{{b.i}}" data-bond-field="loyMis" value="{{b.loyMis}}">
-							<input type="text" placeholder="Affection/Hatred" data-bond-index="{{b.i}}" data-bond-field="affHat" value="{{b.affHat}}">
+							<select data-bond-index="{{b.i}}" data-bond-field="admInf">{{#each b.admInfOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.label}}</option>{{/each}}</select>
+							<select data-bond-index="{{b.i}}" data-bond-field="loyMis">{{#each b.loyMisOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.label}}</option>{{/each}}</select>
+							<select data-bond-index="{{b.i}}" data-bond-field="affHat">{{#each b.affHatOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.label}}</option>{{/each}}</select>
+							<span class="rs-bond-tier rdb-tier-tag rdb-tier-{{b.tier}}">{{b.tier}}</span>
+							<span class="rs-edit-bond-str">{{localize 'RIPPERS.Sheet.Strength'}} {{b.strength}}</span>
+							<button type="button" class="rs-btn rs-edit-bond-rm" data-action="bondRemove" data-bond-index="{{b.i}}" title="{{localize 'RIPPERS.Sheet.BondRemove'}}">✕</button>
 						</div>
 					{{/each}}
-					<button class="rs-btn" data-action="bondCreate">＋ {{localize 'RIPPERS.Sheet.BondAdd'}}</button>
+					<button class="rs-btn" data-action="bondAddRow">＋ {{localize 'RIPPERS.Sheet.BondAdd'}}</button>
 				</div>
 
 				{{#if vm.editor.has}}

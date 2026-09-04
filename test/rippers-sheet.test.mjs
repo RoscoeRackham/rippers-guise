@@ -830,3 +830,33 @@ test('setGuiseSkillSL: refuses when locked; clamps to per-skill maxSl when unloc
 	assert.equal(r.ok, true); assert.equal(r.sl, 5);                        // clamped to maxSl 5
 	assert.equal(written['system.data'].classes[0].skills[0].sl, 5);
 });
+
+// ── v0.7.14 inline bonds ──
+const { RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved } = mod;
+
+test('bondEmotionOptions: blank + the two FU choices, sel marks the current value', () => {
+	const opts = bondEmotionOptions('admInf', 'Inferiority');
+	assert.deepEqual(opts.map((o) => o.v), ['', 'Admiration', 'Inferiority']);   // exact FU choices, blank first
+	assert.equal(opts.find((o) => o.sel).v, 'Inferiority');                       // current is selected
+	assert.equal(bondEmotionOptions('loyMis', '').find((o) => o.sel).v, '');      // blank when unset
+	assert.equal(bondEmotionOptions('bogus', 'x').length, 1);                     // unknown field → only blank
+	assert.deepEqual(RS_BOND_EMOTIONS.affHat, ['Affection', 'Hatred']);
+});
+
+test('bondStrengthOf: derived count of set emotions (0..3)', () => {
+	assert.equal(bondStrengthOf({}), 0);
+	assert.equal(bondStrengthOf({ admInf: 'Admiration' }), 1);
+	assert.equal(bondStrengthOf({ admInf: 'Admiration', loyMis: 'Loyalty', affHat: 'Hatred' }), 3);
+	assert.equal(bondStrengthOf({ admInf: '', loyMis: 'Mistrust' }), 1);          // blank doesn't count
+});
+
+test('withBondAppended / withBondRemoved: immutable add and remove', () => {
+	const base = [{ name: 'A' }, { name: 'B' }];
+	const added = withBondAppended(base);
+	assert.equal(added.length, 3); assert.equal(base.length, 2);                  // immutable
+	assert.deepEqual(added[2], { name: '', admInf: '', loyMis: '', affHat: '' }); // fresh (fleeting-by-default) bond
+	const removed = withBondRemoved(base, 0);
+	assert.deepEqual(removed.map((b) => b.name), ['B']); assert.equal(base.length, 2);
+	assert.equal(withBondRemoved(base, 9).length, 2);                             // out-of-range is a no-op
+	assert.equal(withBondAppended(undefined).length, 1);                          // nullish-safe
+});

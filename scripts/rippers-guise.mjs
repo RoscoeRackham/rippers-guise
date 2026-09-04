@@ -3238,6 +3238,29 @@ Hooks.on('renderFUStandardActorSheet', (app) => injectGuisePanel(app));
 // design-system tokens + hunters-ledger CharacterScreen, to be reconciled to 2a when the canvas lands.
 const RS_ATTR_LABELS = { dex: 'Dexterity', ins: 'Insight', mig: 'Might', wlp: 'Willpower' };
 const RS_AFFINITY_TYPES = ['physical', 'air', 'bolt', 'dark', 'earth', 'fire', 'ice', 'light', 'poison'];
+// FU core bond emotions (BondDataModel): three pairs, each a StringField whose `choices` are exactly
+// these. Strength is a DERIVED getter (count of set emotions + bonuses) — NOT a stored/writable field.
+// A bond's fleeting/solid/eternal *tier* is owned by the rippers-deeper-bonds module (matched by name),
+// defaulting to FLEETING for any bond without a record; there is no `fleeting` field on the FU bond, so
+// adding a bond inline simply creates a (fleeting-by-default) bond — nothing is invented here.
+const RS_BOND_EMOTIONS = Object.freeze({
+	admInf: ['Admiration', 'Inferiority'],
+	loyMis: ['Loyalty', 'Mistrust'],
+	affHat: ['Affection', 'Hatred'],
+});
+/** PURE: option list for one bond-emotion select — a blank ("—") plus the two FU choices, with `sel`
+ *  marking the current value. Used by the inline bonds editor VM. */
+function bondEmotionOptions(field, current) {
+	const cur = String(current ?? '');
+	return [{ v: '', label: '—', sel: cur === '' }, ...(RS_BOND_EMOTIONS[field] ?? []).map((v) => ({ v, label: v, sel: cur === v }))];
+}
+/** PURE: derived bond strength = count of set emotions (FU's getter, sans actor bonuses which we can't
+ *  see from raw source). Kept for the read-only display in the inline editor. */
+function bondStrengthOf(bond) { return ['admInf', 'loyMis', 'affHat'].filter((k) => bond?.[k]).length; }
+/** PURE: append one empty FU bond to a bonds array (immutably) — the inline "add bond" row. */
+function withBondAppended(bonds) { return [...(bonds ?? []), { name: '', admInf: '', loyMis: '', affHat: '' }]; }
+/** PURE: remove the bond at `idx` from a bonds array (immutably) — the inline "remove bond" control. */
+function withBondRemoved(bonds, idx) { const out = [...(bonds ?? [])]; if (idx >= 0 && idx < out.length) out.splice(idx, 1); return out; }
 // The six core FU statuses (exact ids, projectfu config.mjs FU.temporaryEffects) + the boons/banes tray.
 const RS_STATUS_IDS = ['slow', 'dazed', 'weak', 'shaken', 'enraged', 'poisoned'];
 const RS_COND_GROUPS = [
@@ -3581,6 +3604,28 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	let wornName = '';
 	// H3 "The Turn": scene-swap state, so the roster can hint which swap would be free this scene.
 	const { used: sceneUsed, turnRefundUsed } = guiseSceneState(actor);
+	// Perf (v0.7.14): resolve every class + heroic doc ONCE per render — deduped, in parallel — instead of
+	// per-guise-per-class serial fromUuid pulls. A character with N guises × 3 classes was doing ~2×3N
+	// AWAITED compendium lookups on every sheet render (the same class re-fetched for each guise that
+	// carries it, and each class fetched twice: skillsForClass + a second safeFromUuid for the name). That
+	// serial I/O is the "odd delay". We now gather the unique UUIDs, resolve them concurrently, and the
+	// guise loop reads from the maps synchronously — no awaits inside the loop at all.
+	const _classUuids = new Set(), _heroicUuids = new Set();
+	for (const g of guiseItems) {
+		const d = g.system?.data ?? {};
+		const innate = !!g.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
+		for (const cls of d.classes ?? []) if (cls?.classUuid) _classUuids.add(cls.classUuid);
+		const hu = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
+		if (hu) _heroicUuids.add(hu);
+	}
+	const _classDocs = new Map(), _heroicDocs = new Map();
+	await Promise.all([
+		...[..._classUuids].map(async (u) => { _classDocs.set(u, await safeFromUuid(u)); }),
+		...[..._heroicUuids].map(async (u) => { _heroicDocs.set(u, await safeFromUuid(u)); }),
+	]);
+	const _classDefs = new Map();       // classUuid → parsed skill defs (parseClassSkills is sync)
+	for (const [u, doc] of _classDocs) _classDefs.set(u, parseClassSkills(doc?.system?.description ?? ''));
+
 	for (const g of guiseItems) {
 		const d = g.system?.data ?? {};
 		const innate = !!g.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
@@ -3591,9 +3636,9 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		const slEditable = guiseSlEditable(g);
 		const skillGroups = [];
 		for (const cls of d.classes ?? []) {
-			const defs = await skillsForClass(cls.classUuid);
+			const defs = _classDefs.get(cls.classUuid) ?? [];
 			const byUuid = new Map(defs.map((s) => [s.uuid, s]));
-			const cdoc = await safeFromUuid(cls.classUuid);
+			const cdoc = _classDocs.get(cls.classUuid);
 			skillGroups.push({
 				classUuid: cls.classUuid, className: cdoc?.name ?? '(class)',
 				skills: (cls.skills ?? []).map((s) => ({
@@ -3604,7 +3649,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 			});
 		}
 		const heroicUuid = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
-		const heroicName = heroicUuid ? ((await safeFromUuid(heroicUuid))?.name ?? '(unresolved)') : null;
+		const heroicName = heroicUuid ? (_heroicDocs.get(heroicUuid)?.name ?? '(unresolved)') : null;
 		const v = guiseVitals(g);
 		const worn = g.id === activeId;
 		if (worn) wornName = g.name ?? '';
@@ -3676,6 +3721,12 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	// the character's OWN fields (name/identity handled on Study; here: attributes, HP/MP/IP + maxes,
 	// FP/EXP/Zenit, bonds). Guise class-skills stay fixed-at-distillation (separate lock). The template
 	// binds each input with data-edit="<dot path>" (or bond index/field), written on change by the sheet.
+	// Deeper-Bonds tier per bond name (fleeting by default) — read-only chip for the inline editor.
+	const bondTierByName = new Map();
+	try {
+		const _rec = deeperBondsApi()?.getRecords?.(actor) ?? [];
+		for (const r of _rec) if (r?.name) bondTierByName.set(r.name, r.tier ?? 'fleeting');
+	} catch { /* module absent or read failed → all fleeting */ }
 	const editable = {
 		name: actor.name ?? '',
 		attributes: ['dex', 'ins', 'mig', 'wlp'].map((k) => {
@@ -3684,7 +3735,16 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		}),
 		hp: { value: hp.value, max: hp.max ?? 0 }, mp: { value: mp.value, max: mp.max ?? 0 }, ip: { value: ip.value, max: ip.max ?? 0 },
 		fp: vitals.fp, exp: vitals.exp, zenit: vitals.zenit,
-		bonds: (sys.bonds ?? []).map((b, i) => ({ i, name: b.name ?? '', admInf: b.admInf ?? '', loyMis: b.loyMis ?? '', affHat: b.affHat ?? '', strength: Number(b.strength ?? 0) })),
+		// Inline bonds: name + the three FU emotion SELECTS (blank + two valid choices each). Strength is
+		// read-only (derived from the emotions). `tier` is the Deeper-Bonds tier by name (fleeting by
+		// default) — shown as a chip so a freshly-added bond visibly reads "Fleeting"; promotion to
+		// solid/eternal stays on the Bonds tab (GM-gated, Deeper-owned). Add/remove rows below.
+		bonds: (sys.bonds ?? []).map((b, i) => ({
+			i, name: b.name ?? '',
+			admInfOpts: bondEmotionOptions('admInf', b.admInf), loyMisOpts: bondEmotionOptions('loyMis', b.loyMis), affHatOpts: bondEmotionOptions('affHat', b.affHat),
+			strength: Number(b.strength ?? bondStrengthOf(b)),
+			tier: bondTierByName.get(b.name ?? '') ?? 'fleeting',
+		})),
 	};
 	// Editor tab (P2c): the affordance targets the worn guise, else the innate, else the first. It only
 	// OPENS the existing GuiseBuilderApp (which already enforces the fixed-at-distillation locks, the
@@ -3801,7 +3861,7 @@ async function sheetPickArcana(actor, guiseId) {
 	const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 	const clearLbl = game.i18n?.localize?.('RIPPERS.Sheet.ArcanaClear') ?? '— none —';
 	const body = entries.length
-		? `<div class="rs-arcana-grid">${entries.map((e) => `<button type="button" class="rs-arcana-opt" data-path="${esc(e.path)}" title="${esc(e.name)}"><img src="${esc(e.path)}" alt="${esc(e.name)}"></button>`).join('')}</div>`
+		? `<div class="rs-arcana-grid">${entries.map((e) => `<button type="button" class="rs-arcana-opt" data-path="${esc(e.path)}" title="${esc(e.name)}"><img src="${esc(e.path)}" alt="${esc(e.name)}"><span class="rs-arcana-name">${esc(e.name)}</span></button>`).join('')}</div>`
 		: `<p class="rs-arcana-empty-msg">${esc(game.i18n?.localize?.('RIPPERS.Sheet.ArcanaEmpty') ?? 'No images found in the arcana folder. Set the "Arcana art folder" setting to where your cards live.')}<br><code>${esc(base)}</code></p>`;
 	// Wrapped in .rg-arcana-picker: the DialogV2 renders OUTSIDE .rippers-sheet, so the sheet's scoped
 	// tokens don't reach it — the picker carries its own (unscoped) styling for contrast + scroll.
@@ -4191,6 +4251,8 @@ function getRippersActorSheetClass() {
 				handOffGuise: RippersActorSheet.onHandOffGuise,
 				vaultStash: RippersActorSheet.onVaultStash,
 				bondCreate: RippersActorSheet.onBondCreate,
+				bondAddRow: RippersActorSheet.onBondAddRow,
+				bondRemove: RippersActorSheet.onBondRemove,
 				bondSolidify: RippersActorSheet.onBondSolidify,
 				bondEternal: RippersActorSheet.onBondEternal,
 				bondClockFill: RippersActorSheet.onBondClockFill,
@@ -4387,6 +4449,19 @@ function getRippersActorSheetClass() {
 		static async onBondRaiseDie(event, target) { await sheetBondRaiseDie(this.document, target?.dataset?.bond); this.render(); }
 		static async onBondSkillGrant(event, target) { await sheetBondSkillGrant(this.document, target?.dataset?.bond); this.render(); }
 		static async onBondSolidifyRest() { await sheetBondSolidifyRest(this.document); this.render(); }
+		// Inline bonds (Edit tab): add/remove a plain FU bond on the character's own system.bonds array.
+		// Owner-permitted (unlike the GM-gated Deeper createFleetingBond); a new bond is fleeting by default.
+		static async onBondAddRow() {
+			try { await this.document.update({ 'system.bonds': withBondAppended(this.document.system?.bonds ?? []) }); }
+			catch (err) { console.warn('[rippers-guise] bond add failed:', err); }
+			this.render();
+		}
+		static async onBondRemove(event, target) {
+			const idx = Number(target?.dataset?.bondIndex); if (!Number.isFinite(idx)) return;
+			try { await this.document.update({ 'system.bonds': withBondRemoved(this.document.system?.bonds ?? [], idx) }); }
+			catch (err) { console.warn('[rippers-guise] bond remove failed:', err); }
+			this.render();
+		}
 	}
 	_RippersActorSheet = RippersActorSheet;
 	return RippersActorSheet;
@@ -4707,7 +4782,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };
