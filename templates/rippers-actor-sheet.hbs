@@ -353,6 +353,59 @@
 						</div>
 					{{/each}}
 				{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoWeapons'}}</p>{{/if}}
+				{{!-- v0.7.15: full inventory — armor/shields/accessories/consumables/treasures (native FU items) --}}
+				<div class="rs-inv-head">
+					<span class="rs-edit-title">{{localize 'RIPPERS.Sheet.Inventory'}}</span>
+					<label class="rs-inv-useeq"><input type="checkbox" data-action="toggleUseEquipment" {{#if vm.inventory.useEquipment}}checked{{/if}}> {{localize 'RIPPERS.Sheet.UseEquipment'}}</label>
+				</div>
+				{{#each vm.inventory.sections as |sec|}}
+					{{#if sec.any}}
+						<div class="rs-inv-section">
+							<div class="rs-inv-label">{{sec.label}}</div>
+							{{#each sec.items as |it|}}
+								<div class="rs-inv-row{{#if it.equipped}} rs-inv-equipped{{/if}}">
+									<img class="rs-inv-img" src="{{it.img}}" alt="">
+									<span class="rs-inv-name">{{it.name}}</span>
+									<span class="rs-inv-stats">{{#each it.fields as |f|}}<span class="rs-inv-stat">{{f.label}} {{f.val}}</span>{{/each}}</span>
+									<span class="rs-inv-controls">
+										{{#if it.equippable}}<button type="button" class="rs-chip" data-action="itemEquip" data-item="{{it.id}}">{{#if it.equipped}}{{localize 'RIPPERS.Sheet.Unequip'}}{{else}}{{localize 'RIPPERS.Sheet.Equip'}}{{/if}}</button>{{/if}}
+										{{#if it.usable}}<button type="button" class="rs-chip" data-action="itemUse" data-item="{{it.id}}">{{localize 'RIPPERS.Sheet.Use'}}</button>{{/if}}
+										<button type="button" class="rs-chip" data-action="itemSheet" data-item="{{it.id}}" title="{{localize 'RIPPERS.Sheet.OpenItem'}}">⚙</button>
+										<button type="button" class="rs-chip rs-chip-danger" data-action="itemDelete" data-item="{{it.id}}" title="{{localize 'RIPPERS.Sheet.ItemDelete'}}">✕</button>
+									</span>
+								</div>
+							{{/each}}
+						</div>
+					{{/if}}
+				{{/each}}
+				{{#unless vm.inventory.any}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoInventory'}}</p>{{/unless}}
+			{{/if}}
+
+			{{#if vm.tab.effects}}
+				{{!-- v0.7.15: native Active Effects — surfaces item/guise-transferred effects too, so a guise
+				     PASSIVE shows here as an active passive (P5b passive-verification). Native FU/Foundry AE API. --}}
+				{{#each vm.effects.groups as |grp|}}
+					<div class="rs-fx-section">
+						<div class="rs-fx-head">
+							<span class="rs-inv-label">{{grp.label}}</span>
+							<button type="button" class="rs-chip" data-action="effectCreate" data-effect-type="{{grp.createType}}">＋ {{localize 'RIPPERS.Sheet.EffectAdd'}}</button>
+						</div>
+						{{#if grp.effects.length}}
+							{{#each grp.effects as |ef|}}
+								<div class="rs-fx-row{{#if ef.disabled}} rs-fx-disabled{{/if}}">
+									<img class="rs-inv-img" src="{{ef.img}}" alt="">
+									<span class="rs-inv-name">{{ef.name}}</span>
+									{{#if ef.source}}<span class="rs-fx-source">{{ef.source}}</span>{{/if}}
+									<span class="rs-inv-controls">
+										<button type="button" class="rs-chip" data-action="effectToggle" data-effect-id="{{ef.id}}">{{#if ef.disabled}}{{localize 'RIPPERS.Sheet.EffectEnable'}}{{else}}{{localize 'RIPPERS.Sheet.EffectDisable'}}{{/if}}</button>
+										<button type="button" class="rs-chip" data-action="effectEdit" data-effect-id="{{ef.id}}" title="{{localize 'RIPPERS.Sheet.OpenItem'}}">⚙</button>
+										<button type="button" class="rs-chip rs-chip-danger" data-action="effectDelete" data-effect-id="{{ef.id}}" title="{{localize 'RIPPERS.Sheet.ItemDelete'}}">✕</button>
+									</span>
+								</div>
+							{{/each}}
+						{{else}}<p class="rs-empty">—</p>{{/if}}
+					</div>
+				{{/each}}
 			{{/if}}
 
 			{{#if vm.tab.edit}}

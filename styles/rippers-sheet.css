@@ -267,6 +267,23 @@
 .rippers-sheet .rs-edit-bond .rs-bond-tier { justify-self: center; }
 .rippers-sheet .rs-edit-bond-str { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-gold); white-space: nowrap; }
 .rippers-sheet .rs-edit-bond-rm { padding: 2px 8px; font-family: var(--rs-verb); line-height: 1; }
+/* v0.7.15 — full inventory + native Active Effects */
+.rippers-sheet .rs-inv-head { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--rs-border); }
+.rippers-sheet .rs-inv-useeq { font-family: var(--rs-mono); font-size: 11px; color: var(--rs-bone); display: inline-flex; align-items: center; gap: 5px; }
+.rippers-sheet .rs-inv-section { margin: 8px 0; }
+.rippers-sheet .rs-inv-label, .rippers-sheet .rs-fx-head .rs-inv-label { font-family: var(--rs-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--rs-gold); margin-bottom: 4px; }
+.rippers-sheet .rs-inv-row, .rippers-sheet .rs-fx-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--rs-border); background: rgba(0,0,0,.18); margin-bottom: 4px; }
+.rippers-sheet .rs-inv-equipped { border-color: var(--rs-gold); box-shadow: inset 3px 0 0 var(--rs-gold); }
+.rippers-sheet .rs-inv-img { width: 26px; height: 26px; object-fit: contain; flex: 0 0 auto; border: 1px solid var(--rs-border); }
+.rippers-sheet .rs-inv-name { font-family: var(--rs-body); font-size: 13px; color: var(--rs-bone); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rippers-sheet .rs-inv-stats { display: inline-flex; gap: 8px; flex: 0 0 auto; }
+.rippers-sheet .rs-inv-stat { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-bone); opacity: .85; white-space: nowrap; }
+.rippers-sheet .rs-inv-controls { display: inline-flex; gap: 4px; flex: 0 0 auto; }
+.rippers-sheet .rs-chip-danger:hover { color: #fff; background: var(--rs-red); border-color: var(--rs-red); }
+.rippers-sheet .rs-fx-section { margin: 10px 0; }
+.rippers-sheet .rs-fx-head { display: flex; align-items: center; justify-content: space-between; }
+.rippers-sheet .rs-fx-disabled { opacity: .55; }
+.rippers-sheet .rs-fx-source { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-gold); flex: 0 0 auto; }
 
 /* Inline skill-level editing (guise cards) + inline weapon editing (Kit tab). */
 .rippers-sheet .rs-skilledit { margin-top: 8px; border-left: 2px solid var(--rs-border-red); padding-left: 8px; }

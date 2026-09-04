@@ -860,3 +860,71 @@ test('withBondAppended / withBondRemoved: immutable add and remove', () => {
 	assert.equal(withBondRemoved(base, 9).length, 2);                             // out-of-range is a no-op
 	assert.equal(withBondAppended(undefined).length, 1);                          // nullish-safe
 });
+
+// ── v0.7.15 inventory + native effects + equip ──
+const { itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, RS_INVENTORY_TYPES } = mod;
+
+test('effectBucket: temporary wins; else active→passive, inactive→inactive', () => {
+	assert.equal(effectBucket({ isTemporary: true, active: true }), 'temporary');
+	assert.equal(effectBucket({ isTemporary: true, active: false }), 'temporary');
+	assert.equal(effectBucket({ isTemporary: false, active: true }), 'passive');
+	assert.equal(effectBucket({ isTemporary: false, active: false }), 'inactive');
+});
+
+test('itemEquippable / itemIsTwoHanded cover both weapon shapes', () => {
+	for (const t of ['armor', 'shield', 'accessory', 'weapon', 'customWeapon']) assert.equal(itemEquippable(t), true);
+	for (const t of ['consumable', 'treasure', 'spell']) assert.equal(itemEquippable(t), false);
+	assert.equal(itemIsTwoHanded({ system: { hands: { value: 'two-handed' } } }), true);   // weapon shape (.value)
+	assert.equal(itemIsTwoHanded({ system: { hands: 'two-handed' } }), true);               // customWeapon shape
+	assert.equal(itemIsTwoHanded({ system: { hands: { value: 'one-handed' } } }), false);
+});
+
+test('equipToggleUpdate: armor/accessory single slot; shield offHand; weapon hands + 2H both; toggles off', () => {
+	assert.equal(equipToggleUpdate({ armor: '' }, { id: 'a1', type: 'armor' }).armor, 'a1');
+	assert.equal(equipToggleUpdate({ armor: 'a1' }, { id: 'a1', type: 'armor' }).armor, '');          // toggle off
+	assert.equal(equipToggleUpdate({}, { id: 'x', type: 'accessory' }).accessory, 'x');
+	assert.equal(equipToggleUpdate({}, { id: 's', type: 'shield' }).offHand, 's');
+	const oneH = equipToggleUpdate({}, { id: 'w', type: 'weapon', system: { hands: { value: 'one-handed' } } });
+	assert.equal(oneH.mainHand, 'w'); assert.equal(oneH.offHand ?? '', '');
+	const twoH = equipToggleUpdate({}, { id: 'g', type: 'weapon', system: { hands: { value: 'two-handed' } } });
+	assert.equal(twoH.mainHand, 'g'); assert.equal(twoH.offHand, 'g');                                 // fills both hands
+	const off = equipToggleUpdate({ mainHand: 'g', offHand: 'g' }, { id: 'g', type: 'weapon', system: { hands: { value: 'two-handed' } } });
+	assert.equal(off.mainHand, ''); assert.equal(off.offHand, '');                                     // un-equips both
+	assert.equal(equipToggleUpdate({ armor: 'a1' }, { id: 'a2', type: 'armor' }).armor, 'a2');         // swap replaces
+});
+
+test('buildInventoryVM: reads native item fields per type, reflects equipped state', () => {
+	const actor = {
+		itemTypes: {
+			armor: [{ id: 'a1', name: 'Coat', img: 'i', type: 'armor', system: { def: { value: 2 }, mdef: { value: 1 }, init: { value: 0 } } }],
+			consumable: [{ id: 'c1', name: 'Potion', img: 'i', type: 'consumable', system: { ipCost: { value: 3 }, subtype: { value: 'potion' } } }],
+			shield: [], accessory: [], treasure: [],
+		},
+		system: { useEquipment: { value: true }, equipped: { isEquipped: (it) => it.id === 'a1' } },
+	};
+	const vm = buildInventoryVM(actor);
+	assert.equal(vm.useEquipment, true); assert.equal(vm.any, true);
+	const armor = vm.sections.find((s) => s.type === 'armor');
+	assert.equal(armor.items[0].fields[0].val, 2);          // DEF read from system.def.value
+	assert.equal(armor.items[0].equipped, true);            // native isEquipped honored
+	assert.equal(armor.items[0].equippable, true);
+	const cons = vm.sections.find((s) => s.type === 'consumable');
+	assert.equal(cons.items[0].usable, true); assert.equal(cons.items[0].fields[0].val, 3);
+});
+
+test('buildEffectsVM: buckets applicable effects incl. item-transferred, surfaces source', () => {
+	const actor = {};
+	actor.allApplicableEffects = function* () {
+		yield { id: 'e1', name: 'Guard', isTemporary: true, active: true, disabled: false, parent: actor };
+		yield { id: 'e2', name: 'Aura', isTemporary: false, active: true, disabled: false, parent: { name: 'Mask of Ash' } }; // transferred
+		yield { id: 'e3', name: 'Off', isTemporary: false, active: false, disabled: true, parent: actor };
+	};
+	const vm = buildEffectsVM(actor);
+	assert.equal(vm.any, true);
+	const byKey = Object.fromEntries(vm.groups.map((g) => [g.key, g]));
+	assert.equal(byKey.temporary.effects[0].name, 'Guard');
+	assert.equal(byKey.passive.effects[0].name, 'Aura');
+	assert.equal(byKey.passive.effects[0].source, 'Mask of Ash');   // guise/item source shown (passive-verify)
+	assert.equal(byKey.inactive.effects[0].disabled, true);
+	assert.equal(buildEffectsVM({}).any, false);                    // no-AE actor is safe
+});

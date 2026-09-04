@@ -3261,6 +3261,86 @@ function bondStrengthOf(bond) { return ['admInf', 'loyMis', 'affHat'].filter((k)
 function withBondAppended(bonds) { return [...(bonds ?? []), { name: '', admInf: '', loyMis: '', affHat: '' }]; }
 /** PURE: remove the bond at `idx` from a bonds array (immutably) — the inline "remove bond" control. */
 function withBondRemoved(bonds, idx) { const out = [...(bonds ?? [])]; if (idx >= 0 && idx < out.length) out.splice(idx, 1); return out; }
+
+// ── v0.7.15: full inventory + native Active Effects + equip (Tier-1 parity, all NATIVE FU/Foundry data) ──
+// Non-weapon inventory types + the key display fields to read off each (paths verified against the FU
+// dev checkout's data models — nothing invented). Weapons keep their own richer editing block in Kit.
+const RS_INVENTORY_TYPES = [
+	{ type: 'armor', label: 'Armor', fields: [['DEF', 'system.def.value'], ['MDEF', 'system.mdef.value'], ['INIT', 'system.init.value']], equip: true },
+	{ type: 'shield', label: 'Shields', fields: [['DEF', 'system.def.value'], ['MDEF', 'system.mdef.value'], ['INIT', 'system.init.value']], equip: true },
+	{ type: 'accessory', label: 'Accessories', fields: [['DEF', 'system.def.value'], ['MDEF', 'system.mdef.value'], ['INIT', 'system.init.value']], equip: true },
+	{ type: 'consumable', label: 'Consumables', fields: [['IP', 'system.ipCost.value'], ['Type', 'system.subtype.value']], use: true },
+	{ type: 'treasure', label: 'Treasures', fields: [['Value', 'system.cost.value'], ['Qty', 'system.quantity.value'], ['Type', 'system.subtype.value']] },
+];
+/** PURE: read a dot-path off an object, tolerating missing links. */
+function rsDotGet(obj, path) { return String(path).split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj); }
+/** PURE: is this item type one the actor equips into a native slot? */
+function itemEquippable(type) { return ['armor', 'shield', 'accessory', 'weapon', 'customWeapon'].includes(type); }
+/** PURE: two-handed test tolerant of both weapon shapes (weapon wraps hands in .value; customWeapon bare). */
+function itemIsTwoHanded(item) { return (item?.system?.hands?.value ?? item?.system?.hands) === 'two-handed'; }
+/** PURE: the next actor `system.equipped` record after toggling `item`'s slot, mirroring FU's equipment-
+ *  handler logic (armor/accessory single slot; shield → offHand; weapon → mainHand, both hands if 2H;
+ *  toggling an already-equipped item clears it). Blank string = empty slot (equipped slots are StringFields).
+ *  Adapts PFU equipment-handler LOGIC (MIT); no rules VALUES invented. */
+function equipToggleUpdate(equipped, item) {
+	const e = { ...(equipped ?? {}) };
+	const id = item?.id; if (!id) return e;
+	const clear = (slot) => { if (e[slot] === id) e[slot] = ''; };
+	switch (item.type) {
+		case 'armor': e.armor = e.armor === id ? '' : id; break;
+		case 'accessory': e.accessory = e.accessory === id ? '' : id; break;
+		case 'shield': e.offHand = e.offHand === id ? '' : id; break;
+		case 'weapon': case 'customWeapon':
+			if (e.mainHand === id || e.offHand === id) { clear('mainHand'); clear('offHand'); }
+			else { e.mainHand = id; if (itemIsTwoHanded(item)) e.offHand = id; }
+			break;
+	}
+	return e;
+}
+/** PURE: which of the four AE panels an effect belongs to. `active`/`isTemporary` are Foundry AE members;
+ *  we pass them in so this stays unit-testable without a live document. Mirrors the FU renderer's split. */
+function effectBucket({ isTemporary, active }) { return isTemporary ? 'temporary' : (active ? 'passive' : 'inactive'); }
+/** Gather the actor's Active Effects (incl. those transferred from owned items/guises) bucketed for the
+ *  Effects tab. Read-only VM; tolerates a stubbed actor (tests / no-AE env). Passives showing as active
+ *  IS the passive-verification surface (P5b). */
+function buildEffectsVM(actor) {
+	const groups = { temporary: [], passive: [], inactive: [] };
+	let list = [];
+	try {
+		list = typeof actor?.allApplicableEffects === 'function'
+			? [...actor.allApplicableEffects()]
+			: [...(actor?.effects ?? [])];
+	} catch { list = []; }
+	for (const ef of list) {
+		try {
+			const bucket = effectBucket({ isTemporary: !!ef.isTemporary, active: ef.active ?? !ef.disabled });
+			const srcName = ef.parent && ef.parent !== actor ? (ef.parent.name ?? '') : '';
+			groups[bucket].push({ id: ef.id, name: ef.name ?? ef.label ?? '(effect)', img: ef.img ?? ef.icon ?? 'icons/svg/aura.svg', disabled: !!ef.disabled, source: srcName });
+		} catch { /* skip a malformed effect */ }
+	}
+	const G = [
+		{ key: 'temporary', label: 'Temporary', createType: 'temporary', effects: groups.temporary },
+		{ key: 'passive', label: 'Passive', createType: 'passive', effects: groups.passive },
+		{ key: 'inactive', label: 'Inactive', createType: 'inactive', effects: groups.inactive },
+	];
+	return { groups: G, any: G.some((g) => g.effects.length) };
+}
+/** Full non-weapon inventory VM (armor/shield/accessory/consumable/treasure) with the actor's native
+ *  equipped-slot state. Read-only; weapons keep their own Kit block. */
+function buildInventoryVM(actor) {
+	let isEq = () => false;
+	try { const rec = actor?.system?.equipped; if (rec && typeof rec.isEquipped === 'function') isEq = (it) => { try { return !!rec.isEquipped(it); } catch { return false; } }; } catch { /* no equip record */ }
+	const sections = RS_INVENTORY_TYPES.map((spec) => {
+		const items = (actor?.itemTypes?.[spec.type] ?? []).map((it) => ({
+			id: it.id, name: it.name ?? '', img: it.img,
+			fields: spec.fields.map(([label, path]) => ({ label, val: rsDotGet(it, path) ?? '—' })),
+			equippable: !!spec.equip && itemEquippable(it.type), equipped: !!spec.equip && isEq(it),
+			usable: !!spec.use,
+		}));
+		return { type: spec.type, label: spec.label, items, any: items.length > 0 };
+	});
+	return { sections, any: sections.some((s) => s.any), useEquipment: !!(actor?.system?.useEquipment?.value) };
+}
 // The six core FU statuses (exact ids, projectfu config.mjs FU.temporaryEffects) + the boons/banes tray.
 const RS_STATUS_IDS = ['slow', 'dazed', 'weak', 'shaken', 'enraged', 'poisoned'];
 const RS_COND_GROUPS = [
@@ -3271,8 +3351,8 @@ const RS_COND_GROUPS = [
 const RS_TABS = [
 	{ key: 'form', label: 'Form' }, { key: 'bonds', label: 'Bonds' }, { key: 'study', label: 'Study' },
 	{ key: 'resources', label: 'Resources' }, { key: 'vault', label: 'Vault' },
-	{ key: 'spells', label: 'Spells' }, { key: 'kit', label: 'Kit' }, { key: 'clots', label: 'Clots' },
-	{ key: 'quirk', label: 'Quirk' }, { key: 'edit', label: 'Edit' },
+	{ key: 'spells', label: 'Spells' }, { key: 'kit', label: 'Kit' }, { key: 'effects', label: 'Effects' },
+	{ key: 'clots', label: 'Clots' }, { key: 'quirk', label: 'Quirk' }, { key: 'edit', label: 'Edit' },
 ];
 const RS_TAB_STUBS = {
 	spells: 'Vin studies no magic. A spell from a class or a seated Clot would be entered here.',
@@ -3764,8 +3844,11 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		value: Number(r?.value) || 0, max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null,
 	})).filter((r) => r.label);
 	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
-	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', edit: activeTab === 'edit' };
-	if (!tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', effects: activeTab === 'effects', edit: activeTab === 'edit' };
+	if (!tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.effects && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	// v0.7.15: full inventory (Kit) + native Active Effects (Effects tab) — built only when their tab is open.
+	const inventory = tab.kit ? buildInventoryVM(actor) : null;
+	const effects = tab.effects ? buildEffectsVM(actor) : null;
 	// V3: the Party Vault is an embedded tab — build its (party-wide, async) VM only when it is open.
 	const vault = tab.vault ? await buildVaultVM(actor) : null;
 	return {
@@ -3776,6 +3859,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, quirks, editable, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
+		inventory, effects,
 	};
 }
 
@@ -4233,6 +4317,14 @@ function getRippersActorSheetClass() {
 				guiseSwap: RippersActorSheet.onGuiseSwap,
 				rollWeapon: RippersActorSheet.onRollWeapon,
 				itemSheet: RippersActorSheet.onItemSheet,
+				effectCreate: RippersActorSheet.onEffectCreate,
+				effectEdit: RippersActorSheet.onEffectEdit,
+				effectToggle: RippersActorSheet.onEffectToggle,
+				effectDelete: RippersActorSheet.onEffectDelete,
+				itemEquip: RippersActorSheet.onItemEquip,
+				toggleUseEquipment: RippersActorSheet.onToggleUseEquipment,
+				itemUse: RippersActorSheet.onItemUse,
+				itemDelete: RippersActorSheet.onItemDelete,
 				rollCheck: RippersActorSheet.onRollCheck,
 				toggleRivalWaiver: RippersActorSheet.onToggleRivalWaiver,
 				rest: RippersActorSheet.onRest,
@@ -4460,6 +4552,48 @@ function getRippersActorSheetClass() {
 			const idx = Number(target?.dataset?.bondIndex); if (!Number.isFinite(idx)) return;
 			try { await this.document.update({ 'system.bonds': withBondRemoved(this.document.system?.bonds ?? [], idx) }); }
 			catch (err) { console.warn('[rippers-guise] bond remove failed:', err); }
+			this.render();
+		}
+		// ── v0.7.15 Active Effects (native Foundry AE pipeline; no bespoke system) ──
+		_findEffect(id) {
+			if (!id) return null;
+			try { if (typeof this.document.getEffect === 'function') return this.document.getEffect(id); } catch { /* fall through */ }
+			return this.document.effects?.get?.(id) ?? null;
+		}
+		static async onEffectCreate(event, target) {
+			const type = target?.dataset?.effectType ?? 'passive';
+			try {
+				const created = await this.document.createEmbeddedDocuments('ActiveEffect', [{
+					name: game.i18n?.localize?.('RIPPERS.Sheet.NewEffect') ?? 'New Effect',
+					img: 'icons/svg/aura.svg', origin: this.document.uuid,
+					disabled: type === 'inactive',
+					duration: type === 'temporary' ? { rounds: 1 } : {},
+				}]);
+				created?.[0]?.sheet?.render?.(true);
+			} catch (err) { console.warn('[rippers-guise] effect create failed:', err); }
+			this.render();
+		}
+		static onEffectEdit(event, target) { const ef = this._findEffect(target?.dataset?.effectId); ef?.sheet?.render?.(true, { editable: this.document === ef.parent }); }
+		static async onEffectToggle(event, target) { const ef = this._findEffect(target?.dataset?.effectId); if (ef) { try { await ef.update({ disabled: !ef.disabled }); } catch (err) { console.warn('[rippers-guise] effect toggle failed:', err); } this.render(); } }
+		static async onEffectDelete(event, target) { const ef = this._findEffect(target?.dataset?.effectId); if (ef) { try { await ef.delete(); } catch (err) { console.warn('[rippers-guise] effect delete failed:', err); } this.render(); } }
+		// ── v0.7.15 inventory: equip/unequip loose gear (native system.equipped record) + use + delete ──
+		static async onItemEquip(event, target) {
+			const it = this.document.items?.get?.(target?.dataset?.item); if (!it) return;
+			const cur = this.document.system?.equipped?.toObject?.() ?? { ...(this.document.system?.equipped ?? {}) };
+			try { await this.document.update({ 'system.equipped': equipToggleUpdate(cur, it) }); }
+			catch (err) { console.warn('[rippers-guise] equip toggle failed:', err); }
+			this.render();
+		}
+		static async onToggleUseEquipment() {
+			try { await this.document.update({ 'system.useEquipment.value': !this.document.system?.useEquipment?.value }); }
+			catch (err) { console.warn('[rippers-guise] useEquipment toggle failed:', err); }
+			this.render();
+		}
+		static async onItemUse(event, target) { const it = this.document.items?.get?.(target?.dataset?.item); if (it?.roll) { try { await it.roll(); } catch (err) { console.warn('[rippers-guise] item use failed:', err); } } }
+		static async onItemDelete(event, target) {
+			const id = target?.dataset?.item; if (!id) return;
+			try { await this.document.deleteEmbeddedDocuments('Item', [id]); }
+			catch (err) { console.warn('[rippers-guise] item delete failed:', err); }
 			this.render();
 		}
 	}
@@ -4782,7 +4916,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };
