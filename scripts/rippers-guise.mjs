@@ -2981,6 +2981,7 @@ const RS_COND_GROUPS = [
 ];
 const RS_TABS = [
 	{ key: 'form', label: 'Form' }, { key: 'bonds', label: 'Bonds' }, { key: 'study', label: 'Study' },
+	{ key: 'resources', label: 'Resources' },
 	{ key: 'spells', label: 'Spells' }, { key: 'kit', label: 'Kit' }, { key: 'clots', label: 'Clots' },
 	{ key: 'quirk', label: 'Quirk' }, { key: 'edit', label: 'Edit' },
 ];
@@ -2990,6 +2991,45 @@ const RS_TAB_STUBS = {
 	quirk: 'The character\'s Quirk and Specialties are shown here.',
 };
 const rsAffFlags = (lvl) => ({ good: lvl >= 1, bad: lvl === -1 });
+
+// ── Lent-vital DISPLAY (X1/G4/H5, Austin 4 Sep: OPTION A + parens) ────────────────────────────────
+// A lent vital renders as a TEMPORARY (shield-style) segment overlaid on the HP/MP bar, the number in
+// parens (e.g. `45 (+8)`); IP is the same but as DOTS (H5). ONE code path everywhere it shows — the
+// HUD card, the guise edit tab and the vault roster reuse vitalBar/vitalDots (exported). Pure.
+/** HP/MP bar model. base + lent share a track scaled to (max + lent), so the lent shield reads as extra
+ *  capacity beyond the max. `display` is the parenthesised number Austin specified. */
+function vitalBar(value, max, lent = 0) {
+	const v = Math.max(0, Number(value) || 0);
+	const m = Number.isFinite(Number(max)) && Number(max) > 0 ? Number(max) : null;
+	const l = Math.max(0, Number(lent) || 0);
+	const denom = (m ?? v) + l || 1;
+	const basePct = Math.round((Math.min(v, m ?? v) / denom) * 100);
+	const lentPct = l > 0 ? Math.round((l / denom) * 100) : 0;
+	const fillPct = m ? Math.round((Math.min(v, m) / m) * 100) : (v > 0 ? 100 : 0);
+	return { value: v, max: m, lent: l, basePct, lentPct, fillPct, display: l > 0 ? `${v} (+${l})` : `${v}` };
+}
+/** IP dot model (H5): `max` base dots, `value` filled; `lent` extra temporary dots; parenthesised number. */
+function vitalDots(value, max, lent = 0) {
+	const v = Math.max(0, Number(value) || 0);
+	const m = Math.max(0, Number.isFinite(Number(max)) ? Number(max) : v);
+	const l = Math.max(0, Number(lent) || 0);
+	const dots = Array.from({ length: m }, (_, i) => ({ filled: i < Math.min(v, m) }));
+	const lentDots = Array.from({ length: l }, () => ({ temp: true }));
+	return { value: v, max: m, lent: l, dots, lentDots, display: l > 0 ? `${v} (+${l})` : `${v}` };
+}
+
+// ── G4 Resources tab — generic per-actor tracked resources (no invented class data) ───────────────
+const TRACKED_RESOURCES_FLAG = 'trackedResources';
+/** PURE: adjust a tracked resource's value by delta, clamped 0..max (if a max is set). Returns a new list. */
+function adjustTrackedResource(list, key, delta) {
+	return (list ?? []).map((r) => {
+		if (r?.key !== key) return r;
+		const max = Number.isFinite(Number(r.max)) ? Number(r.max) : null;
+		let v = (Number(r.value) || 0) + Math.trunc(Number(delta) || 0);
+		v = Math.max(0, max != null ? Math.min(max, v) : v);
+		return { ...r, value: v };
+	});
+}
 
 // ── Deeper Bonds native integration (SHEET-INJECTION-AUDIT.md, arch B) ────────────────────────────
 // Exactly one module decorates the character sheet — rippers-deeper-bonds — via FU's
@@ -3058,8 +3098,13 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const res = sys.resources ?? {};
 	const pool = (r) => ({ value: Number(r?.value ?? 0), max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null });
 	const hp = pool(res.hp), mp = pool(res.mp), ip = pool(res.ip);
+	// X1/G4/H5: the worn guise's lent layer overlays the bars as a temporary shield (parens number). One
+	// code path (vitalBar/vitalDots) reused by the HUD card + vault roster. No worn guise → lent 0.
+	const lentActive = guiseVitals(activeGuiseItem(actor));
 	const vitals = {
-		hp, mp, ip,
+		hp: { ...hp, bar: vitalBar(hp.value, hp.max, lentActive.hp.current) },
+		mp: { ...mp, bar: vitalBar(mp.value, mp.max, lentActive.mp.current) },
+		ip: { ...ip, dots: vitalDots(ip.value, ip.max, lentActive.ip.stock) },
 		fp: Number(res.fp?.value ?? 0),                              // FP has no max on a PC
 		exp: Number(res.exp?.value ?? 0), zenit: Number(res.zenit?.value ?? 0),
 		crisis: { inCrisis: !!res.hp?.inCrisis, score: Number(res.hp?.crisisScore ?? Math.floor((hp.max ?? 0) / 2)) },
@@ -3149,11 +3194,19 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		guiseId: editorG?.id ?? '', guiseName: editorG?.name ?? '',
 		bound: !!editorG?.worn, overrideOn, has: !!editorG,
 	};
+	// G4 Resources tab: a GENERIC per-actor tracked-resource store (actor flag) — Reputation and the
+	// class-specific resources (Sensitive Brainwave, Pugilist Combo Points, …) have NO FU data model, so
+	// they are tracked here by name + value (+ optional cap). No canon values invented — the GM enters them.
+	const trackedResources = (actor.getFlag?.(MODULE_ID, TRACKED_RESOURCES_FLAG) ?? []).map((r, i) => ({
+		key: String(r?.key ?? `res${i}`), label: String(r?.label ?? '').trim(),
+		value: Number(r?.value) || 0, max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null,
+	})).filter((r) => r.label);
 	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
-	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', kit: activeTab === 'kit', edit: activeTab === 'edit' };
-	if (!tab.form && !tab.bonds && !tab.study && !tab.kit && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', kit: activeTab === 'kit', edit: activeTab === 'edit' };
+	if (!tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.kit && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
 	return {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, bondsNative, bondsIsGM,
+		trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
 	};
@@ -3277,10 +3330,35 @@ async function sheetSpendFabula(actor) {
 /** Open the EXISTING GuiseBuilderApp for a guise on the actor (999191e). The builder itself enforces
  *  the fixed-at-distillation locks, the dismiss-before-edit guard, the GM override and the Edit-SL
  *  toggle — this only surfaces it; nothing is rebuilt. */
-function sheetOpenEditor(actor, guiseId) {
+async function sheetOpenEditor(actor, guiseId) {
 	const item = guiseId ? actor?.items?.get?.(guiseId) : null;
 	if (!item || !isGuiseItem(item)) { ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Sheet.NoGuiseToEdit') ?? 'No guise to edit.'); return; }
+	// G3 (Austin 4 Sep): dismiss-before-edit is a one-click "dismiss & edit", NOT a hard block — if the
+	// guise is worn, dismiss it first (bind resets), then open the builder. The builder's own fixity locks
+	// (G1) and the right-click GM override (G2) still apply inside.
+	if (getActiveGuise(actor) === item.id) await dismissGuise(actor, item.id);
 	return openGuiseBuilder(actor, item);
+}
+// ── G4 tracked-resource controls (thin; the generic Resources tab store) ──
+async function sheetAdjustTrackedResource(actor, key, delta) {
+	if (!actor || !key) return;
+	const list = actor.getFlag?.(MODULE_ID, TRACKED_RESOURCES_FLAG) ?? [];
+	await actor.setFlag(MODULE_ID, TRACKED_RESOURCES_FLAG, adjustTrackedResource(list, key, delta));
+}
+async function sheetAddTrackedResource(actor) {
+	if (!actor) return;
+	const label = await promptBondText(game.i18n?.localize?.('RIPPERS.Sheet.ResAdd') ?? 'Add a tracked resource', game.i18n?.localize?.('RIPPERS.Sheet.ResNamePrompt') ?? 'Name it (e.g. Reputation, Combo Points, Brainwave).');
+	if (!label) return;
+	const maxRaw = await promptBondText(game.i18n?.localize?.('RIPPERS.Sheet.ResCap') ?? 'Cap (optional)', game.i18n?.localize?.('RIPPERS.Sheet.ResCapPrompt') ?? 'Maximum (leave blank for no cap).');
+	const max = Number.isFinite(Number(maxRaw)) && Number(maxRaw) > 0 ? Math.floor(Number(maxRaw)) : null;
+	const list = actor.getFlag?.(MODULE_ID, TRACKED_RESOURCES_FLAG) ?? [];
+	const key = `res-${globalThis.foundry?.utils?.randomID?.() ?? Date.now()}`;
+	await actor.setFlag(MODULE_ID, TRACKED_RESOURCES_FLAG, [...list, { key, label, value: 0, max }]);
+}
+async function sheetRemoveTrackedResource(actor, key) {
+	if (!actor || !key) return;
+	const list = (actor.getFlag?.(MODULE_ID, TRACKED_RESOURCES_FLAG) ?? []).filter((r) => r?.key !== key);
+	await actor.setFlag(MODULE_ID, TRACKED_RESOURCES_FLAG, list);
 }
 /** Stash a guise — unwear it (dismiss the active guise); a no-op if it is not currently worn. */
 async function sheetStashGuise(actor, guiseId) {
@@ -3461,6 +3539,9 @@ function getRippersActorSheetClass() {
 				rest: RippersActorSheet.onRest,
 				spendFabula: RippersActorSheet.onSpendFabula,
 				openEditor: RippersActorSheet.onOpenEditor,
+				resTrackAdjust: RippersActorSheet.onResTrackAdjust,
+				resTrackAdd: RippersActorSheet.onResTrackAdd,
+				resTrackRemove: RippersActorSheet.onResTrackRemove,
 				stashGuise: RippersActorSheet.onStashGuise,
 				handOffGuise: RippersActorSheet.onHandOffGuise,
 				bondCreate: RippersActorSheet.onBondCreate,
@@ -3508,7 +3589,10 @@ function getRippersActorSheetClass() {
 		static async onRollCheck() { await sheetRollCheck(this.document); }
 		static async onRest() { await sheetRest(this.document); this.render(); }
 		static async onSpendFabula() { await sheetSpendFabula(this.document); this.render(); }
-		static onOpenEditor(event, target) { sheetOpenEditor(this.document, target?.dataset?.guise); }
+		static async onOpenEditor(event, target) { await sheetOpenEditor(this.document, target?.dataset?.guise); this.render(); }
+		static async onResTrackAdjust(event, target) { const k = target?.dataset?.key; const d = Number(target?.dataset?.dir) || 0; if (k && d) { await sheetAdjustTrackedResource(this.document, k, d); this.render(); } }
+		static async onResTrackAdd() { await sheetAddTrackedResource(this.document); this.render(); }
+		static async onResTrackRemove(event, target) { const k = target?.dataset?.key; if (k) { await sheetRemoveTrackedResource(this.document, k); this.render(); } }
 		static async onStashGuise(event, target) { const id = target?.dataset?.guise; if (id) { await sheetStashGuise(this.document, id); this.render(); } }
 		static async onHandOffGuise(event, target) {
 			const id = target?.dataset?.guise; if (!id) return;
@@ -3822,3 +3906,4 @@ export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWe
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };
 export { sheetOpenEditor, sheetStashGuise, handOffDecision, sheetHandOffGuise };
 export { deeperBondsApi, bondClockPips, bondPanelRow, buildBondPanelRows, SOLID_BOND_CAP, DEEPER_BONDS_ID };
+export { vitalBar, vitalDots, adjustTrackedResource, TRACKED_RESOURCES_FLAG, sheetAdjustTrackedResource, sheetAddTrackedResource, sheetRemoveTrackedResource };

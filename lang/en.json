@@ -248,5 +248,11 @@
   "RIPPERS.Sheet.BondSolidifyRefused": "Cannot solidify (cap reached, not fleeting, or GM only).",
   "RIPPERS.Sheet.BondEternalRefused": "Cannot promote to eternal (not solid, or GM only).",
   "RIPPERS.Sheet.BondClockRefused": "Only solid bonds carry a clock (GM only).",
-  "RIPPERS.Sheet.BondRefused": "Bond change refused (GM only)."
+  "RIPPERS.Sheet.BondRefused": "Bond change refused (GM only).",
+  "RIPPERS.Sheet.ResAdd": "Add resource",
+  "RIPPERS.Sheet.ResNamePrompt": "Name it (e.g. Reputation, Combo Points, Brainwave).",
+  "RIPPERS.Sheet.ResCap": "Cap (optional)",
+  "RIPPERS.Sheet.ResCapPrompt": "Maximum (leave blank for no cap).",
+  "RIPPERS.Sheet.ResRemove": "Remove",
+  "RIPPERS.Sheet.ResEmpty": "No tracked resources. Add Reputation or a class resource (e.g. Combo Points)."
 }

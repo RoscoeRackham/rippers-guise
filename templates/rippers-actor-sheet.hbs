@@ -22,17 +22,19 @@
 				</div>
 
 				<div class="rs-stats">
-					{{!-- HP --}}
+					{{!-- HP (bar + temporary lent overlay; number in parens per X1) --}}
 					<span class="rs-stat rs-stat-hp {{#if vm.vitals.crisis.inCrisis}}rs-stat-crisis-on{{/if}}">
 						<span class="rs-stat-label">HP</span>
-						<span class="rs-stat-num">{{vm.vitals.hp.value}} / {{vm.vitals.hp.max}}</span>
+						<span class="rs-stat-num">{{vm.vitals.hp.bar.display}} / {{vm.vitals.hp.max}}</span>
+						<span class="rs-bar rs-bar-hp"><span class="rs-bar-fill" style="width:{{vm.vitals.hp.bar.basePct}}%"></span>{{#if vm.vitals.hp.bar.lent}}<span class="rs-bar-lent" style="width:{{vm.vitals.hp.bar.lentPct}}%"></span>{{/if}}</span>
 						<span class="rs-stat-sub">{{localize 'RIPPERS.Sheet.Crisis'}} {{vm.vitals.crisis.score}}</span>
 						<span class="rs-step"><button data-action="resAdjust" data-res="hp" data-dir="-1" title="{{localize 'RIPPERS.Sheet.Damage'}}">&minus;</button><button data-action="resAdjust" data-res="hp" data-dir="1" title="{{localize 'RIPPERS.Sheet.Heal'}}">+</button></span>
 					</span>
-					{{!-- MP --}}
+					{{!-- MP (bar + temporary lent overlay) --}}
 					<span class="rs-stat rs-stat-mp">
 						<span class="rs-stat-label">MP</span>
-						<span class="rs-stat-num">{{vm.vitals.mp.value}} / {{vm.vitals.mp.max}}</span>
+						<span class="rs-stat-num">{{vm.vitals.mp.bar.display}} / {{vm.vitals.mp.max}}</span>
+						<span class="rs-bar rs-bar-mp"><span class="rs-bar-fill" style="width:{{vm.vitals.mp.bar.basePct}}%"></span>{{#if vm.vitals.mp.bar.lent}}<span class="rs-bar-lent" style="width:{{vm.vitals.mp.bar.lentPct}}%"></span>{{/if}}</span>
 						<span class="rs-step"><button data-action="resAdjust" data-res="mp" data-dir="-1">&minus;</button><button data-action="resAdjust" data-res="mp" data-dir="1">+</button></span>
 					</span>
 					{{!-- DEF / MDEF --}}
@@ -46,10 +48,11 @@
 						<span class="rs-stat-num">{{vm.vitals.fp}}</span>
 						<span class="rs-step"><button data-action="spendFabula" title="{{localize 'RIPPERS.Sheet.SpendFabula'}}">{{localize 'RIPPERS.Sheet.Spend'}}</button></span>
 					</span>
-					{{!-- IP --}}
+					{{!-- IP (dots per H5; temporary lent dots + parens number) --}}
 					<span class="rs-stat rs-stat-small">
 						<span class="rs-stat-label">IP</span>
-						<span class="rs-stat-num">{{vm.vitals.ip.value}} / {{vm.vitals.ip.max}}</span>
+						<span class="rs-stat-num">{{vm.vitals.ip.dots.display}} / {{vm.vitals.ip.max}}</span>
+						<span class="rs-ipdots">{{#each vm.vitals.ip.dots.dots as |d|}}<span class="rs-ipdot{{#if d.filled}} filled{{/if}}"></span>{{/each}}{{#each vm.vitals.ip.dots.lentDots as |d|}}<span class="rs-ipdot temp"></span>{{/each}}</span>
 						<span class="rs-step"><button data-action="resAdjust" data-res="ip" data-dir="-1">&minus;</button><button data-action="resAdjust" data-res="ip" data-dir="1">+</button></span>
 					</span>
 				</div>
@@ -78,7 +81,8 @@
 						{{/each}}
 					</div>
 				{{/if}}
-				<div class="rs-worn-tag">{{#if vm.worn}}{{localize 'RIPPERS.Sheet.GuiseWorn'}} — {{vm.wornName}}{{else}}{{localize 'RIPPERS.Sheet.Unmasked'}}{{/if}}</div>
+				{{!-- H1: worn-guise indicator = violet tag showing the guise's NAME --}}
+				<div class="rs-worn-tag {{#if vm.worn}}rs-worn-violet{{/if}}">{{#if vm.worn}}{{vm.wornName}}{{else}}{{localize 'RIPPERS.Sheet.Unmasked'}}{{/if}}</div>
 			</div>
 		</div>
 
@@ -180,6 +184,29 @@
 					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Theme'}}</span><span class="rs-study-val">{{vm.masthead.theme}}</span>
 					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Origin'}}</span><span class="rs-study-val">{{vm.masthead.origin}}</span>
 					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Pronouns'}}</span><span class="rs-study-val">{{vm.masthead.pronouns}}</span>
+				</div>
+			{{/if}}
+
+			{{#if vm.tab.resources}}
+				{{!-- G4: Reputation + class-specific resources (Brainwave, Combo Points, …) — a generic tracker;
+				      these have no FU data model, so they're per-actor tracked counters (add by name). --}}
+				<div class="rs-res-tab">
+					{{#if vm.trackedResources.length}}
+						<div class="rs-resgrid">
+							{{#each vm.trackedResources as |r|}}
+								<div class="rs-rescard">
+									<span class="rs-res-name">{{r.label}}</span>
+									<span class="rs-res-num">{{r.value}}{{#if r.max}} / {{r.max}}{{/if}}</span>
+									<span class="rs-step">
+										<button data-action="resTrackAdjust" data-key="{{r.key}}" data-dir="-1">&minus;</button>
+										<button data-action="resTrackAdjust" data-key="{{r.key}}" data-dir="1">+</button>
+										<button data-action="resTrackRemove" data-key="{{r.key}}" title="{{localize 'RIPPERS.Sheet.ResRemove'}}">✕</button>
+									</span>
+								</div>
+							{{/each}}
+						</div>
+					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.ResEmpty'}}</p>{{/if}}
+					<div class="rs-res-controls"><button class="rs-btn" data-action="resTrackAdd">＋ {{localize 'RIPPERS.Sheet.ResAdd'}}</button></div>
 				</div>
 			{{/if}}
 

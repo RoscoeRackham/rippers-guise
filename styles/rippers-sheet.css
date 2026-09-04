@@ -12,6 +12,7 @@
 	--rs-border: #2b1d16; --rs-border-red: #4a1a22;
 	--rs-red: #c8102a; --rs-bone: #e8dccb; --rs-bone-dim: #c9b8a8; --rs-muted: #8a7568;
 	--rs-green: #4bbf9a; --rs-vuln: #ff5a6a;
+	--rs-violet: #7b4bd8; --rs-gold: #c9a227;  /* X3 canonical (Austin 4 Sep): guise violet + gold */
 	--rs-disp: 'Grenze Gotisch','Cinzel',Georgia,serif;
 	--rs-verb: 'Pirata One','Grenze Gotisch',fantasy,serif;
 	--rs-mono: 'IBM Plex Mono',ui-monospace,monospace;
@@ -130,6 +131,21 @@
 .rippers-sheet .rs-btn { font-family: var(--rs-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .08em; padding: 3px 8px; border: 1px solid var(--rs-border-red); background: var(--rs-panel); color: var(--rs-bone-dim); cursor: pointer; }
 .rippers-sheet .rs-btn:hover { color: var(--rs-bone); border-color: var(--rs-red); }
 .rippers-sheet .rs-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* X1/H5: vital bars with a temporary (lent) shield overlay + IP dots. Violet worn-guise tag (H1). */
+.rippers-sheet .rs-bar { display: flex; width: 100%; height: 6px; margin-top: 3px; background: var(--rs-panel); border: 1px solid var(--rs-border); overflow: hidden; }
+.rippers-sheet .rs-bar-fill { height: 100%; background: var(--rs-red); }
+.rippers-sheet .rs-bar-mp .rs-bar-fill { background: #3a6ea5; }
+.rippers-sheet .rs-bar-lent { height: 100%; background: repeating-linear-gradient(45deg, var(--rs-gold, #c9a227), var(--rs-gold, #c9a227) 3px, transparent 3px, transparent 6px); }
+.rippers-sheet .rs-ipdots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
+.rippers-sheet .rs-ipdot { width: 7px; height: 7px; border: 1px solid var(--rs-border); border-radius: 50%; background: transparent; }
+.rippers-sheet .rs-ipdot.filled { background: var(--rs-bone-dim); }
+.rippers-sheet .rs-ipdot.temp { background: var(--rs-gold, #c9a227); border-color: var(--rs-gold, #c9a227); }
+.rippers-sheet .rs-worn-violet { color: #fff; background: var(--rs-violet, #7b4bd8); border-color: var(--rs-violet, #7b4bd8); }
+.rippers-sheet .rs-resgrid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; }
+.rippers-sheet .rs-rescard { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--rs-card); border: 1px solid var(--rs-border); padding: 10px 12px; clip-path: var(--rs-notch); }
+.rippers-sheet .rs-res-name { font-family: var(--rs-disp); font-weight: 800; font-size: 16px; color: var(--rs-bone); }
+.rippers-sheet .rs-res-num { font-family: var(--rs-mono); font-size: 13px; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-res-controls { margin-top: 10px; }
 .rippers-sheet .rs-study { display: grid; grid-template-columns: 100px 1fr; gap: 6px 14px; background: var(--rs-card); border: 1px solid var(--rs-border); padding: 14px; }
 .rippers-sheet .rs-study-label { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .16em; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-study-val { font-family: var(--rs-body); font-size: 15px; line-height: 1.55; color: var(--rs-bone); }

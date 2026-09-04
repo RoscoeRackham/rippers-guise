@@ -74,9 +74,13 @@ test('buildRippersSheetVM binds the masthead + vitals + crisis from real actor.s
 	assert.equal(vm.masthead.identity, 'The Masked Duelist');
 	assert.equal(vm.masthead.pronouns, 'she/her');
 	assert.equal(vm.masthead.theme, 'Vengeance');
-	assert.deepEqual(vm.vitals.hp, { value: 20, max: 55 });
-	assert.deepEqual(vm.vitals.mp, { value: 10, max: 40 });
-	assert.deepEqual(vm.vitals.ip, { value: 4, max: 6 });
+	assert.equal(vm.vitals.hp.value, 20); assert.equal(vm.vitals.hp.max, 55);
+	assert.equal(vm.vitals.mp.value, 10); assert.equal(vm.vitals.mp.max, 40);
+	assert.equal(vm.vitals.ip.value, 4); assert.equal(vm.vitals.ip.max, 6);
+	// X1: vitals carry a lent-overlay bar/dots (the worn guise w1 lends HP 3 in the stub)
+	assert.equal(vm.vitals.hp.bar.display, '20 (+3)');
+	assert.equal(vm.vitals.hp.bar.lent, 3);
+	assert.ok(Array.isArray(vm.vitals.ip.dots.dots));
 	assert.equal(vm.vitals.fp, 3);
 	assert.equal(vm.vitals.exp, 8);
 	assert.equal(vm.vitals.crisis.inCrisis, true);
@@ -417,4 +421,48 @@ test('actorSpecialtyCap: 4 when Talented, 2 otherwise (mirrors the builder cap)'
 	assert.equal(actorSpecialtyCap(talentedActor({ talented: true })), 4);
 	assert.equal(actorSpecialtyCap(talentedActor({ talented: false })), 2);
 	assert.equal(actorSpecialtyCap(talentedActor({ quirkTalented: true })), 4);
+});
+
+// ── Unit 1: lent-vital display (X1/H5) + Resources tab (G4) ───────────────────
+const { vitalBar, vitalDots, adjustTrackedResource, TRACKED_RESOURCES_FLAG } = mod;
+
+test('vitalBar: plain number with no lent; parens + overlay segment when lent > 0', () => {
+	const plain = vitalBar(20, 55, 0);
+	assert.equal(plain.display, '20');
+	assert.equal(plain.lentPct, 0);
+	assert.equal(plain.fillPct, 36);                 // 20/55
+	const lent = vitalBar(45, 50, 8);
+	assert.equal(lent.display, '45 (+8)');           // X1 parens
+	assert.equal(lent.lent, 8);
+	assert.ok(lent.lentPct > 0 && lent.basePct > 0); // shield sits atop the bar
+	assert.equal(vitalBar(0, 0, 0).display, '0');    // no max, no lent
+});
+
+test('vitalDots: base dots filled to value, extra temporary lent dots, parens number', () => {
+	const d = vitalDots(4, 6, 2);
+	assert.equal(d.dots.length, 6);
+	assert.equal(d.dots.filter((x) => x.filled).length, 4);
+	assert.equal(d.lentDots.length, 2);
+	assert.equal(d.display, '4 (+2)');
+	assert.equal(vitalDots(3, 6, 0).display, '3');
+});
+
+test('adjustTrackedResource: clamps 0..max when a cap is set, unbounded otherwise', () => {
+	const list = [{ key: 'a', label: 'Reputation', value: 2, max: 5 }, { key: 'b', label: 'Combo', value: 0 }];
+	assert.equal(adjustTrackedResource(list, 'a', 4).find((r) => r.key === 'a').value, 5); // clamp to max
+	assert.equal(adjustTrackedResource(list, 'a', -5).find((r) => r.key === 'a').value, 0); // clamp to 0
+	assert.equal(adjustTrackedResource(list, 'b', 9).find((r) => r.key === 'b').value, 9); // no cap
+	assert.deepEqual(adjustTrackedResource(list, 'zzz', 1), list);                          // unknown key: untouched
+});
+
+test('buildRippersSheetVM: Resources tab binds tracked resources from the actor flag', async () => {
+	const a = actorStub();
+	a.getFlag = (m, k) => (m === RGID && k === TRACKED_RESOURCES_FLAG
+		? [{ key: 'rep', label: 'Reputation', value: 3, max: 5 }, { key: 'x', label: '', value: 1 }]
+		: (m === RGID ? { activeGuise: 'w1' }[k] : undefined));
+	const vm = await buildRippersSheetVM(a, { activeTab: 'resources' });
+	assert.equal(vm.tab.resources, true);
+	assert.equal(vm.trackedResources.length, 1);      // the empty-label row is dropped
+	assert.equal(vm.trackedResources[0].label, 'Reputation');
+	assert.equal(vm.trackedResources[0].max, 5);
 });
