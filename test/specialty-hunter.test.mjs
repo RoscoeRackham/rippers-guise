@@ -22,6 +22,7 @@ const {
 	HW_MATERIALS, emptyGuiseDraft, guiseDraftToData, SPECIALTY_LIST, validateGuiseDraft,
 	actorSpecialties, armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG, draftKey,
 	actorHunterWeapon, isHunterWeapon,
+	CHECK_BUMP_KINDS, checkBumpEligible, flatCheckModifier,
 } = mod;
 
 const CU = (n) => `Compendium.x.classes.Item.${n}`;
@@ -180,4 +181,37 @@ test('Specialties + Hunter Weapon stay invariant through a swap A → B → none
 	a._flags.activeGuise = null;
 	assert.deepEqual(readSpecs(), ['Arts', 'Seamanship']);
 	assert.deepEqual(readHW(), { id: 'hw1', marked: true });
+});
+
+// --- Phase 2a: the generalized check-bump seam (die + flat) --------------------
+test('CHECK_BUMP_KINDS is exactly the two kinds', () => {
+	assert.deepEqual([...CHECK_BUMP_KINDS], ['die', 'flat']);
+});
+
+test("checkBumpEligible: 'die' keeps the Specialty carve-out; specialtyBumpEligible now rides it", () => {
+	// die-bump = the Specialty rule: never Magic/Accuracy/display, everything else allowed.
+	for (const t of ['magic', 'accuracy', 'display']) assert.equal(checkBumpEligible('die', t), false);
+	for (const t of ['open', 'attribute', 'opposed', 'group', 'support', 'ritual']) assert.equal(checkBumpEligible('die', t), true);
+	assert.equal(checkBumpEligible('die', ''), false);
+	// specialtyBumpEligible is now defined as the 'die' arm — identical results, one source of truth.
+	for (const t of ['magic', 'accuracy', 'display', 'open', 'attribute', 'ritual', '']) {
+		assert.equal(specialtyBumpEligible(t), checkBumpEligible('die', t));
+	}
+});
+
+test("checkBumpEligible: 'flat' has no Magic/Accuracy carve-out (only 'display' is excluded)", () => {
+	// A flat check bonus (Robot's +2) is not the Specialty die-bump — it may ride magic/accuracy too;
+	// WHICH checks it actually applies to (subject-scope) is the consumer's predicate, not this gate.
+	for (const t of ['open', 'attribute', 'magic', 'accuracy', 'opposed', 'ritual']) assert.equal(checkBumpEligible('flat', t), true);
+	assert.equal(checkBumpEligible('flat', 'display'), false); // not a real check
+	assert.equal(checkBumpEligible('flat', ''), false);
+});
+
+test('flatCheckModifier builds the FU check.modifiers {label,value:int} entry, or null for nothing', () => {
+	assert.deepEqual(flatCheckModifier(2, 'RIPPERS.Quirk.Robot'), { label: 'RIPPERS.Quirk.Robot', value: 2 });
+	assert.deepEqual(flatCheckModifier(2.9, 'x'), { label: 'x', value: 2 });   // truncated to int
+	assert.deepEqual(flatCheckModifier(-1, 'y'), { label: 'y', value: -1 });    // negatives allowed
+	assert.equal(flatCheckModifier(0, 'z'), null);                              // adds nothing → null
+	assert.equal(flatCheckModifier('nope', 'z'), null);                        // non-numeric → null
+	assert.equal(flatCheckModifier(1).label, 'RIPPERS.Specialty.Arm');         // default label
 });

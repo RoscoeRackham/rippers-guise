@@ -1410,7 +1410,39 @@ const draftIsTalented = (draft) => !!draft?.talented;
 // ARMS the bump for their next check; the prepareCheck hook applies it iff the check type is eligible.
 // FU check types: attribute · accuracy · magic · open · opposed · group · support · ritual · display.
 const SPECIALTY_EXCLUDED_CHECKS = Object.freeze(['magic', 'accuracy', 'display']); // display isn't a real check
-const specialtyBumpEligible = (checkType) => !!checkType && !SPECIALTY_EXCLUDED_CHECKS.includes(checkType);
+
+// ── Phase 2a: the generalized check-time BUMP seam ────────────────────────────
+// ONE reusable check-time mechanism, two bump KINDS:
+//   'die'  — improve one attribute die's size (the Specialty / Talented / Innate consumers, v0.7.1):
+//            a transient raise of actor.system.attributes[attr].current, restored post-roll.
+//   'flat' — add a flat +N to the check total via FU's check.modifiers. CONFIRMED API (FoundryVTT-
+//            Fabula-Ultima-dev/module/checks/checks.mjs): the system does `check.modifiers ??= []`
+//            then `check.modifiers.push({label, value})`, summed at :438 (`modifierTotal`). The check
+//            object is per-roll and Object.seal()'d (arrays still push), so a flat modifier needs NO
+//            restore — unlike the die path. Robot's "+2 to Checks involving machines/technology/
+//            constructs" is the intended 'flat' consumer (a STANDING bonus, per god's dispatch).
+// Eligibility differs by kind: a die-bump never touches Magic/Accuracy (Austin's Specialty ruling);
+// a flat check bonus has no such carve-out — it excludes only 'display' (not a real check). WHICH
+// checks a flat bonus applies to (its SUBJECT-scope) is the CONSUMER's predicate — for Robot that
+// predicate (auto-on-target-species vs player-armed relevance) is ⚠ owed pending Austin's ruling
+// (flagged to god 4 Sep 2026): FU checks carry no machines/tech/constructs subject tag, so it cannot
+// be inferred here. This seam deliberately leaves the predicate to the consumer.
+const CHECK_BUMP_KINDS = Object.freeze(['die', 'flat']);
+/** Is a bump of `kind` allowed on a check of `checkType`? Pure. (Subject-scope is the consumer's job.) */
+function checkBumpEligible(kind, checkType) {
+	if (!checkType || checkType === 'display') return false; // display isn't a real check
+	if (kind === 'die') return !SPECIALTY_EXCLUDED_CHECKS.includes(checkType);
+	return true; // 'flat': any real check (incl. magic/accuracy) — the consumer's predicate scopes it
+}
+/** Build one FU check-modifier entry {label, value:int} for a 'flat' bump (checks.mjs shape), or null
+ *  if it would add nothing. Pure. Applied at prepareCheck via check.modifiers.push (no restore). */
+function flatCheckModifier(value, label) {
+	const v = Math.trunc(Number(value) || 0);
+	if (!v) return null;
+	return { label: String(label ?? 'RIPPERS.Specialty.Arm'), value: v };
+}
+// The Specialty die-bump's eligibility is now the general seam's 'die' arm (one place for the rule).
+const specialtyBumpEligible = (checkType) => checkBumpEligible('die', checkType);
 const CHECK_DIE_SIZES = Object.freeze([6, 8, 10, 12]); // FU attribute dice (d20 = Apex, not a Specialty target)
 /** Improve an attribute die one size, capped at d12. Unknown faces pass through. Pure. */
 function improveDieSize(faces) {
@@ -2796,6 +2828,8 @@ export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TAL
 export { guiseStepErrors, draftRawSpent, draftClassSpent, SPECIALTY_ATTRIBUTES };
 // v0.7.1 follow-up — Specialty die-bump (excl. magic/accuracy) + Hunter-Weapon-in-Innate authoring.
 export { SPECIALTY_EXCLUDED_CHECKS, specialtyBumpEligible, CHECK_DIE_SIZES, improveDieSize, chooseBumpSlot, HW_MATERIALS, actorInnateGuise, actorSpecialties };
+// Phase 2a: the generalized check-bump seam (die + flat).
+export { CHECK_BUMP_KINDS, checkBumpEligible, flatCheckModifier };
 // ROS-29 — character-invariant reads of the Specialty source (innate guise) + the Hunter Weapon.
 export { actorHunterWeapon };
 // v0.7.3 — Specialty arm/disarm (sheet button + macro/API).
