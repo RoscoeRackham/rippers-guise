@@ -1048,6 +1048,30 @@ function onDamagePostLentSplit(context) {
 	} catch (err) { console.error('[rippers-guise] lent-HP damage split failed:', err); }
 }
 
+// MP-LAYER-ROUTING: the lent-MP layer is spent before own MP for every spell/skill/feature MP cost —
+// the CALCULATE_EXPENSE_EVENT is FU's clean pre-apply, mutable expense hook (event.expense.amount is
+// read back at common-sections.mjs and only the remainder is debited from own MP). This mirrors the
+// lent-HP damage split. Canon (RULE-guise-lent-vitals §1: "Damage and MP costs consume the layer
+// first"): only MP COSTS draw the lent-MP layer here — HP-cost abilities are neither damage nor an MP
+// cost, so they hit own HP directly (damage is covered by the pipeline split above). Uses the same
+// kind-agnostic lentHpAbsorbPlan(amount, lentCurrent).
+function onCalculateExpenseLentMp(event) {
+	try {
+		const expense = event?.expense;
+		if (!expense || expense.resource !== 'mp') return;
+		const actor = event?.source?.actor;
+		if (!actor) return;
+		const guise = activeGuiseItem(actor);
+		if (!guise) return;
+		const layer = normalizeLentLayer(guise.system?.data?.lentMp);
+		if (layer.current <= 0) return;
+		const plan = lentHpAbsorbPlan(expense.amount, layer.current); // absorb math is kind-agnostic
+		if (plan.absorb <= 0) return;
+		expense.amount = plan.remainder;                 // FU debits only the remainder from own MP
+		setGuiseLentCurrent(guise, 'mp', plan.newLent).catch((err) => console.warn('[rippers-guise] lent-MP write failed:', err));
+	} catch (err) { console.error('[rippers-guise] lent-MP expense split failed:', err); }
+}
+
 // ---------------------------------------------------------------------------
 // BENEFIT-PICK POOL (Case B — god 2026-08-23; source: GUISES-core-rules.md §1 "Innate Benefits").
 // Austin's ruleset: classes grant NO innate benefits (own OR guise-worn) — every benefit comes from
@@ -3082,6 +3106,12 @@ async function fuAdapter() {
  *  sign is the loss/gain switch (recon-confirmed). Falls back to a clamped direct update on import drift. */
 async function sheetAdjustResource(actor, resourceType, amount) {
 	if (!actor || !['hp', 'mp', 'ip'].includes(resourceType) || !amount) return;
+	// MP-LAYER-ROUTING: a SPEND of MP (amount<0) draws the worn guise's lent-MP layer FIRST, then own —
+	// the applyResourceCost seam (lent-then-own), mirroring the lent-HP damage intercept. (HP spend on this
+	// manual stepper is intentionally NOT lent-routed here: real HP damage is intercepted on the damage
+	// pipeline in P3; this stepper is a manual nudge. Heals/gains, amount>0, never touch the lent layer —
+	// only a rest refills it.)
+	if (resourceType === 'mp' && amount < 0) { await applyResourceCost(actor, 'mp', -amount); return; }
 	try {
 		const { ResourceRequest, ResourcePipeline, InlineSourceInfo } = await fuAdapter();
 		const req = new ResourceRequest(InlineSourceInfo.fromInstance(actor), [actor], resourceType, amount, false);
@@ -3527,6 +3557,8 @@ Hooks.once('ready', async () => {
 	// P3: lent-vitals auto-intercept — the worn guise's lent-HP layer absorbs damage before own HP.
 	// POST_CALCULATE (result is final/post-affinity; amount-modifier quirks ran at PRE). HP only.
 	Hooks.on(globalThis.game?.projectfu?.FUHooks?.DAMAGE_PIPELINE_POST_CALCULATE ?? 'projectfu.pipelines.damage.postCalculate', onDamagePostLentSplit);
+	// MP-LAYER-ROUTING: spend the lent-MP layer before own MP on every spell/skill/feature MP cost.
+	Hooks.on(globalThis.game?.projectfu?.FUHooks?.CALCULATE_EXPENSE_EVENT ?? 'projectfu.events.calculateExpense', onCalculateExpenseLentMp);
 	const mod = game.modules.get(MODULE_ID);
 	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
@@ -3557,7 +3589,7 @@ export { actorHunterWeapon };
 export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
-export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit };
+export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
 export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };

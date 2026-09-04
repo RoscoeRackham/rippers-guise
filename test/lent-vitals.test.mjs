@@ -135,7 +135,7 @@ test('restRefillActorGuises: every LIVE guise refills lent HP/MP to max; IP satc
 });
 
 // ── P3: lent-HP auto-intercept on the damage pipeline (POST_CALCULATE result split) ──
-const { lentHpAbsorbPlan, onDamagePostLentSplit } = mod;
+const { lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp, sheetAdjustResource } = mod;
 
 test('lentHpAbsorbPlan: the layer absorbs first, the remainder lands on own HP; debits exactly once', () => {
 	assert.deepEqual(lentHpAbsorbPlan(6, 4), { absorb: 4, remainder: 2, newLent: 0 });   // partial: 4 lent + 2 own
@@ -187,4 +187,41 @@ test('onDamagePostLentSplit: MP-loss damage (mind-point-loss trait) is NOT absor
 	assert.equal(ctx.result, 6);                          // untouched — this is MP damage, not HP
 	await new Promise((r) => setTimeout(r, 0));
 	assert.equal(g.system.data.lentHp.current, 4);       // layer not debited
+});
+
+// ── MP-LAYER-ROUTING: lent-MP spent-before-own (expense hook + sheet stepper) ──
+test('onCalculateExpenseLentMp: an MP cost draws the worn guise lent-MP layer first; FU debits the remainder', async () => {
+	const g = guiseItem('g1', { lentMp: { current: 4, maximum: 6 } });
+	const actor = actorWith([g], { active: 'g1' });
+	const expense = { resource: 'mp', amount: 6 };
+	onCalculateExpenseLentMp({ expense, source: { actor } });
+	assert.equal(expense.amount, 2);                      // 4 off the lent layer, FU debits 2 from own MP
+	await new Promise((r) => setTimeout(r, 0));
+	assert.equal(g.system.data.lentMp.current, 0);       // lent-MP debited once
+});
+
+test('onCalculateExpenseLentMp: non-MP expense, no worn guise, or empty layer → expense.amount untouched', async () => {
+	const g = guiseItem('g1', { lentMp: { current: 4, maximum: 6 } });
+	const actor = actorWith([g], { active: 'g1' });
+	const hpCost = { resource: 'hp', amount: 5 };         // an HP cost is not MP → not lent-absorbed here
+	onCalculateExpenseLentMp({ expense: hpCost, source: { actor } });
+	assert.equal(hpCost.amount, 5);
+	const empty = actorWith([guiseItem('g2', { lentMp: { current: 0, maximum: 6 } })], { active: 'g2' });
+	const c2 = { resource: 'mp', amount: 5 }; onCalculateExpenseLentMp({ expense: c2, source: { actor: empty } });
+	assert.equal(c2.amount, 5);                           // empty layer → no change
+	const unworn = actorWith([guiseItem('g3', { lentMp: { current: 4, maximum: 6 } })], { active: null });
+	const c3 = { resource: 'mp', amount: 5 }; onCalculateExpenseLentMp({ expense: c3, source: { actor: unworn } });
+	assert.equal(c3.amount, 5);                           // no worn guise → no change
+});
+
+test('sheetAdjustResource: the MP stepper SPEND draws lent-MP first; a heal does not touch the layer', async () => {
+	const g = guiseItem('g1', { lentMp: { current: 4, maximum: 6 } });
+	const actor = actorWith([g], { active: 'g1', mp: 10 });
+	await sheetAdjustResource(actor, 'mp', -6);           // spend 6 → 4 lent + 2 own
+	assert.equal(g.system.data.lentMp.current, 0);
+	assert.equal(actor.system.resources.mp.value, 8);    // 10 - 2 own
+	// a heal (+2) is recovery — never refills the lent layer; in node the FU import fails → clamped own +2
+	await sheetAdjustResource(actor, 'mp', 2);
+	assert.equal(g.system.data.lentMp.current, 0);       // layer untouched by a heal
+	assert.equal(actor.system.resources.mp.value, 10);   // own refilled to 10 (fallback clamp)
 });
