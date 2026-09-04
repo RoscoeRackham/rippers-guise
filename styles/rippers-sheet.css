@@ -13,6 +13,7 @@
 	--rs-red: #c8102a; --rs-bone: #e8dccb; --rs-bone-dim: #c9b8a8; --rs-muted: #8a7568;
 	--rs-green: #4bbf9a; --rs-vuln: #ff5a6a;
 	--rs-violet: #7b4bd8; --rs-gold: #c9a227;  /* X3 canonical (Austin 4 Sep): guise violet + gold */
+	--rs-mp: #2f6fb0;                          /* ruled MP steel-blue (2a Slash, action-hud.card) */
 	--rs-disp: 'Grenze Gotisch','Cinzel',Georgia,serif;
 	--rs-verb: 'Pirata One','Grenze Gotisch',fantasy,serif;
 	--rs-mono: 'IBM Plex Mono',ui-monospace,monospace;
@@ -132,14 +133,17 @@
 .rippers-sheet .rs-btn:hover { color: var(--rs-bone); border-color: var(--rs-red); }
 .rippers-sheet .rs-btn:disabled { opacity: .4; cursor: not-allowed; }
 /* X1/H5: vital bars with a temporary (lent) shield overlay + IP dots. Violet worn-guise tag (H1). */
-.rippers-sheet .rs-bar { display: flex; width: 100%; height: 6px; margin-top: 3px; background: var(--rs-panel); border: 1px solid var(--rs-border); overflow: hidden; }
+/* Ruled resource display (H5/X1, 2a Slash — action-hud.card): HP #c8102a bar, MP #2f6fb0 bar, IP gold
+   square pips, lent = gold hatched overlay PAST the fill + amount in gold parens e.g. 18 (+4) / 30. */
+.rippers-sheet .rs-bar { display: flex; width: 100%; height: 8px; margin-top: 3px; background: var(--rs-card); border: 1px solid var(--rs-border); overflow: hidden; }
 .rippers-sheet .rs-bar-fill { height: 100%; background: var(--rs-red); }
-.rippers-sheet .rs-bar-mp .rs-bar-fill { background: #3a6ea5; }
-.rippers-sheet .rs-bar-lent { height: 100%; background: repeating-linear-gradient(45deg, var(--rs-gold, #c9a227), var(--rs-gold, #c9a227) 3px, transparent 3px, transparent 6px); }
-.rippers-sheet .rs-ipdots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
-.rippers-sheet .rs-ipdot { width: 7px; height: 7px; border: 1px solid var(--rs-border); border-radius: 50%; background: transparent; }
-.rippers-sheet .rs-ipdot.filled { background: var(--rs-bone-dim); }
-.rippers-sheet .rs-ipdot.temp { background: var(--rs-gold, #c9a227); border-color: var(--rs-gold, #c9a227); }
+.rippers-sheet .rs-bar-mp .rs-bar-fill { background: var(--rs-mp, #2f6fb0); }
+.rippers-sheet .rs-bar-lent { height: 100%; background: repeating-linear-gradient(45deg, rgba(201,162,39,.85) 0 3px, rgba(201,162,39,.25) 3px 6px); }
+.rippers-sheet .rs-lent-num { color: var(--rs-gold, #c9a227); }
+.rippers-sheet .rs-ipdots { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.rippers-sheet .rs-ipdot { width: 11px; height: 11px; border: 1px solid var(--rs-border); background: var(--rs-card2); } /* square pip, off */
+.rippers-sheet .rs-ipdot.filled { background: var(--rs-gold, #c9a227); border-color: var(--rs-gold, #c9a227); }
+.rippers-sheet .rs-ipdot.temp { background: repeating-linear-gradient(45deg, rgba(201,162,39,.9) 0 2px, rgba(201,162,39,.3) 2px 4px); border-color: var(--rs-gold, #c9a227); } /* lent IP: hatched gold */
 .rippers-sheet .rs-worn-violet { color: #fff; background: var(--rs-violet, #7b4bd8); border-color: var(--rs-violet, #7b4bd8); }
 .rippers-sheet .rs-resgrid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; }
 /* V3–V5 Party Vault (thin; Austin owns the visual design) */

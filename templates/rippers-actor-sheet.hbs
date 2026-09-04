@@ -25,7 +25,7 @@
 					{{!-- HP (bar + temporary lent overlay; number in parens per X1) --}}
 					<span class="rs-stat rs-stat-hp {{#if vm.vitals.crisis.inCrisis}}rs-stat-crisis-on{{/if}}">
 						<span class="rs-stat-label">HP</span>
-						<span class="rs-stat-num">{{vm.vitals.hp.bar.display}} / {{vm.vitals.hp.max}}</span>
+						<span class="rs-stat-num">{{vm.vitals.hp.bar.value}}{{#if vm.vitals.hp.bar.lent}} <span class="rs-lent-num">(+{{vm.vitals.hp.bar.lent}})</span>{{/if}} / {{vm.vitals.hp.max}}</span>
 						<span class="rs-bar rs-bar-hp"><span class="rs-bar-fill" style="width:{{vm.vitals.hp.bar.basePct}}%"></span>{{#if vm.vitals.hp.bar.lent}}<span class="rs-bar-lent" style="width:{{vm.vitals.hp.bar.lentPct}}%"></span>{{/if}}</span>
 						<span class="rs-stat-sub">{{localize 'RIPPERS.Sheet.Crisis'}} {{vm.vitals.crisis.score}}</span>
 						<span class="rs-step"><button data-action="resAdjust" data-res="hp" data-dir="-1" title="{{localize 'RIPPERS.Sheet.Damage'}}">&minus;</button><button data-action="resAdjust" data-res="hp" data-dir="1" title="{{localize 'RIPPERS.Sheet.Heal'}}">+</button></span>
@@ -33,7 +33,7 @@
 					{{!-- MP (bar + temporary lent overlay) --}}
 					<span class="rs-stat rs-stat-mp">
 						<span class="rs-stat-label">MP</span>
-						<span class="rs-stat-num">{{vm.vitals.mp.bar.display}} / {{vm.vitals.mp.max}}</span>
+						<span class="rs-stat-num">{{vm.vitals.mp.bar.value}}{{#if vm.vitals.mp.bar.lent}} <span class="rs-lent-num">(+{{vm.vitals.mp.bar.lent}})</span>{{/if}} / {{vm.vitals.mp.max}}</span>
 						<span class="rs-bar rs-bar-mp"><span class="rs-bar-fill" style="width:{{vm.vitals.mp.bar.basePct}}%"></span>{{#if vm.vitals.mp.bar.lent}}<span class="rs-bar-lent" style="width:{{vm.vitals.mp.bar.lentPct}}%"></span>{{/if}}</span>
 						<span class="rs-step"><button data-action="resAdjust" data-res="mp" data-dir="-1">&minus;</button><button data-action="resAdjust" data-res="mp" data-dir="1">+</button></span>
 					</span>
@@ -51,7 +51,7 @@
 					{{!-- IP (dots per H5; temporary lent dots + parens number) --}}
 					<span class="rs-stat rs-stat-small">
 						<span class="rs-stat-label">IP</span>
-						<span class="rs-stat-num">{{vm.vitals.ip.dots.display}} / {{vm.vitals.ip.max}}</span>
+						<span class="rs-stat-num">{{vm.vitals.ip.dots.value}}{{#if vm.vitals.ip.dots.lent}} <span class="rs-lent-num">(+{{vm.vitals.ip.dots.lent}})</span>{{/if}} / {{vm.vitals.ip.max}}</span>
 						<span class="rs-ipdots">{{#each vm.vitals.ip.dots.dots as |d|}}<span class="rs-ipdot{{#if d.filled}} filled{{/if}}"></span>{{/each}}{{#each vm.vitals.ip.dots.lentDots as |d|}}<span class="rs-ipdot temp"></span>{{/each}}</span>
 						<span class="rs-step"><button data-action="resAdjust" data-res="ip" data-dir="-1">&minus;</button><button data-action="resAdjust" data-res="ip" data-dir="1">+</button></span>
 					</span>
