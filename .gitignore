@@ -1,3 +1,7 @@
 node_modules/
 /packs/
 *.zip
+
+# Local-only copyrighted art (home-game use; side-loaded on Forge, never pushed)
+assets/arcana/
+assets/portraits/
