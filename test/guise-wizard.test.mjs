@@ -508,7 +508,7 @@ function stubActor({ level = 5 } = {}) {
 	let n = 1;
 	const items = { _docs: docs, get: (id) => docs.find((d) => d.id === id) ?? null, find: (fn) => docs.find(fn) ?? null, filter: (fn) => docs.filter(fn) };
 	const actor = {
-		system: { level: { value: level }, equipped: {} }, items,
+		system: { level: { value: level }, equipped: {} }, items, flags,
 		getFlag: (m, k) => (m === RGID ? flags[RGID][k] : undefined),
 		setFlag: async (m, k, v) => { if (m === RGID) flags[RGID][k] = v; },
 		unsetFlag: async (m, k) => { if (m === RGID) delete flags[RGID][k]; },
@@ -588,4 +588,25 @@ test('#2 apply: Hunter Weapon remake vs retag — retag keeps the SAME weapon It
 	const hw = actor.items.find((i) => isHunterWeapon(i));
 	assert.equal(hw.name, 'Axe');
 	assert.equal(hw.getFlag(RGID, 'hunter').material, 'silver');
+});
+
+test('#3 fold-in: swapping innate armour WHILE MASKED repoints preBindEquip (no orphan) and does not displace the mask', async () => {
+	UUID_SRC.set('A1', srcEquip('armor', 'Plate'));
+	UUID_SRC.set('A2', srcEquip('armor', 'Mail'));
+	const { actor, flags } = stubActor();
+	// seed the OLD innate armour (owned, but currently DISPLACED by a worn mask — not equipped)
+	const obj = (await fromUuid('A1')).toObject(); obj.flags[RGID] = { innateEquip: 'armor' };
+	const [oldArmor] = await actor.createEmbeddedDocuments('Item', [obj]);
+	// a mask is worn: the slot holds the mask's armour; the innate armour id lives in the restore-snapshot
+	flags[RGID].activeGuise = 'wornMask';
+	await actor.update({ 'system.equipped.armor': 'maskArmourItem' });
+	flags[RGID].preBindEquip = { armor: oldArmor.id };
+
+	const { changed } = await reconcileInnateKit(actor, { armorUuid: 'A1' }, { armorUuid: 'A2' });
+	assert.deepEqual(changed, ['armor']);
+	assert.equal(actor.items.get(oldArmor.id), null);                         // old deleted
+	const fresh = actor.items.find((i) => i.getFlag(RGID, 'innateEquip') === 'armor');
+	assert.equal(fresh.name, 'Mail');                                         // new materialised
+	assert.equal(actor.system.equipped.armor, 'maskArmourItem');             // mask NOT displaced (equip:false while masked)
+	assert.equal(actor.getFlag(RGID, 'preBindEquip').armor, fresh.id);       // snapshot repointed → dismiss restores the NEW armour
 });

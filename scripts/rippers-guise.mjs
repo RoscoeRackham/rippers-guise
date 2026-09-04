@@ -907,6 +907,110 @@ async function restoreCreationHeroic(actor) {
 }
 
 // ---------------------------------------------------------------------------
+// §10 — LENT VITALS + IP SATCHEL (canon: RULE-guise-lent-vitals.md; RULE-guise-derived-stats.md §2).
+// A guise may carry a LENT layer of HP and MP — the mask's own padding, each with its own current +
+// maximum, SPENT BEFORE the wearer's own pool and REFILLED AT A REST (healing does not, §4.1). It
+// NEVER changes the wearer's maximum HP/MP: Crisis always reads the wearer's own numbers. The layer
+// lives on the guise Item's system.data, so it RIDES the guise, FREEZES when the guise is stashed
+// (nothing touches it), and TRANSFERS with the guise to the next wearer for free — no extra plumbing.
+// Most guises carry no layer (0/0). The IP SATCHEL rides the same way but is CAPACITY, not vitals: a
+// rest does NOT refill it; stock is bought back at 10z a point (Recharge Inventory, derived-stats §2).
+// These fields are runtime state, NOT authored in the wizard (Austin owns that UI) — guiseDraftToData
+// omits them and Foundry's recursive item.update merge preserves them across a builder edit.
+const IP_UNIT_COST = 10; // zenit per IP point
+
+/** Normalize a {current,maximum} lent layer: ints ≥0, current clamped to maximum. Pure. */
+function normalizeLentLayer(layer) {
+	const maximum = Math.max(0, Math.floor(Number(layer?.maximum) || 0));
+	const current = Math.min(maximum, Math.max(0, Math.floor(Number(layer?.current) || 0)));
+	return { current, maximum };
+}
+/** Normalize an IP satchel {stock,capacity}: ints ≥0, stock clamped to capacity. Pure. */
+function normalizeIpSatchel(s) {
+	const capacity = Math.max(0, Math.floor(Number(s?.capacity) || 0));
+	const stock = Math.min(capacity, Math.max(0, Math.floor(Number(s?.stock) || 0)));
+	return { stock, capacity };
+}
+
+/** Spend `amount` of a resource: the lent layer takes it FIRST, the remainder comes off the wearer's
+ *  own pool. The own value is NOT clamped at 0 — dropping to/below 0 is the wearer's business (Crisis
+ *  and defeat read their own numbers). Pure. Returns the split + the new values. */
+function spendLentThenOwn(amount, lentCurrent, ownValue) {
+	const amt = Math.max(0, Math.floor(Number(amount) || 0));
+	const lent = Math.max(0, Math.floor(Number(lentCurrent) || 0));
+	const own = Number(ownValue) || 0;
+	const fromLent = Math.min(amt, lent);
+	const fromOwn = amt - fromLent;
+	return { fromLent, fromOwn, newLent: lent - fromLent, newOwn: own - fromOwn };
+}
+/** A rest refills a lent layer to its maximum. Pure. */
+function restRefillLayer(layer) { const n = normalizeLentLayer(layer); return { current: n.maximum, maximum: n.maximum }; }
+/** Restock the IP satchel: buy up to `points`, capped at remaining capacity. 10z a point; a rest never
+ *  refills it. Pure. Returns the new satchel + how many were bought + the zenit cost. */
+function restockIp(satchel, points) {
+	const n = normalizeIpSatchel(satchel);
+	const room = Math.max(0, n.capacity - n.stock);
+	const bought = Math.min(room, Math.max(0, Math.floor(Number(points) || 0)));
+	return { stock: n.stock + bought, capacity: n.capacity, bought, costZenit: bought * IP_UNIT_COST };
+}
+/** Spend IP from the satchel (capped at stock). Pure. */
+function spendIp(satchel, points) {
+	const n = normalizeIpSatchel(satchel);
+	const spent = Math.min(n.stock, Math.max(0, Math.floor(Number(points) || 0)));
+	return { stock: n.stock - spent, capacity: n.capacity, spent };
+}
+
+// ── imperative seams (thin: write the layer onto the guise Item so it rides/freezes/transfers) ──
+const LENT_KEY = { hp: 'lentHp', mp: 'lentMp' };
+
+/** The lent layers + IP satchel a guise Item carries (normalized). */
+function guiseVitals(item) {
+	const d = item?.system?.data ?? {};
+	return { hp: normalizeLentLayer(d.lentHp), mp: normalizeLentLayer(d.lentMp), ip: normalizeIpSatchel(d.ipSatchel) };
+}
+/** Write one lent layer's current back onto the guise (rides/freezes/transfers with the Item). */
+async function setGuiseLentCurrent(item, kind, current) {
+	if (!item || !LENT_KEY[kind]) return;
+	const layer = normalizeLentLayer(item.system?.data?.[LENT_KEY[kind]]);
+	const next = Math.min(layer.maximum, Math.max(0, Math.floor(Number(current) || 0)));
+	await item.update({ [`system.data.${LENT_KEY[kind]}.current`]: next });
+}
+/** The actor's currently-worn guise Item (null if none / unresolvable). */
+function activeGuiseItem(actor) { const id = getActiveGuise(actor); return id ? (actor?.items?.get(id) ?? null) : null; }
+
+/** Apply an HP or MP cost to the wearer: the WORN guise's lent layer takes it first, then the actor's
+ *  own resource. Writes both. This is the seam a damage/cost integration calls; it does NOT itself
+ *  hook the FU damage pipeline (that interception is a separate integration — see the ⚠ at the rest
+ *  subscription). Returns { fromLent, fromOwn }. */
+async function applyResourceCost(actor, kind, amount) {
+	if (!actor || !LENT_KEY[kind]) return { fromLent: 0, fromOwn: 0 };
+	const guise = activeGuiseItem(actor);
+	const lentCurrent = guise ? normalizeLentLayer(guise.system?.data?.[LENT_KEY[kind]]).current : 0;
+	const ownValue = Number(actor.system?.resources?.[kind]?.value) || 0;
+	const split = spendLentThenOwn(amount, lentCurrent, ownValue);
+	if (guise && split.fromLent > 0) await setGuiseLentCurrent(guise, kind, split.newLent);
+	if (split.fromOwn > 0) await actor.update({ [`system.resources.${kind}.value`]: split.newOwn });
+	return { fromLent: split.fromLent, fromOwn: split.fromOwn };
+}
+
+/** REST refill: every LIVE guise the actor owns refills its lent HP/MP to maximum (worn or in hand —
+ *  only a SHELVED guise, owned by no actor, freezes; §1). The IP satchel is NOT refilled (bought back
+ *  at 10z/pt). Returns the number of guises refilled. */
+async function restRefillActorGuises(actor) {
+	if (!actor?.items?.filter) return 0;
+	let n = 0;
+	for (const it of actor.items.filter(isGuiseItem)) {
+		const d = it.system?.data ?? {};
+		const hp = normalizeLentLayer(d.lentHp), mp = normalizeLentLayer(d.lentMp);
+		if (hp.maximum === 0 && mp.maximum === 0) continue;              // no layer — nothing to refill
+		if (hp.current === hp.maximum && mp.current === mp.maximum) continue; // already full
+		await it.update({ 'system.data.lentHp.current': hp.maximum, 'system.data.lentMp.current': mp.maximum });
+		n++;
+	}
+	return n;
+}
+
+// ---------------------------------------------------------------------------
 // BENEFIT-PICK POOL (Case B — god 2026-08-23; source: GUISES-core-rules.md §1 "Innate Benefits").
 // Austin's ruleset: classes grant NO innate benefits (own OR guise-worn) — every benefit comes from
 // the character's TWO creation picks (permanent, unbuyable). This SUPERSEDES the 2026-08-20 "benefits
@@ -1795,7 +1899,7 @@ async function materialiseHunterWeapon(actor, uuid, { material, origin } = {}) {
 /** Materialise one innate equip slot (armor|accessory) as an owned Item flagged innateEquip and equip
  *  it. Like the Hunter Weapon these belong to the CHARACTER; a worn mask's own equipment displaces
  *  them on bind and preBindEquip restores them on dismiss (existing snapshot/restore machinery). */
-async function materialiseInnateEquip(actor, slot, uuid) {
+async function materialiseInnateEquip(actor, slot, uuid, { equip = true } = {}) {
 	if (!actor || !uuid || !EQUIP_INNATE_SLOTS.includes(slot)) return null;
 	try {
 		const src = await safeFromUuid(uuid);
@@ -1804,7 +1908,9 @@ async function materialiseInnateEquip(actor, slot, uuid) {
 		const obj = src.toObject(); delete obj._id;
 		obj.flags = obj.flags ?? {}; obj.flags[MODULE_ID] = { innateEquip: slot };
 		const [created] = await actor.createEmbeddedDocuments('Item', [obj]);
-		if (created) await actor.update({ [`system.equipped.${slot}`]: created.id });
+		// `equip:false` when a mask is worn: the mask owns the slot right now, so don't displace it —
+		// the caller repoints preBindEquip instead so this equips on dismiss (#3 fold-in fix).
+		if (created && equip) await actor.update({ [`system.equipped.${slot}`]: created.id });
 		return created ?? null;
 	} catch (err) { console.warn(`[rippers-guise] innate ${slot} materialisation failed:`, err); return null; }
 }
@@ -1905,13 +2011,24 @@ async function reconcileInnateKit(actor, oldData = {}, newData = {}) {
 	}
 
 	// --- Innate armour + accessory (unequip + delete the old, equip the new) ---
+	// #3 fold-in fix: when a worn mask has DISPLACED the innate slot, its preBindEquip restore-snapshot
+	// still names the now-deleted innate Item. While masked we don't re-equip (the mask owns the slot);
+	// instead we REPOINT the snapshot to the new Item (or null), so dismiss restores the NEW innate kit.
+	const masked = !!getActiveGuise(actor);
 	for (const slot of EQUIP_INNATE_SLOTS) {
 		if (!plan[slot]) continue;
+		const oldIds = [];
 		for (const it of actor.items.filter((i) => i?.getFlag?.(MODULE_ID, 'innateEquip') === slot)) {
+			oldIds.push(it.id);
 			if (actor.system?.equipped?.[slot] === it.id) await actor.update({ [`system.equipped.${slot}`]: null });
 			await it.delete();
 		}
-		if (plan[slot].to) await materialiseInnateEquip(actor, slot, plan[slot].to);
+		let newId = null;
+		if (plan[slot].to) { const created = await materialiseInnateEquip(actor, slot, plan[slot].to, { equip: !masked }); newId = created?.id ?? null; }
+		if (masked) {
+			const snap = actor.getFlag(MODULE_ID, 'preBindEquip');
+			if (snap && oldIds.includes(snap[slot])) await actor.update({ [`flags.${MODULE_ID}.preBindEquip.${slot}`]: newId });
+		}
 		changed.push(slot);
 	}
 
@@ -2479,6 +2596,22 @@ function defineGuiseModel() {
 				// own kit. Kept here for re-edit / display.
 				armorUuid: new StringField({ initial: '' }),
 				accessoryUuid: new StringField({ initial: '' }),
+				// §10 LENT VITALS + IP SATCHEL (v0.7.9; RULE-guise-lent-vitals.md). The mask's own padding:
+				// each lent layer carries its own current + maximum, spent before the wearer's pool and
+				// refilled at a rest; it NEVER changes the wearer's max HP/MP. The IP satchel is capacity
+				// (10z/pt, no rest refill). Most guises: 0/0. Runtime state — not authored in the wizard.
+				lentHp: new SchemaField({
+					current: new NumberField({ initial: 0, min: 0, integer: true, nullable: false }),
+					maximum: new NumberField({ initial: 0, min: 0, integer: true, nullable: false }),
+				}),
+				lentMp: new SchemaField({
+					current: new NumberField({ initial: 0, min: 0, integer: true, nullable: false }),
+					maximum: new NumberField({ initial: 0, min: 0, integer: true, nullable: false }),
+				}),
+				ipSatchel: new SchemaField({
+					stock: new NumberField({ initial: 0, min: 0, integer: true, nullable: false }),
+					capacity: new NumberField({ initial: 0, min: 0, integer: true, nullable: false }),
+				}),
 				// classes + per-skill allocation (D1: UUID refs to the compendium)
 				classes: new ArrayField(new SchemaField({
 					classUuid: new StringField({ initial: '' }),
@@ -2977,8 +3110,19 @@ function registerSpecialtyBumpHooks() {
 
 Hooks.once('ready', async () => {
 	registerSpecialtyBumpHooks();
+	// §10 lent vitals: a rest refills every LIVE guise's lent HP/MP to maximum (worn or in hand). The
+	// IP satchel is NOT refilled (bought back at 10z/pt). FU dispatches REST_EVENT with { actor }.
+	// ⚠ INTEGRATION FLAG: "lent layer spent before the wearer's own pool" is provided as the
+	// applyResourceCost() seam (pure spendLentThenOwn + writes). Automatically intercepting FU's damage
+	// pipeline (DAMAGE_PIPELINE_POST_CALCULATE / CALCULATE_RESOURCE_EVENT) to redirect through the layer
+	// is a separate integration — deferred, because a wrong interception double-applies damage, and the
+	// UI that shows/spends the layer is Austin's. The seam is unit-tested and ready to be wired.
+	Hooks.on(globalThis.game?.projectfu?.FUHooks?.REST_EVENT ?? 'projectfu.events.rest', (event) => {
+		const actor = event?.actor; if (!actor) return;
+		restRefillActorGuises(actor).catch((err) => console.warn('[rippers-guise] rest refill failed:', err));
+	});
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -3007,3 +3151,4 @@ export { actorHunterWeapon };
 export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
+export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises };
