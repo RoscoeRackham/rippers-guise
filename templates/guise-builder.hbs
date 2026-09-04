@@ -236,6 +236,22 @@
 
 				<div class="gb-budget">{{localize "RIPPERS.Builder.Budget"}}: <strong>{{review.spent}} / {{review.budget}}</strong> SL</div>
 			</fieldset>
+			{{! P5c: the CHARACTER's Quirks (per-character, ruled — quirks stack), settable here from the editor.
+			    These are the same character-owned 'effect' Items as the sheet's Quirk tab. }}
+			<fieldset class="gb-quirks">
+				<legend>{{localize "RIPPERS.Builder.Quirks"}}</legend>
+				<p class="gb-hint">{{localize "RIPPERS.Builder.QuirksHint"}}</p>
+				{{#each quirks}}
+					<div class="gb-quirk-row">
+						<span class="gb-equip-name">{{name}}</span>
+						<a data-action="quirkEditCh" data-id="{{id}}" title="{{localize "RIPPERS.Builder.QuirkEdit"}}"><i class="fas fa-pen"></i></a>
+						<a data-action="quirkRemoveCh" data-id="{{id}}" title="{{localize "RIPPERS.Builder.QuirkRemove"}}"><i class="fas fa-times"></i></a>
+					</div>
+				{{else}}
+					<p class="gb-empty">{{localize "RIPPERS.Builder.NoQuirks"}}</p>
+				{{/each}}
+				<button type="button" class="gb-quirk-add" data-action="quirkAddCh"><i class="fas fa-plus"></i> {{localize "RIPPERS.Builder.QuirkAdd"}}</button>
+			</fieldset>
 		{{/if}}
 
 	</div>{{! /.gb-scroll }}

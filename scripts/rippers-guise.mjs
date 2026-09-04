@@ -2551,9 +2551,13 @@ function getGuiseBuilderApp() {
 				errors: validation.errors, spent, budget,
 			};
 
+			// P5c (ruled per-CHARACTER, not per-guise): the character's Quirks — reachable/settable from the
+			// editor (shown on the Review step). These are the same character-owned 'effect' Items as the
+			// sheet's Quirk tab (v0.7.11); quirks stack (C4). No per-guise quirk model is invented.
+			const quirks = (this.actor?.itemTypes?.effect ?? []).map((i) => ({ id: i.id, name: i.name ?? '' }));
 			return {
 				draft: this._draft, slots, classBlocks, budget, spent,
-				mode, isInnate, isWorn: !isInnate,
+				mode, isInnate, isWorn: !isInnate, quirks,
 				canCreate: validation.ok && spent > 0,
 				step, stepKey, steps, stepTotal: WIZARD_STEPS.length,
 				isFirst: step === 1, isLast: step === WIZARD_STEPS.length,
@@ -2723,8 +2727,17 @@ function getGuiseBuilderApp() {
 					this.render();
 				});
 			});
+			this._wireCharacterQuirks(root); // P5c: character-quirk controls on the Review step
 		}
 
+		// P5c: character Quirks, settable from the guise editor (Review step). Per-CHARACTER (ruled), reusing
+		// the sheet's quirk CRUD on this.actor; quirks stack (C4). No per-guise quirk model is invented.
+		_wireCharacterQuirks(root) {
+			if (!root?.querySelector) return;
+			root.querySelector('[data-action="quirkAddCh"]')?.addEventListener('click', async (ev) => { ev.preventDefault(); await sheetAddQuirk(this.actor); this.render(); });
+			root.querySelectorAll('[data-action="quirkEditCh"]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); sheetEditQuirk(this.actor, ev.currentTarget.dataset.id); }));
+			root.querySelectorAll('[data-action="quirkRemoveCh"]').forEach((a) => a.addEventListener('click', async (ev) => { ev.preventDefault(); await sheetRemoveQuirk(this.actor, ev.currentTarget.dataset.id); this.render(); }));
+		}
 		static async onCreate(event) { event.preventDefault(); await this._doCreate(false); }
 		static async onCreateBind(event) { event.preventDefault(); await this._doCreate(true); }
 		/** Open the Foundry image browser for the guise sprite; writes the chosen path back to draft.img. */

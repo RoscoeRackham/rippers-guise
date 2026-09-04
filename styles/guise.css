@@ -350,3 +350,8 @@
 .application.guise-builder .gb-review-aff { display: inline-block; padding: 0.05rem 0.4rem; margin: 0 0.25rem 0.25rem 0; border: 1px solid var(--gb-border); border-radius: 3px; font-size: 0.82rem; }
 .application.guise-builder .gb-error { color: #ff6b6b; }
 .application.guise-builder .gb-warn { color: var(--gb-gold); }
+/* v0.7.19 (P5c): character Quirks in the guise editor (Review step) */
+.application.guise-builder .gb-quirks .gb-quirk-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; }
+.application.guise-builder .gb-quirks .gb-quirk-row .gb-equip-name { flex: 1; }
+.application.guise-builder .gb-quirks .gb-quirk-row a { color: var(--gb-red); cursor: pointer; }
+.application.guise-builder .gb-quirk-add { background: transparent; border: 1px dashed var(--gb-red); color: var(--gb-red); border-radius: 3px; cursor: pointer; padding: 0.2rem 0.6rem; margin-top: 0.3rem; font-family: var(--gb-verb); }
