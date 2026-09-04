@@ -119,7 +119,26 @@
 								<span class="rs-bond-strength">{{#if g.worn}}{{localize 'RIPPERS.Sheet.Worn'}}{{else if g.innate}}{{localize 'RIPPERS.Sheet.Innate'}}{{else}}{{localize 'RIPPERS.Sheet.Tradable'}}{{/if}}</span>
 							</div>
 							{{#if g.trio.length}}<div class="rs-affchips" style="margin-top:8px;">{{#each g.trio as |t|}}<span class="rs-affchip {{#if t.good}}rs-aff-good{{/if}}{{#if t.bad}}rs-aff-bad{{/if}}">{{t.word}} {{t.type}}</span>{{/each}}</div>{{/if}}
-							<div class="rs-skillrow"><span>{{localize 'RIPPERS.Sheet.Skills'}}</span><b>{{g.skillCount}} · {{g.slTotal}}/{{g.budget}} SL</b></div>
+							<div class="rs-skillrow"><span>{{localize 'RIPPERS.Sheet.Skills'}}</span><b>{{g.skillCount}} · {{g.slTotal}}/{{g.budget}} SL</b>
+								<button class="rs-chip{{#if g.slEditable}} rs-chip-on{{/if}}" data-action="toggleSlLock" data-guise="{{g.id}}" title="{{localize 'RIPPERS.Sheet.SlUnlockHint'}}">{{localize 'RIPPERS.Sheet.SlUnlock'}}</button>
+							</div>
+							{{#if g.slEditable}}
+								{{#each g.skillGroups as |grp|}}
+									<div class="rs-skilledit">
+										<div class="rs-skilledit-class">{{grp.className}}</div>
+										{{#each grp.skills as |s|}}
+											<div class="rs-skilledit-row">
+												<span class="rs-skilledit-name">{{s.name}}</span>
+												<span class="rs-step">
+													<button data-action="skillSlAdjust" data-guise="{{g.id}}" data-class="{{s.classUuid}}" data-skill="{{s.skillUuid}}" data-dir="-1">&minus;</button>
+													<b class="rs-skilledit-sl">{{s.sl}}<span class="rs-skilledit-max">/{{s.maxSl}}</span></b>
+													<button data-action="skillSlAdjust" data-guise="{{g.id}}" data-class="{{s.classUuid}}" data-skill="{{s.skillUuid}}" data-dir="1">+</button>
+												</span>
+											</div>
+										{{/each}}
+									</div>
+								{{/each}}
+							{{/if}}
 							{{#if g.heroicName}}<div class="rs-heroic" style="margin-top:8px;"><span class="rs-heroic-label">{{localize 'RIPPERS.Sheet.Heroic'}}</span><span class="rs-heroic-name">{{g.heroicName}}</span></div>{{/if}}
 							{{!-- H2: which face this guise shows when worn (normal / other-shape / no-portrait well). --}}
 							<div class="rs-faceassign"><span>{{localize 'RIPPERS.Sheet.ShowsFace'}}</span>
@@ -308,14 +327,28 @@
 					{{#each vm.weapons as |w|}}
 						<div class="rs-classcard rs-weapon-row">
 							<div class="rs-weapon-head">
-								<span class="rs-classcard-name">{{w.name}}</span>
-								<button class="rs-chip" data-action="rollWeapon" data-item="{{w.id}}">{{localize 'RIPPERS.Sheet.Attack'}}</button>
+								<input class="rs-weapon-name" type="text" data-item="{{w.id}}" data-item-edit="name" value="{{w.name}}">
+								<span>
+									<button class="rs-chip" data-action="rollWeapon" data-item="{{w.id}}">{{localize 'RIPPERS.Sheet.Attack'}}</button>
+									<button class="rs-chip" data-action="itemSheet" data-item="{{w.id}}" title="{{localize 'RIPPERS.Sheet.OpenItem'}}">⚙</button>
+								</span>
 							</div>
-							<div class="rs-weapon-stats">
-								<span class="rs-wstat"><b>ACC</b> {{w.accLabel}}</span>
-								<span class="rs-wstat"><b>DMG</b> {{w.dmgLabel}}{{#if w.dmgType}} <span class="rs-wdtype">{{w.dmgType}}</span>{{/if}}</span>
-								{{#if w.wtype}}<span class="rs-wstat rs-wtype">{{w.wtype}}</span>{{/if}}
-								{{#each w.traits as |t|}}<span class="rs-wtag">{{t}}</span>{{/each}}
+							{{!-- Inline-editable common fields; the ⚙ opens the full item sheet for the rest. --}}
+							<div class="rs-weapon-edit">
+								<label class="rs-wedit"><span>ACC</span>
+									<select data-item="{{w.id}}" data-item-edit="{{w.edit.paths.primary}}">{{#each w.edit.primaryOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.v}}</option>{{/each}}</select>
+									<select data-item="{{w.id}}" data-item-edit="{{w.edit.paths.secondary}}">{{#each w.edit.secondaryOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.v}}</option>{{/each}}</select>
+									<input type="number" data-item="{{w.id}}" data-item-edit="{{w.edit.paths.accuracy}}" data-dtype="number" value="{{w.accBonus}}" title="{{localize 'RIPPERS.Sheet.AccBonus'}}">
+								</label>
+								<label class="rs-wedit"><span>DMG</span>
+									<span class="rs-wedit-hr">HR +</span>
+									<input type="number" data-item="{{w.id}}" data-item-edit="{{w.edit.paths.damage}}" data-dtype="number" value="{{w.dmgBonus}}">
+									<select data-item="{{w.id}}" data-item-edit="{{w.edit.paths.damageType}}">{{#each w.edit.dtypeOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.v}}</option>{{/each}}</select>
+								</label>
+								<label class="rs-wedit"><span>{{localize 'RIPPERS.Sheet.WeaponType'}}</span>
+									<select data-item="{{w.id}}" data-item-edit="{{w.edit.paths.wtype}}">{{#each w.edit.wtypeOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.v}}</option>{{/each}}</select>
+								</label>
+								{{#if w.traits.length}}<div class="rs-weapon-traits">{{#each w.traits as |t|}}<span class="rs-wtag">{{t}}</span>{{/each}}</div>{{/if}}
 							</div>
 						</div>
 					{{/each}}

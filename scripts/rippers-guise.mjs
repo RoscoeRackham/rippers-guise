@@ -3587,6 +3587,22 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		const trio = (d.affinityModifiers ?? []).map((m) => ({ type: m.type, word: affinityWordOf(m.level), level: m.level, ...rsAffFlags(m.level) }));
 		let skillCount = 0, slTotal = 0;
 		for (const cls of d.classes ?? []) for (const sk of cls.skills ?? []) { skillCount++; slTotal += Number(sk.sl) || 0; }
+		// Inline SL editing: resolve each class's skills to editable rows (name + maxSl from the class ref).
+		const slEditable = guiseSlEditable(g);
+		const skillGroups = [];
+		for (const cls of d.classes ?? []) {
+			const defs = await skillsForClass(cls.classUuid);
+			const byUuid = new Map(defs.map((s) => [s.uuid, s]));
+			const cdoc = await safeFromUuid(cls.classUuid);
+			skillGroups.push({
+				classUuid: cls.classUuid, className: cdoc?.name ?? '(class)',
+				skills: (cls.skills ?? []).map((s) => ({
+					skillUuid: s.skillUuid, classUuid: cls.classUuid,
+					name: byUuid.get(s.skillUuid)?.name ?? '(skill)',
+					sl: Number(s.sl) || 0, maxSl: Number(byUuid.get(s.skillUuid)?.maxSl ?? 1),
+				})),
+			});
+		}
 		const heroicUuid = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
 		const heroicName = heroicUuid ? ((await safeFromUuid(heroicUuid))?.name ?? '(unresolved)') : null;
 		const v = guiseVitals(g);
@@ -3600,6 +3616,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 			lent: { hp: v.hp, mp: v.mp, ip: v.ip },
 			// H3: swapping TO this guise would be refunded by The Turn (free) this scene?
 			usedThisScene, swapWouldRefund: !worn && !usedThisScene && !turnRefundUsed,
+			slEditable, skillGroups,      // inline SL editing (lock-gated) + resolved skill rows
 			arcana: guiseArcana(g), // 2a: the guise-identity tarot tile (null until picked)
 			// H2: this guise's face assignment (normal/other/none/'') + booleans for the toggle chips.
 			face: faceForGuise(g) ?? '', faceNormal: faceForGuise(g) === 'normal', faceOther: faceForGuise(g) === 'other', faceNone: faceForGuise(g) === 'none',
@@ -3636,7 +3653,19 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const condGroups = RS_COND_GROUPS.map((grp) => ({ label: grp.label, items: grp.ids.map((id) => ({ id, label: id, active: activeStatuses.has(id) })) }));
 	// Weapons for the Kit tab's attack rows (weapon + customWeapon; item.roll() drives the attack flow).
 	const weaponItems = [...(actor.itemTypes?.weapon ?? []), ...(actor.itemTypes?.customWeapon ?? [])];
-	const weapons = weaponItems.map((w) => ({ id: w.id, name: w.name ?? '', img: w.img, type: w.type, ...weaponStats(w) }));
+	const ATTR_KEYS = ['dex', 'ins', 'mig', 'wlp'];
+	const optList = (list, cur) => list.map((v) => ({ v, sel: v === cur }));
+	const weapons = weaponItems.map((w) => {
+		const st = weaponStats(w);
+		return {
+			id: w.id, name: w.name ?? '', img: w.img, type: w.type, ...st,
+			edit: {
+				paths: st.paths,
+				primaryOpts: optList(ATTR_KEYS, st.primKey), secondaryOpts: optList(ATTR_KEYS, st.secKey),
+				dtypeOpts: optList(RS_AFFINITY_TYPES, st.dmgType), wtypeOpts: optList(['melee', 'ranged'], st.wtype),
+			},
+		};
+	});
 	// Item 3: the character's quirks (Project FU 'effect' Items carrying a rippers-automation fuid, per
 	// the automation registry) — listed for add/remove/edit on the Quirk tab. Not the guise locks.
 	const quirks = (actor.itemTypes?.effect ?? []).map((i) => ({
@@ -3854,7 +3883,53 @@ function weaponStats(w) {
 	const accParts = [abbr(primKey), abbr(secKey)].filter(Boolean);
 	const accLabel = (accParts.length ? accParts.join(' + ') : '—') + (accBonus ? ` (+${accBonus})` : '');
 	const dmgLabel = dmgBonus ? `HR + ${dmgBonus}` : 'HR';
-	return { accLabel, dmgLabel, dmgType: String(dmgType || ''), wtype: String(wtype || ''), traits };
+	return {
+		accLabel, dmgLabel, dmgType: String(dmgType || ''), wtype: String(wtype || ''), traits,
+		// raw values + the (schema-correct) write paths for inline editing (Austin 4 Sep). weapon wraps in
+		// .value SchemaFields; customWeapon uses bare fields + damage.type. Both put the dmg bonus at damage.value.
+		custom, primKey: String(primKey || ''), secKey: String(secKey || ''), accBonus, dmgBonus,
+		paths: {
+			primary: custom ? 'system.attributes.primary' : 'system.attributes.primary.value',
+			secondary: custom ? 'system.attributes.secondary' : 'system.attributes.secondary.value',
+			accuracy: custom ? 'system.accuracy' : 'system.accuracy.value',
+			damage: 'system.damage.value',
+			damageType: custom ? 'system.damage.type' : 'system.damageType.value',
+			wtype: custom ? 'system.type' : 'system.type.value',
+		},
+	};
+}
+
+// Inline skill-level editing (Austin 4 Sep): SLs are editable on the character sheet, honoring the SAME
+// gates as the guise editor — the per-guise slEditOpen toggle OR the GM edit override — and the SAME three
+// caps (per-skill maxSl, per-class ≤10, total ≤ budget). Skills stay guise-bound; only their SL moves.
+/** PURE. Clamp a wanted SL to the three caps. */
+function clampSkillSL(want, { maxSl = 1, perClassOther = 0, budgetOther = 0, budget = SKILL_BUDGET_CAP } = {}) {
+	let v = Math.max(0, Math.floor(Number(want) || 0));
+	v = Math.min(v, Math.max(1, Number(maxSl) || 1), PER_CLASS_CAP - perClassOther, budget - budgetOther);
+	return Math.max(0, v);
+}
+/** Is inline SL editing unlocked for this guise? (player slEditOpen toggle OR the GM override). */
+function guiseSlEditable(guise) { return editOverrideOn() || !!guise?.getFlag?.(MODULE_ID, 'slEditOpen'); }
+/** Set a guise skill's SL (clamped), honoring the lock. Writes back the guise's classes array. */
+async function setGuiseSkillSL(guise, classUuid, skillUuid, want) {
+	if (!guise?.update) return { ok: false, reason: 'no-guise' };
+	if (!guiseSlEditable(guise)) { ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Sheet.SlLocked') ?? 'Unlock SL editing on this guise first.'); return { ok: false, reason: 'locked' }; }
+	const data = foundry.utils.deepClone(guise.system?.data ?? {});
+	const cls = (data.classes ?? []).find((c) => c.classUuid === classUuid);
+	const sk = cls?.skills?.find((s) => s.skillUuid === skillUuid);
+	if (!sk) return { ok: false, reason: 'no-skill' };
+	const defs = await skillsForClass(classUuid);
+	const maxSl = Number(defs.find((d) => d.uuid === skillUuid)?.maxSl ?? 1);
+	const perClassOther = cls.skills.filter((s) => s.skillUuid !== skillUuid).reduce((a, s) => a + (Number(s.sl) || 0), 0);
+	const budgetOther = (data.classes ?? []).reduce((a, c) => a + (c.skills || []).reduce((x, s) => x + ((c.classUuid === classUuid && s.skillUuid === skillUuid) ? 0 : (Number(s.sl) || 0)), 0), 0);
+	sk.sl = clampSkillSL(want, { maxSl, perClassOther, budgetOther, budget: budgetOf(guise.actor) });
+	try { await guise.update({ 'system.data': data }); } catch (err) { console.warn('[rippers-guise] SL edit failed:', err); return { ok: false, reason: 'write-failed' }; }
+	return { ok: true, sl: sk.sl };
+}
+/** Toggle the per-guise player SL-edit unlock (slEditOpen). */
+async function toggleGuiseSlLock(guise) {
+	if (!guise?.setFlag) return;
+	await guise.setFlag(MODULE_ID, 'slEditOpen', !guise.getFlag(MODULE_ID, 'slEditOpen'));
 }
 
 // Item 3: manage the character's quirks (Project FU 'effect' Items). Add creates a blank effect Item and
@@ -4097,10 +4172,13 @@ function getRippersActorSheetClass() {
 				setGuiseFace: RippersActorSheet.onSetGuiseFace,
 				guiseSwap: RippersActorSheet.onGuiseSwap,
 				rollWeapon: RippersActorSheet.onRollWeapon,
+				itemSheet: RippersActorSheet.onItemSheet,
 				rollCheck: RippersActorSheet.onRollCheck,
 				toggleRivalWaiver: RippersActorSheet.onToggleRivalWaiver,
 				rest: RippersActorSheet.onRest,
 				healToCrisis: RippersActorSheet.onHealToCrisis,
+				skillSlAdjust: RippersActorSheet.onSkillSlAdjust,
+				toggleSlLock: RippersActorSheet.onToggleSlLock,
 				quirkAdd: RippersActorSheet.onQuirkAdd,
 				quirkEdit: RippersActorSheet.onQuirkEdit,
 				quirkRemove: RippersActorSheet.onQuirkRemove,
@@ -4138,6 +4216,23 @@ function getRippersActorSheetClass() {
 			try { this._wireVaultDnD(this.element); } catch (err) { console.warn('[rippers-guise] vault drag-drop wiring failed:', err); }
 			try { this._wireIdentityFields(this.element); } catch (err) { console.warn('[rippers-guise] identity-field wiring failed:', err); }
 			try { this._wireEditableFields(this.element); } catch (err) { console.warn('[rippers-guise] editable-field wiring failed:', err); }
+			try { this._wireItemEdit(this.element); } catch (err) { console.warn('[rippers-guise] item-edit wiring failed:', err); }
+		}
+		// Inline INVENTORY editing: [data-item-edit] inputs/selects write a dot-path onto an owned Item
+		// (data-item = item id, data-item-edit = path, data-dtype="number" coerces). Item name via path "name".
+		_wireItemEdit(root) {
+			if (!root?.querySelectorAll) return;
+			const self = this;
+			for (const el of root.querySelectorAll('[data-item-edit]')) {
+				el.addEventListener('change', async () => {
+					const it = self.document?.items?.get?.(el.dataset.item); const path = el.dataset.itemEdit;
+					if (!it || !path) return;
+					let val = el.value;
+					if (el.dataset.dtype === 'number') { val = Number(val); if (!Number.isFinite(val)) return; }
+					try { await it.update({ [path]: val }); } catch (err) { console.warn(`[rippers-guise] item edit ${path} failed:`, err); }
+					self.render();
+				});
+			}
 		}
 		// Item 3 (the headline): generic two-way editing of the character's own fields. A [data-edit]
 		// input/select writes its dot-path on change (data-dtype="number" coerces); bonds are an array, so
@@ -4253,6 +4348,16 @@ function getRippersActorSheetClass() {
 		}
 		static async onRest() { await sheetRest(this.document); this.render(); }
 		static async onHealToCrisis() { await sheetHealToCrisis(this.document); this.render(); }
+		static async onSkillSlAdjust(event, target) {
+			const g = this.document?.items?.get?.(target?.dataset?.guise);
+			const classUuid = target?.dataset?.class, skillUuid = target?.dataset?.skill, dir = Number(target?.dataset?.dir) || 0;
+			if (!g || !classUuid || !skillUuid || !dir) return;
+			const cur = ((g.system?.data?.classes ?? []).find((c) => c.classUuid === classUuid)?.skills ?? []).find((s) => s.skillUuid === skillUuid);
+			await setGuiseSkillSL(g, classUuid, skillUuid, (Number(cur?.sl) || 0) + dir);
+			this.render();
+		}
+		static async onToggleSlLock(event, target) { const g = this.document?.items?.get?.(target?.dataset?.guise); if (g) { await toggleGuiseSlLock(g); this.render(); } }
+		static onItemSheet(event, target) { const it = this.document?.items?.get?.(target?.dataset?.item); it?.sheet?.render?.(true); }
 		static async onQuirkAdd() { await sheetAddQuirk(this.document); this.render(); }
 		static async onQuirkEdit(event, target) { const id = target?.dataset?.item; if (id) await sheetEditQuirk(this.document, id); }
 		static async onQuirkRemove(event, target) { const id = target?.dataset?.item; if (id) { await sheetRemoveQuirk(this.document, id); this.render(); } }
@@ -4602,7 +4707,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };

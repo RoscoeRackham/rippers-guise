@@ -237,3 +237,20 @@
 .rippers-sheet .rs-edit-row input:focus, .rippers-sheet .rs-edit-row select:focus { outline: none; border-color: var(--rs-gold); }
 .rippers-sheet .rs-edit-bond { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
 .rippers-sheet .rs-edit-bond input { font-family: var(--rs-body); font-size: 13px; color: var(--rs-bone); background: rgba(0,0,0,.25); border: 1px solid var(--rs-border); padding: 3px 7px; }
+
+/* Inline skill-level editing (guise cards) + inline weapon editing (Kit tab). */
+.rippers-sheet .rs-skilledit { margin-top: 8px; border-left: 2px solid var(--rs-border-red); padding-left: 8px; }
+.rippers-sheet .rs-skilledit-class { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-skilledit-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2px 0; }
+.rippers-sheet .rs-skilledit-name { font-family: var(--rs-body); font-size: 14px; color: var(--rs-bone); }
+.rippers-sheet .rs-skilledit-sl { font-family: var(--rs-mono); font-size: 14px; color: #fff; min-width: 34px; text-align: center; }
+.rippers-sheet .rs-skilledit-max { color: var(--rs-muted); font-size: 11px; }
+.rippers-sheet .rs-weapon-name { font-family: var(--rs-disp); font-weight: 800; font-size: 20px; color: var(--rs-bone); background: rgba(0,0,0,.25); border: 1px solid var(--rs-border); padding: 2px 8px; flex: 1; min-width: 0; }
+.rippers-sheet .rs-weapon-edit { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 6px; }
+.rippers-sheet .rs-wedit { display: inline-flex; align-items: center; gap: 5px; font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-wedit .rs-wedit-hr { color: var(--rs-gold); }
+.rippers-sheet .rs-wedit input, .rippers-sheet .rs-wedit select { font-family: var(--rs-mono); font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--rs-bone); background: rgba(0,0,0,.25); border: 1px solid var(--rs-border); padding: 2px 5px; }
+.rippers-sheet .rs-wedit input[type="number"] { width: 48px; }
+.rippers-sheet .rs-weapon-traits { display: flex; gap: 5px; flex-wrap: wrap; width: 100%; }
+/* Styling bucket: guise names must not overflow the swap/select buttons. */
+.rippers-sheet .rs-guise-pick > span:first-child, .rippers-sheet .rs-classcard-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

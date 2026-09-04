@@ -803,3 +803,30 @@ test('buildRippersSheetVM: weapons carry acc/dmg labels; quirks is always an arr
 	assert.ok(vm.weapons.every((w) => 'accLabel' in w && 'dmgLabel' in w));
 	assert.ok(Array.isArray(vm.quirks));
 });
+
+// ── Inline SL editing (Austin 4 Sep): caps + lock gate ──────────────────────────────────────────────
+const { clampSkillSL, setGuiseSkillSL } = mod;
+
+test('clampSkillSL: honors per-skill max, per-class <=10, and remaining budget; floors at 0', () => {
+	assert.equal(clampSkillSL(9, { maxSl: 5 }), 5);                          // per-skill cap
+	assert.equal(clampSkillSL(4, { maxSl: 9, perClassOther: 8 }), 2);        // per-class 10 - 8
+	assert.equal(clampSkillSL(4, { maxSl: 9, budgetOther: 29, budget: 30 }), 1); // total budget
+	assert.equal(clampSkillSL(-3, { maxSl: 5 }), 0);                         // never negative
+});
+
+test('setGuiseSkillSL: refuses when locked; clamps to per-skill maxSl when unlocked', async () => {
+	UUIDS.set('clsX', { system: { description: '@UUID[skX]{Blade}<strong>【Max SL 5】</strong>' } });
+	let flag = false; let written = null;
+	const guise = {
+		system: { data: { classes: [{ classUuid: 'clsX', skills: [{ skillUuid: 'skX', sl: 2 }] }] } },
+		getFlag: (_m, k) => (k === 'slEditOpen' ? flag : undefined),
+		async update(u) { written = u; },
+		actor: { system: { level: { value: 20 } } },
+	};
+	const locked = await setGuiseSkillSL(guise, 'clsX', 'skX', 9);
+	assert.equal(locked.ok, false); assert.equal(locked.reason, 'locked'); assert.equal(written, null);
+	flag = true;                                                            // unlock (slEditOpen)
+	const r = await setGuiseSkillSL(guise, 'clsX', 'skX', 9);
+	assert.equal(r.ok, true); assert.equal(r.sl, 5);                        // clamped to maxSl 5
+	assert.equal(written['system.data'].classes[0].skills[0].sl, 5);
+});
