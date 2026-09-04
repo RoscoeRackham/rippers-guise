@@ -581,6 +581,23 @@ test('buildVaultVM: party roster with field slots, worn tag, and the cabinet com
 	} finally { globalThis.game = savedGame; }
 });
 
+test('buildRippersSheetVM: the Rival waiver toggle is hidden by default, shown+armed via the automation api (R1)', async () => {
+	const off = await buildRippersSheetVM(actorStub());
+	assert.deepEqual(off.rivalWaiver, { has: false, armed: false }); // no automation module in the base stub → hidden
+	const saved = globalThis.game;
+	globalThis.game = {
+		modules: { get: (id) => (id === 'rippers-automation' ? { api: {
+			actorHasQuirk: (_a, fuid) => fuid === 'rival-prodigies',
+			isRivalWaiverArmed: () => true,
+		} } : null) },
+		user: { isGM: false },
+	};
+	try {
+		const on = await buildRippersSheetVM(actorStub());
+		assert.deepEqual(on.rivalWaiver, { has: true, armed: true });
+	} finally { globalThis.game = saved; }
+});
+
 test('buildRippersSheetVM: the Vault embedded tab builds a vault VM (V3); other tabs skip it', async () => {
 	const off = await buildRippersSheetVM(actorStub(), { activeTab: 'form' });
 	assert.equal(off.vault, null);                     // not built when the tab is closed

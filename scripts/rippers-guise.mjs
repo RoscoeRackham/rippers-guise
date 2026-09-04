@@ -3261,6 +3261,15 @@ const SOLID_BOND_CAP = 6; // DEFAULT_SOLID_CAP (canon; the API is the authority 
 /** The Deeper Bonds runtime API, or null when the module is absent/inactive (headless tests included). */
 function deeperBondsApi() { return globalThis.game?.modules?.get?.(DEEPER_BONDS_ID)?.api ?? null; }
 
+/** rippers-automation's runtime API (R1 Rival roller toggle + quirk detection), or null when absent. */
+function rippersAutomationApi() { return globalThis.game?.modules?.get?.('rippers-automation')?.api ?? null; }
+/** R1 VM: does this actor hold the Rival quirk, and is its cost-waiver toggle armed? (thin, api-driven). */
+function rivalWaiverVM(actor) {
+	const api = rippersAutomationApi();
+	if (!api?.actorHasQuirk || !api.actorHasQuirk(actor, 'rival-prodigies')) return { has: false, armed: false };
+	return { has: true, armed: !!api.isRivalWaiverArmed?.(actor) };
+}
+
 /** PURE: a bond clock's four sections as fill flags (filled up to `clock`). */
 function bondClockPips(clock, sections = 4) {
 	const n = Math.max(0, Math.min(sections, Number(clock) || 0));
@@ -3432,6 +3441,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	return {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, bondsNative, bondsIsGM,
 		theTurn: { available: !turnRefundUsed }, // H3: is The Turn's swap-refund still available this scene?
+		rivalWaiver: rivalWaiverVM(actor),       // R1: the Rival cost-waiver roller toggle (hidden unless the actor has it)
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
@@ -3762,6 +3772,7 @@ function getRippersActorSheetClass() {
 				guiseSwap: RippersActorSheet.onGuiseSwap,
 				rollWeapon: RippersActorSheet.onRollWeapon,
 				rollCheck: RippersActorSheet.onRollCheck,
+				toggleRivalWaiver: RippersActorSheet.onToggleRivalWaiver,
 				rest: RippersActorSheet.onRest,
 				spendFabula: RippersActorSheet.onSpendFabula,
 				openEditor: RippersActorSheet.onOpenEditor,
@@ -3847,6 +3858,10 @@ function getRippersActorSheetClass() {
 		static async onGuiseSwap() { await sheetGuiseSwap(this.document); this.render(); }
 		static async onRollWeapon(event, target) { const id = target?.dataset?.item; if (id) await sheetRollWeapon(this.document, id); }
 		static async onRollCheck() { await sheetRollCheck(this.document); }
+		static async onToggleRivalWaiver() {
+			const api = rippersAutomationApi();
+			if (api?.toggleRivalWaiver) { await api.toggleRivalWaiver(this.document); this.render(); }
+		}
 		static async onRest() { await sheetRest(this.document); this.render(); }
 		static async onSpendFabula() { await sheetSpendFabula(this.document); this.render(); }
 		static async onOpenEditor(event, target) { await sheetOpenEditor(this.document, target?.dataset?.guise); this.render(); }
