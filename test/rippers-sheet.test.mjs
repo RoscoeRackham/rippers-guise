@@ -743,3 +743,46 @@ test('buildRippersSheetVM: the Vault embedded tab builds a vault VM (V3); other 
 	assert.equal(on.vault.cabinet.missing, true);      // no packs in the minimal stub
 	assert.ok(RS_TABS.some((t) => t.key === 'vault'));
 });
+
+// ── Punch list: weapon stats, heal-to-crisis, identity/quirks ───────────────────────────────────────
+const { weaponStats } = mod;
+
+test('weaponStats: FU "weapon" shape (.value wrappers) → ACC attrs, DMG = HR + bonus, damage type', () => {
+	const w = { type: 'weapon', system: {
+		attributes: { primary: { value: 'dex' }, secondary: { value: 'ins' } },
+		accuracy: { value: 1 }, damage: { value: 8 }, damageType: { value: 'fire' },
+		type: { value: 'ranged' }, traits: new Set(['two-handed']),
+	} };
+	const s = weaponStats(w);
+	assert.equal(s.accLabel, 'DEX + INS (+1)');
+	assert.equal(s.dmgLabel, 'HR + 8');
+	assert.equal(s.dmgType, 'fire');
+	assert.equal(s.wtype, 'ranged');
+	assert.deepEqual(s.traits, ['two-handed']);
+});
+
+test('weaponStats: FU "customWeapon" shape (bare fields, damage.type) → normalized identically', () => {
+	const w = { type: 'customWeapon', system: {
+		attributes: { primary: 'mig', secondary: 'mig' },
+		accuracy: 0, damage: { value: 0, type: 'physical' }, type: 'melee', traits: new Set(),
+	} };
+	const s = weaponStats(w);
+	assert.equal(s.accLabel, 'MIG + MIG');            // no bonus → no (+N)
+	assert.equal(s.dmgLabel, 'HR');                   // zero bonus → bare HR
+	assert.equal(s.dmgType, 'physical');
+	assert.equal(s.wtype, 'melee');
+});
+
+test('weaponStats: missing system degrades gracefully (no throw)', () => {
+	const s = weaponStats({ type: 'weapon' });
+	assert.equal(s.accLabel, '—');
+	assert.equal(s.dmgLabel, 'HR');
+	assert.equal(s.dmgType, '');
+	assert.deepEqual(s.traits, []);
+});
+
+test('buildRippersSheetVM: weapons carry acc/dmg labels; quirks is always an array', async () => {
+	const vm = await buildRippersSheetVM(actorStub());
+	assert.ok(vm.weapons.every((w) => 'accLabel' in w && 'dmgLabel' in w));
+	assert.ok(Array.isArray(vm.quirks));
+});

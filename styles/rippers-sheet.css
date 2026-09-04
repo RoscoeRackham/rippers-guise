@@ -200,3 +200,17 @@
 .rippers-sheet .rs-cond-items { display: flex; gap: 5px; flex-wrap: wrap; }
 
 .rippers-sheet .rs-foot-note { font-family: var(--rs-mono); font-size: 10px; letter-spacing: .1em; color: var(--rs-muted); font-style: italic; padding: 6px 22px 10px; }
+
+/* Punch list (4 Sep): editable identity inputs, weapon attack stats, quirk rows. Thin — Austin owns polish. */
+.rippers-sheet .rs-study-input { font-family: var(--rs-body); font-size: 15px; color: var(--rs-bone); background: rgba(0,0,0,.25); border: 1px solid var(--rs-border); padding: 4px 8px; width: 100%; }
+.rippers-sheet .rs-study-input:focus { outline: none; border-color: var(--rs-gold); }
+.rippers-sheet .rs-weapon-row { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.rippers-sheet .rs-weapon-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rippers-sheet .rs-weapon-stats { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.rippers-sheet .rs-wstat { font-family: var(--rs-mono); font-size: 11px; letter-spacing: .06em; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-wstat b { color: var(--rs-gold); font-weight: 700; margin-right: 3px; }
+.rippers-sheet .rs-wdtype { color: var(--rs-bone); text-transform: lowercase; }
+.rippers-sheet .rs-wtype { text-transform: uppercase; color: var(--rs-muted); }
+.rippers-sheet .rs-wtag { font-family: var(--rs-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--rs-bone-dim); border: 1px solid var(--rs-border); padding: 1px 6px; }
+.rippers-sheet .rs-quirks { display: flex; flex-direction: column; gap: 8px; }
+.rippers-sheet .rs-quirk-ctl { display: flex; gap: 6px; }

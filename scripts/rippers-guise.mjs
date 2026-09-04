@@ -3590,7 +3590,13 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const condGroups = RS_COND_GROUPS.map((grp) => ({ label: grp.label, items: grp.ids.map((id) => ({ id, label: id, active: activeStatuses.has(id) })) }));
 	// Weapons for the Kit tab's attack rows (weapon + customWeapon; item.roll() drives the attack flow).
 	const weaponItems = [...(actor.itemTypes?.weapon ?? []), ...(actor.itemTypes?.customWeapon ?? [])];
-	const weapons = weaponItems.map((w) => ({ id: w.id, name: w.name ?? '', img: w.img, type: w.type }));
+	const weapons = weaponItems.map((w) => ({ id: w.id, name: w.name ?? '', img: w.img, type: w.type, ...weaponStats(w) }));
+	// Item 3: the character's quirks (Project FU 'effect' Items carrying a rippers-automation fuid, per
+	// the automation registry) — listed for add/remove/edit on the Quirk tab. Not the guise locks.
+	const quirks = (actor.itemTypes?.effect ?? []).map((i) => ({
+		id: i.id, name: i.name ?? '', img: i.img,
+		fuid: i.getFlag?.('rippers-automation', 'fuid') ?? i.system?.fuid ?? '',
+	}));
 	// Editor tab (P2c): the affordance targets the worn guise, else the innate, else the first. It only
 	// OPENS the existing GuiseBuilderApp (which already enforces the fixed-at-distillation locks, the
 	// dismiss-before-edit guard, the GM override and the player Edit-SL toggle) — nothing is rebuilt.
@@ -3620,7 +3626,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		faces: { ...guiseFacesVM(actor) },       // H2: the two-portrait config + toggle availability
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
-		weapons, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
+		weapons, quirks, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
 	};
 }
 
@@ -3753,6 +3759,57 @@ async function sheetRollCheck(actor) {
 /** Rest — actor.rest(true) restores HP/MP (+IP) and fires REST_EVENT → the lent-vitals refill I already
  *  subscribed at ready runs off the same event. Document method. */
 async function sheetRest(actor) { if (typeof actor?.rest === 'function') return actor.rest(true); }
+/** Heal-to-Crisis quick-set: put current HP at the Crisis threshold. FU Crisis = current HP at or below
+ *  half the maximum, rounded down; we use FU's own crisisScore when the actor exposes it, else floor(max/2).
+ *  A GM/play convenience — sets HP to that value (does not toggle the status; FU derives inCrisis itself). */
+async function sheetHealToCrisis(actor) {
+	const hpRes = actor?.system?.resources?.hp;
+	if (!hpRes) return;
+	const max = Number(hpRes.max ?? 0);
+	const threshold = Number(hpRes.crisisScore ?? Math.floor(max / 2));
+	if (Number.isFinite(threshold)) await actor.update({ 'system.resources.hp.value': threshold });
+}
+
+// Item 4: weapon attack stats for the Kit rows. Project FU stores the two item types differently —
+// 'weapon' wraps everything in .value SchemaFields (attributes.primary.value, accuracy.value,
+// damageType.value, type.value); 'customWeapon' delegates to its active form and exposes bare fields
+// (attributes.primary, accuracy, damage.type). Both put the damage bonus at system.damage.value, and
+// final damage is HR + damage.value (FU damage-data get total()). This normalizes both shapes. PURE.
+const RS_ATTR_ABBR = Object.freeze({ dex: 'DEX', ins: 'INS', mig: 'MIG', wlp: 'WLP' });
+function weaponStats(w) {
+	const s = w?.system ?? {};
+	const custom = w?.type === 'customWeapon';
+	const primKey = custom ? s.attributes?.primary : s.attributes?.primary?.value;
+	const secKey = custom ? s.attributes?.secondary : s.attributes?.secondary?.value;
+	const abbr = (k) => RS_ATTR_ABBR[String(k ?? '').toLowerCase()] ?? (k ? String(k).toUpperCase() : '');
+	const accBonus = Number(custom ? s.accuracy : s.accuracy?.value) || 0;
+	const dmgBonus = Number(s.damage?.value ?? 0) || 0;
+	const dmgType = custom
+		? (s.damage?.type ?? (typeof s.getDamageType === 'function' ? s.getDamageType() : '') ?? '')
+		: (s.damageType?.value ?? '');
+	const wtype = custom ? s.type : s.type?.value;
+	const traits = s.traits ? [...s.traits].filter(Boolean) : [];
+	const accParts = [abbr(primKey), abbr(secKey)].filter(Boolean);
+	const accLabel = (accParts.length ? accParts.join(' + ') : '—') + (accBonus ? ` (+${accBonus})` : '');
+	const dmgLabel = dmgBonus ? `HR + ${dmgBonus}` : 'HR';
+	return { accLabel, dmgLabel, dmgType: String(dmgType || ''), wtype: String(wtype || ''), traits };
+}
+
+// Item 3: manage the character's quirks (Project FU 'effect' Items). Add creates a blank effect Item and
+// opens its sheet; edit opens the existing one; remove deletes it. Runtime-only (Foundry document ops).
+async function sheetAddQuirk(actor) {
+	if (!actor?.createEmbeddedDocuments) return;
+	const name = game.i18n?.localize?.('RIPPERS.Sheet.NewQuirk') ?? 'New Quirk';
+	const created = await actor.createEmbeddedDocuments('Item', [{ name, type: 'effect' }]);
+	created?.[0]?.sheet?.render?.(true);
+}
+async function sheetEditQuirk(actor, itemId) {
+	const it = actor?.items?.get?.(itemId);
+	it?.sheet?.render?.(true);
+}
+async function sheetRemoveQuirk(actor, itemId) {
+	if (actor?.deleteEmbeddedDocuments && itemId) await actor.deleteEmbeddedDocuments('Item', [itemId]);
+}
 /** Spend a Fabula Point — spendMetaCurrency confirms + guards fp>0 (deep import). Direct −1 fallback. */
 async function sheetSpendFabula(actor) {
 	if (!actor) return;
@@ -3981,6 +4038,10 @@ function getRippersActorSheetClass() {
 				rollCheck: RippersActorSheet.onRollCheck,
 				toggleRivalWaiver: RippersActorSheet.onToggleRivalWaiver,
 				rest: RippersActorSheet.onRest,
+				healToCrisis: RippersActorSheet.onHealToCrisis,
+				quirkAdd: RippersActorSheet.onQuirkAdd,
+				quirkEdit: RippersActorSheet.onQuirkEdit,
+				quirkRemove: RippersActorSheet.onQuirkRemove,
 				spendFabula: RippersActorSheet.onSpendFabula,
 				openEditor: RippersActorSheet.onOpenEditor,
 				resTrackAdjust: RippersActorSheet.onResTrackAdjust,
@@ -4013,6 +4074,22 @@ function getRippersActorSheetClass() {
 			super._onRender?.(context, options);
 			try { Hooks.callAll('rippers-sheet:rendered', this, this.element); } catch (err) { console.warn('[rippers-guise] rippers-sheet:rendered hook failed:', err); }
 			try { this._wireVaultDnD(this.element); } catch (err) { console.warn('[rippers-guise] vault drag-drop wiring failed:', err); }
+			try { this._wireIdentityFields(this.element); } catch (err) { console.warn('[rippers-guise] identity-field wiring failed:', err); }
+		}
+		// Item 3: the character's own identity fields are editable inline. A [data-idfield] input writes on
+		// change — 'name' → the actor name; anything else → system.resources.<field>.name (FU's identity
+		// slots). The guise's fixed-at-distillation locks are separate and untouched.
+		_wireIdentityFields(root) {
+			if (!root?.querySelectorAll) return;
+			const self = this;
+			for (const input of root.querySelectorAll('[data-idfield]')) {
+				input.addEventListener('change', async () => {
+					const field = input.dataset.idfield;
+					const val = String(input.value ?? '');
+					if (field === 'name') await self.document.update({ name: val });
+					else if (field) await self.document.update({ [`system.resources.${field}.name`]: val });
+				});
+			}
 		}
 		// V3/X4: native drag-and-drop for the Party Vault tab. A field guise dropped on another member's
 		// field is a trade (GM-brokered cross-owner via vaultHandOff); on the cabinet it is a stash; a
@@ -4087,6 +4164,10 @@ function getRippersActorSheetClass() {
 			if (api?.toggleRivalWaiver) { await api.toggleRivalWaiver(this.document); this.render(); }
 		}
 		static async onRest() { await sheetRest(this.document); this.render(); }
+		static async onHealToCrisis() { await sheetHealToCrisis(this.document); this.render(); }
+		static async onQuirkAdd() { await sheetAddQuirk(this.document); this.render(); }
+		static async onQuirkEdit(event, target) { const id = target?.dataset?.item; if (id) await sheetEditQuirk(this.document, id); }
+		static async onQuirkRemove(event, target) { const id = target?.dataset?.item; if (id) { await sheetRemoveQuirk(this.document, id); this.render(); } }
 		static async onSpendFabula() { await sheetSpendFabula(this.document); this.render(); }
 		static async onOpenEditor(event, target) { await sheetOpenEditor(this.document, target?.dataset?.guise); this.render(); }
 		static async onResTrackAdjust(event, target) { const k = target?.dataset?.key; const d = Number(target?.dataset?.dir) || 0; if (k && d) { await sheetAdjustTrackedResource(this.document, k, d); this.render(); } }
@@ -4433,7 +4514,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };

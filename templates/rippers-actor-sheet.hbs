@@ -65,6 +65,7 @@
 				<div class="rs-floor-row">
 					<button class="rs-chip" data-action="rollCheck">{{localize 'RIPPERS.Sheet.RollCheck'}}</button>
 					<button class="rs-chip" data-action="rest">{{localize 'RIPPERS.Sheet.Rest'}}</button>
+					<button class="rs-chip" data-action="healToCrisis" title="{{localize 'RIPPERS.Sheet.HealToCrisisHint'}}">{{localize 'RIPPERS.Sheet.HealToCrisis'}}</button>
 					{{!-- R1: the Rival cost-waiver roller toggle — shown only if the actor has the Rival quirk. --}}
 					{{#if vm.rivalWaiver.has}}<button class="rs-chip{{#if vm.rivalWaiver.armed}} rs-chip-on{{/if}}" data-action="toggleRivalWaiver" title="{{localize 'RIPPERS.Sheet.RivalWaiverHint'}}">{{localize 'RIPPERS.Sheet.RivalWaiver'}}</button>{{/if}}
 					{{!-- H2: manual face toggle (normal ↔ other-shape) — shown only when a face is configured. --}}
@@ -199,11 +200,32 @@
 			{{/if}}
 
 			{{#if vm.tab.study}}
+				{{!-- Item 3: the character's own identity fields are editable inline (name + FU identity slots).
+				      Guise fields stay fixed-at-distillation (that lock is separate, on the Edit tab). --}}
 				<div class="rs-study">
-					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Identity'}}</span><span class="rs-study-val">{{vm.masthead.identity}}</span>
-					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Theme'}}</span><span class="rs-study-val">{{vm.masthead.theme}}</span>
-					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Origin'}}</span><span class="rs-study-val">{{vm.masthead.origin}}</span>
-					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Pronouns'}}</span><span class="rs-study-val">{{vm.masthead.pronouns}}</span>
+					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Name'}}</span><input class="rs-study-input" type="text" data-idfield="name" value="{{vm.masthead.name}}">
+					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Identity'}}</span><input class="rs-study-input" type="text" data-idfield="identity" value="{{vm.masthead.identity}}">
+					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Theme'}}</span><input class="rs-study-input" type="text" data-idfield="theme" value="{{vm.masthead.theme}}">
+					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Origin'}}</span><input class="rs-study-input" type="text" data-idfield="origin" value="{{vm.masthead.origin}}">
+					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Pronouns'}}</span><input class="rs-study-input" type="text" data-idfield="pronouns" value="{{vm.masthead.pronouns}}">
+				</div>
+			{{/if}}
+
+			{{#if vm.tab.quirk}}
+				{{!-- Item 3: manage the character's quirks (FU 'effect' Items) — add / edit / remove. --}}
+				<div class="rs-quirks">
+					{{#if vm.quirks.length}}
+						{{#each vm.quirks as |q|}}
+							<div class="rs-classcard rs-quirk-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+								<span class="rs-classcard-name">{{q.name}}</span>
+								<span class="rs-quirk-ctl">
+									<button class="rs-chip" data-action="quirkEdit" data-item="{{q.id}}">{{localize 'RIPPERS.Sheet.QuirkEdit'}}</button>
+									<button class="rs-chip" data-action="quirkRemove" data-item="{{q.id}}" title="{{localize 'RIPPERS.Sheet.QuirkRemove'}}">✕</button>
+								</span>
+							</div>
+						{{/each}}
+					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoQuirks'}}</p>{{/if}}
+					<div class="rs-res-controls"><button class="rs-btn" data-action="quirkAdd">＋ {{localize 'RIPPERS.Sheet.QuirkAdd'}}</button></div>
 				</div>
 			{{/if}}
 
@@ -284,9 +306,17 @@
 			{{#if vm.tab.kit}}
 				{{#if vm.weapons.length}}
 					{{#each vm.weapons as |w|}}
-						<div class="rs-classcard" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-							<span class="rs-classcard-name">{{w.name}}</span>
-							<button class="rs-chip" data-action="rollWeapon" data-item="{{w.id}}">{{localize 'RIPPERS.Sheet.Attack'}}</button>
+						<div class="rs-classcard rs-weapon-row">
+							<div class="rs-weapon-head">
+								<span class="rs-classcard-name">{{w.name}}</span>
+								<button class="rs-chip" data-action="rollWeapon" data-item="{{w.id}}">{{localize 'RIPPERS.Sheet.Attack'}}</button>
+							</div>
+							<div class="rs-weapon-stats">
+								<span class="rs-wstat"><b>ACC</b> {{w.accLabel}}</span>
+								<span class="rs-wstat"><b>DMG</b> {{w.dmgLabel}}{{#if w.dmgType}} <span class="rs-wdtype">{{w.dmgType}}</span>{{/if}}</span>
+								{{#if w.wtype}}<span class="rs-wstat rs-wtype">{{w.wtype}}</span>{{/if}}
+								{{#each w.traits as |t|}}<span class="rs-wtag">{{t}}</span>{{/each}}
+							</div>
 						</div>
 					{{/each}}
 				{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoWeapons'}}</p>{{/if}}
