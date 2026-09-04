@@ -496,6 +496,25 @@ async function bindGuise(actor, ref) {
 	} finally { _guiseBusy.delete(actor.id); }
 }
 
+/** Bind a guise WITHOUT the H3 swap accounting — used for the default-guise-on-open (P4): the basic
+ *  guise becoming active on open is not a turn action, so no Equipment-Action cost / Turn-refund. Same
+ *  materialisation as bindGuise (skills/equipment/face), minus accountGuiseSwap. */
+async function bindGuiseNoCost(actor, ref) {
+	const item = resolveItem(actor, ref);
+	if (!actor || !item) return;
+	if (_guiseBusy.has(actor.id)) return;
+	_guiseBusy.add(actor.id);
+	try { return await _bindCore(actor, item); } finally { _guiseBusy.delete(actor.id); }
+}
+/** PURE-ish: the id of the character's BASIC guise (P4) — the Innate guise if present (their normal-shape
+ *  starter self), else the first guise. null when they own no guise (stays Unmasked). */
+function defaultActiveGuiseId(actor) {
+	const guises = actor?.items?.filter ? actor.items.filter(isGuiseItem) : [];
+	if (!guises.length) return null;
+	const innate = guises.find((g) => !!g.getFlag?.(MODULE_ID, 'isInnate') || g.system?.data?.mode === 'innate');
+	return (innate ?? guises[0]).id;
+}
+
 async function dismissGuise(actor, ref, opts = {}) {
 	const item = resolveItem(actor, ref);
 	if (!actor || !item) { console.warn('[rippers-guise] dismissGuise: no actor/item.'); return; }
@@ -4387,6 +4406,25 @@ function getRippersActorSheetClass() {
 			try { this._wireIdentityFields(this.element); } catch (err) { console.warn('[rippers-guise] identity-field wiring failed:', err); }
 			try { this._wireEditableFields(this.element); } catch (err) { console.warn('[rippers-guise] editable-field wiring failed:', err); }
 			try { this._wireItemEdit(this.element); } catch (err) { console.warn('[rippers-guise] item-edit wiring failed:', err); }
+			this._ensureDefaultGuise(); // P4: no active guise → wear the basic guise (fire-and-forget; re-renders)
+		}
+		// P4 (Austin: "Unmasked form doesn't make sense. It should default to his basic Guise."): when the
+		// sheet opens with NO active guise, wear the basic/innate guise so the character shows real skills/
+		// stats instead of the bare Unmasked shell. No swap cost (bindGuiseNoCost). Guarded against re-entry
+		// and the in-flight lock; a character with no guise at all stays Unmasked. Owner-only (writes state).
+		async _ensureDefaultGuise() {
+			try {
+				const actor = this.document;
+				if (!actor?.isOwner || this._defaultingGuise) return;
+				if (getActiveGuise(actor)) return;                 // already masked → leave it
+				if (_guiseBusy.has(actor.id)) return;
+				const id = defaultActiveGuiseId(actor);
+				if (!id) return;                                    // no guise → Unmasked stands
+				this._defaultingGuise = true;
+				await bindGuiseNoCost(actor, id);
+				this._defaultingGuise = false;
+				this.render();
+			} catch (err) { this._defaultingGuise = false; console.warn('[rippers-guise] default-guise on open failed:', err); }
 		}
 		// Inline INVENTORY editing: [data-item-edit] inputs/selects write a dot-path onto an owned Item
 		// (data-item = item id, data-item-edit = path, data-dtype="number" coerces). Item name via path "name".
@@ -4923,7 +4961,7 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.

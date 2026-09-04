@@ -941,3 +941,19 @@ test('buildSpellsVM: lists native spell items with mp/target/duration; empty-saf
 	assert.equal(vm.spells[0].offensive, true);
 	assert.equal(buildSpellsVM({}).any, false);                     // no spells is safe
 });
+
+test('defaultActiveGuiseId (P4): prefers the innate guise, else first; null with none', () => {
+	const { defaultActiveGuiseId } = mod;
+	const G = (id, extra = {}) => ({ id, type: 'classFeature', system: { featureType: 'rippers-guise.guise', data: {}, ...(extra.system ?? {}) }, getFlag: extra.getFlag ?? (() => undefined) });
+	const mk = (items) => ({ items: { filter: (fn) => items.filter(fn) } });
+	// innate flagged via getFlag('isInnate')
+	const innate = G('g2', { getFlag: (_m, k) => (k === 'isInnate' ? true : undefined) });
+	assert.equal(defaultActiveGuiseId(mk([G('g1'), innate])), 'g2');
+	// innate via system.data.mode
+	assert.equal(defaultActiveGuiseId(mk([G('g1'), G('g3', { system: { featureType: 'rippers-guise.guise', data: { mode: 'innate' } } })])), 'g3');
+	// no innate → first guise
+	assert.equal(defaultActiveGuiseId(mk([G('g1'), G('g4')])), 'g1');
+	// no guises → null (stays Unmasked)
+	assert.equal(defaultActiveGuiseId(mk([])), null);
+	assert.equal(defaultActiveGuiseId({}), null);
+});
