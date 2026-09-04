@@ -323,6 +323,43 @@
 			{{/if}}
 
 			{{#if vm.tab.edit}}
+				{{!-- Item 3 (headline): the character's OWN fields, two-way editable. Guise class/skill/affinity
+				      locks live below (the guise builder), fixed at distillation. --}}
+				<div class="rs-edit-block">
+					<div class="rs-edit-title">{{localize 'RIPPERS.Sheet.EditCharacter'}}</div>
+					<label class="rs-edit-row"><span>{{localize 'RIPPERS.Sheet.Name'}}</span><input type="text" data-edit="name" value="{{vm.editable.name}}"></label>
+					<div class="rs-edit-grid">
+						{{#each vm.editable.attributes as |a|}}
+							<label class="rs-edit-row"><span>{{a.label}}</span>
+								<select data-edit="system.attributes.{{a.key}}.base" data-dtype="number">
+									{{#each a.options as |o|}}<option value="{{o.n}}" {{#if o.sel}}selected{{/if}}>d{{o.n}}</option>{{/each}}
+								</select>
+							</label>
+						{{/each}}
+					</div>
+					<div class="rs-edit-grid">
+						<label class="rs-edit-row"><span>HP</span><input type="number" data-edit="system.resources.hp.value" data-dtype="number" value="{{vm.editable.hp.value}}"></label>
+						<label class="rs-edit-row"><span>HP max</span><input type="number" data-edit="system.resources.hp.max" data-dtype="number" value="{{vm.editable.hp.max}}"></label>
+						<label class="rs-edit-row"><span>MP</span><input type="number" data-edit="system.resources.mp.value" data-dtype="number" value="{{vm.editable.mp.value}}"></label>
+						<label class="rs-edit-row"><span>MP max</span><input type="number" data-edit="system.resources.mp.max" data-dtype="number" value="{{vm.editable.mp.max}}"></label>
+						<label class="rs-edit-row"><span>IP</span><input type="number" data-edit="system.resources.ip.value" data-dtype="number" value="{{vm.editable.ip.value}}"></label>
+						<label class="rs-edit-row"><span>IP max</span><input type="number" data-edit="system.resources.ip.max" data-dtype="number" value="{{vm.editable.ip.max}}"></label>
+						<label class="rs-edit-row"><span>FP</span><input type="number" data-edit="system.resources.fp.value" data-dtype="number" value="{{vm.editable.fp}}"></label>
+						<label class="rs-edit-row"><span>EXP</span><input type="number" data-edit="system.resources.exp.value" data-dtype="number" value="{{vm.editable.exp}}"></label>
+						<label class="rs-edit-row"><span>Zenit</span><input type="number" data-edit="system.resources.zenit.value" data-dtype="number" value="{{vm.editable.zenit}}"></label>
+					</div>
+					<div class="rs-edit-title">{{localize 'RIPPERS.Sheet.EditBonds'}}</div>
+					{{#each vm.editable.bonds as |b|}}
+						<div class="rs-edit-bond">
+							<input type="text" placeholder="{{localize 'RIPPERS.Sheet.BondWith'}}" data-bond-index="{{b.i}}" data-bond-field="name" value="{{b.name}}">
+							<input type="text" placeholder="Admiration/Inferiority" data-bond-index="{{b.i}}" data-bond-field="admInf" value="{{b.admInf}}">
+							<input type="text" placeholder="Loyalty/Mistrust" data-bond-index="{{b.i}}" data-bond-field="loyMis" value="{{b.loyMis}}">
+							<input type="text" placeholder="Affection/Hatred" data-bond-index="{{b.i}}" data-bond-field="affHat" value="{{b.affHat}}">
+						</div>
+					{{/each}}
+					<button class="rs-btn" data-action="bondCreate">＋ {{localize 'RIPPERS.Sheet.BondAdd'}}</button>
+				</div>
+
 				{{#if vm.editor.has}}
 					<div class="rs-mini">
 						<div class="rs-mini-label">{{localize 'RIPPERS.Sheet.Editing'}}</div>

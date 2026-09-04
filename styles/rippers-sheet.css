@@ -129,7 +129,7 @@
 .rippers-sheet .rs-pip.filled { background: var(--rs-red); }
 .rippers-sheet .rs-bond-skill { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-green); }
 .rippers-sheet .rs-bond-controls { display: flex; gap: 5px; flex-wrap: wrap; }
-.rippers-sheet .rs-btn { font-family: var(--rs-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .08em; padding: 3px 8px; border: 1px solid var(--rs-border-red); background: var(--rs-panel); color: var(--rs-bone-dim); cursor: pointer; }
+.rippers-sheet .rs-btn { font-family: var(--rs-verb); font-size: 14px; font-weight: 400; letter-spacing: .04em; padding: 3px 10px; border: 1px solid var(--rs-border-red); background: var(--rs-panel); color: var(--rs-bone-dim); cursor: pointer; }
 .rippers-sheet .rs-btn:hover { color: var(--rs-bone); border-color: var(--rs-red); }
 .rippers-sheet .rs-btn:disabled { opacity: .4; cursor: not-allowed; }
 /* X1/H5: vital bars with a temporary (lent) shield overlay + IP dots. Violet worn-guise tag (H1). */
@@ -190,7 +190,7 @@
 .rippers-sheet .rs-mode { display: inline-flex; border: 1px solid var(--rs-border); margin-left: auto; }
 .rippers-sheet .rs-mode button { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; padding: 4px 10px; cursor: pointer; border: none; background: var(--rs-bg); color: var(--rs-bone-dim); }
 .rippers-sheet .rs-mode button.rs-mode-on { background: var(--rs-red); color: #fff; }
-.rippers-sheet .rs-chip { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; padding: 5px 11px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone-dim); }
+.rippers-sheet .rs-chip { font-family: var(--rs-verb); font-size: 15px; font-weight: 400; letter-spacing: .03em; padding: 3px 12px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); }
 .rippers-sheet .rs-chip:hover { border-color: var(--rs-red); color: var(--rs-bone); }
 .rippers-sheet .rs-chip.rs-chip-on { background: var(--rs-red); color: #fff; border-color: var(--rs-red); }
 .rippers-sheet .rs-chip-more { border-style: dashed; }
@@ -214,3 +214,26 @@
 .rippers-sheet .rs-wtag { font-family: var(--rs-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--rs-bone-dim); border: 1px solid var(--rs-border); padding: 1px 6px; }
 .rippers-sheet .rs-quirks { display: flex; flex-direction: column; gap: 8px; }
 .rippers-sheet .rs-quirk-ctl { display: flex; gap: 6px; }
+
+/* Arcana picker DialogV2 — renders OUTSIDE .rippers-sheet, so it carries its own palette (fixes the
+   white-on-white buttons) + a scroll container. Verbs in Pirata One to match the sheet. */
+.rg-arcana-picker { color: #e8dccb; max-width: 640px; }
+.rg-arcana-picker .rs-arcana-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-height: 60vh; overflow-y: auto; padding: 4px; }
+.rg-arcana-picker .rs-arcana-opt { padding: 2px; background: #e8dccb; border: 1px solid #2b1d16; cursor: pointer; color: #120a0c; }
+.rg-arcana-picker .rs-arcana-opt:hover { outline: 2px solid #c8102a; }
+.rg-arcana-picker .rs-arcana-opt img { width: 100%; height: auto; display: block; }
+.rg-arcana-picker .rg-arcana-clear { margin-top: 10px; text-align: center; }
+.rg-arcana-picker .rg-arcana-clearbtn { font-family: 'Pirata One','Grenze Gotisch',fantasy,serif; font-size: 16px; padding: 4px 16px; background: #120a0c; color: #e8dccb; border: 1px solid #4a1a22; }
+.rg-arcana-picker .rg-arcana-clearbtn:hover { border-color: #c8102a; color: #fff; }
+.rg-arcana-picker .rs-arcana-empty-msg { color: #c9b8a8; padding: 12px; text-align: center; font-family: 'IBM Plex Mono',ui-monospace,monospace; font-size: 12px; }
+.rg-arcana-picker .rs-arcana-empty-msg code { color: #c9a227; }
+
+/* Edit tab — the character's own editable fields (Item 3). */
+.rippers-sheet .rs-edit-block { display: flex; flex-direction: column; gap: 10px; background: var(--rs-card); border: 1px solid var(--rs-border); padding: 14px; margin-bottom: 12px; }
+.rippers-sheet .rs-edit-title { font-family: var(--rs-disp); font-weight: 800; font-size: 18px; color: var(--rs-bone); border-bottom: 1px solid var(--rs-border); padding-bottom: 4px; }
+.rippers-sheet .rs-edit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px 14px; }
+.rippers-sheet .rs-edit-row { display: flex; flex-direction: column; gap: 3px; font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-edit-row input, .rippers-sheet .rs-edit-row select { font-family: var(--rs-body); font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--rs-bone); background: rgba(0,0,0,.25); border: 1px solid var(--rs-border); padding: 4px 8px; }
+.rippers-sheet .rs-edit-row input:focus, .rippers-sheet .rs-edit-row select:focus { outline: none; border-color: var(--rs-gold); }
+.rippers-sheet .rs-edit-bond { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
+.rippers-sheet .rs-edit-bond input { font-family: var(--rs-body); font-size: 13px; color: var(--rs-bone); background: rgba(0,0,0,.25); border: 1px solid var(--rs-border); padding: 3px 7px; }

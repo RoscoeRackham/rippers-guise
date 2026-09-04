@@ -470,6 +470,13 @@ test('buildRippersSheetVM: Resources tab binds tracked resources from the actor 
 // ── H3 "The Turn": guise-swap action economy ──────────────────────────────────────────────────────
 const { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, USED_GUISES_FLAG, TURN_REFUND_FLAG } = mod;
 
+// H3 refinement: accounting only runs in an active combat. Stub game.combat with A1 as a combatant.
+async function withCombat(actorId, fn) {
+	const saved = globalThis.game;
+	globalThis.game = { ...saved, combat: { combatants: [{ actorId }] } };
+	try { return await fn(); } finally { globalThis.game = saved; }
+}
+
 test('guiseSwapActionDecision: fresh guise + Turn available → FREE (refunded once/scene)', () => {
 	assert.deepEqual(guiseSwapActionDecision([], false, 'g1'), { cost: 'free', refunded: true, reason: 'the-turn' });
 	// The Turn already spent this scene → the next fresh swap costs an Action.
@@ -503,18 +510,28 @@ function turnActor() {
 	};
 }
 
-test('accountGuiseSwap: first fresh swap is refunded; the next fresh swap costs an Action', async () => {
+test('accountGuiseSwap (IN combat): first fresh swap is refunded; the next fresh swap costs an Action', async () => {
 	const a = turnActor();
+	await withCombat('A1', async () => {
+		assert.deepEqual(guiseSceneState(a), { used: [], turnRefundUsed: false });
+		const d1 = await accountGuiseSwap(a, 'g1');
+		assert.equal(d1.refunded, true);
+		assert.deepEqual(guiseSceneState(a), { used: ['g1'], turnRefundUsed: true });
+		const d2 = await accountGuiseSwap(a, 'g2');           // Turn spent → Action
+		assert.equal(d2.refunded, false);
+		assert.deepEqual(guiseSceneState(a).used, ['g1', 'g2']);
+		const d3 = await accountGuiseSwap(a, 'g1');           // back to a used guise → Action, no dup
+		assert.equal(d3.reason, 'already-used');
+		assert.deepEqual(guiseSceneState(a).used, ['g1', 'g2']);
+	});
+});
+
+test('accountGuiseSwap (OUTSIDE combat): swap is FREE, no accounting written (Austin 4 Sep)', async () => {
+	const a = turnActor();                                 // no game.combat stub → not in combat
+	const d = await accountGuiseSwap(a, 'g1');
+	assert.deepEqual(d, { cost: 'free', refunded: false, reason: 'no-combat' });
+	assert.equal(a.updates.length, 0);                     // nothing persisted
 	assert.deepEqual(guiseSceneState(a), { used: [], turnRefundUsed: false });
-	const d1 = await accountGuiseSwap(a, 'g1');
-	assert.equal(d1.refunded, true);
-	assert.deepEqual(guiseSceneState(a), { used: ['g1'], turnRefundUsed: true });
-	const d2 = await accountGuiseSwap(a, 'g2');           // Turn spent → Action
-	assert.equal(d2.refunded, false);
-	assert.deepEqual(guiseSceneState(a).used, ['g1', 'g2']);
-	const d3 = await accountGuiseSwap(a, 'g1');           // back to a used guise → Action, no dup
-	assert.equal(d3.reason, 'already-used');
-	assert.deepEqual(guiseSceneState(a).used, ['g1', 'g2']);
 });
 
 test('buildRippersSheetVM: guise rows hint The Turn refund, plus a top-level theTurn flag', async () => {
@@ -710,8 +727,8 @@ test('buildVaultVM: party roster with field slots, worn tag, and the cabinet com
 		assert.equal(m.name, 'Vin'); assert.equal(m.worn, 'Guise vg1'); // getActiveGuise → vg1 worn
 		assert.equal(m.limit, 6); assert.equal(m.count, 1); assert.equal(m.slots.length, 6);
 		assert.equal(m.canWrite, true);
-		assert.equal(vm.cabinet.label, 'Rippers Guises');
-		assert.equal(vm.cabinet.entries.length, 1);
+		assert.equal(vm.cabinet.label, 'Cabinet');           // world store; the shipped pack is a read-only library
+		assert.equal(vm.cabinet.entries.length, 1);          // no world stashes yet; the shipped pack contributes 1
 		assert.equal(vm.cabinet.entries[0].uuid, 'Compendium.rippers-guise.guises.c1');
 	} finally { globalThis.game = savedGame; }
 });

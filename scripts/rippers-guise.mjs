@@ -453,7 +453,9 @@ async function _bindCore(actor, item) {
 	// … and sleep the creation heroic while masked (8c); 40/50/earned stay live.
 	await suppressCreationHeroic(actor);
 	// Affinities: the guise's embedded "Guise affinities" effect now transfers (transferEffects()=true).
-	await applyGuiseFace(actor, item); // H2: swap actor.img to the face this guise assigns (normal/other/none)
+	// H2 portrait: cosmetic — it must NEVER block or abort a swap. Fully decoupled: any failure here
+	// (a bad face path, a rejected update, a FilePicker+ quirk) is swallowed so the bind always completes.
+	try { await applyGuiseFace(actor, item); } catch (err) { console.warn('[rippers-guise] applyGuiseFace failed (swap unaffected):', err); }
 	console.debug(`[rippers-guise] bound "${item.name}": ${skillIds.length} guise skill(s), ${equipIds.length} equipment; ${dormant} innate skill(s) dormant.`);
 }
 
@@ -479,7 +481,7 @@ async function _dismissCore(actor, item, { silent = false } = {}) {
 		...equipRestore,
 	});
 	// H2: on a true unmask restore the NORMAL face; the silent swap-dismiss leaves it to the new bind.
-	if (!silent) { await restoreBaseFace(actor); console.debug(`[rippers-guise] dismissed "${item.name}"; innate skills restored.`); }
+	if (!silent) { try { await restoreBaseFace(actor); } catch (err) { console.warn('[rippers-guise] restoreBaseFace failed (unmask unaffected):', err); } console.debug(`[rippers-guise] dismissed "${item.name}"; innate skills restored.`); }
 }
 
 async function bindGuise(actor, ref) {
@@ -554,6 +556,13 @@ function markGuiseUsed(usedGuises, targetId) {
 	return used;
 }
 
+/** Is the actor a combatant in the active combat? (Robust for GM + player; false when no combat.) */
+function actorInActiveCombat(actor) {
+	const c = globalThis.game?.combat;
+	if (!c || !actor?.id) return false;
+	try { return !!c.combatants?.some?.((cb) => cb?.actorId === actor.id); } catch { return false; }
+}
+
 /** Read the actor's per-scene swap state. */
 function guiseSceneState(actor) {
 	return {
@@ -576,6 +585,9 @@ function announceGuiseSwapCost(actor, targetId, decision) {
  *  Called AFTER a successful bind. Returns the decision (for callers/tests). */
 async function accountGuiseSwap(actor, targetId) {
 	if (!actor || !targetId) return null;
+	// H3 refinement (Austin 4 Sep): a swap costs an Equipment Action ONLY in a combat scene. Outside an
+	// active combat there is no action economy, so the swap is FREE — no advisory, no scene accounting.
+	if (!actorInActiveCombat(actor)) return { cost: 'free', refunded: false, reason: 'no-combat' };
 	const { used, turnRefundUsed } = guiseSceneState(actor);
 	const decision = guiseSwapActionDecision(used, turnRefundUsed, targetId);
 	const update = { [`flags.${MODULE_ID}.${USED_GUISES_FLAG}`]: markGuiseUsed(used, targetId) };
@@ -618,7 +630,26 @@ async function clearAllGuiseSceneState() {
 //    existing handOffDecision/sheetHandOffGuise clean path already serves it; a player dropping onto
 //    another owner's field is still refused 'needs-gm-socket'). Wired to the tab in 3b.
 const PARTY_SIZE_SETTING = 'partySize';
-const CABINET_PACK = `${MODULE_ID}.guises`; // V4 — the declared compendium pack is the cabinet
+// V4 cabinet store. The module-shipped pack (rippers-guise.guises) is LOCKED read-only distributed
+// content — you cannot create documents in it at runtime, and on hosted Forge the module dir is
+// read-only (a module update would clobber writes anyway). So the WRITABLE cabinet is a WORLD-owned
+// compendium the world creates + owns. The shipped pack is still read as a read-only guise LIBRARY.
+const CABINET_PACK = `${MODULE_ID}.guises`;        // shipped, read-only (library)
+const CABINET_WORLD_NAME = 'rippers-cabinet';
+const CABINET_WORLD_PACK = `world.${CABINET_WORLD_NAME}`;  // writable, world-owned (stashes)
+
+/** The world cabinet CompendiumCollection, creating it on first use (GM only). Null when absent and the
+ *  current user can't create it (a player before any GM has opened the vault). Never throws. */
+async function ensureCabinetPack() {
+	const packs = globalThis.game?.packs;
+	let pack = packs?.get?.(CABINET_WORLD_PACK);
+	if (pack) return pack;
+	const CC = globalThis.CompendiumCollection ?? foundry?.documents?.collections?.CompendiumCollection;
+	if (!globalThis.game?.user?.isGM || !CC?.createCompendium) return null;
+	try { pack = await CC.createCompendium({ type: 'Item', label: 'Rippers Cabinet', name: CABINET_WORLD_NAME }); }
+	catch (err) { console.warn('[rippers-guise] could not create the world cabinet pack:', err); }
+	return packs?.get?.(CABINET_WORLD_PACK) ?? pack ?? null;
+}
 
 /** The configured party size (world setting), clamped to a sane floor. */
 function partySize() {
@@ -664,13 +695,23 @@ function vaultGuiseCard(actor, g) {
 }
 
 /** Read the cabinet compendium index → entries the tab can list/drag. { packId, label, entries }. */
+async function readPackEntries(packId, pack) {
+	if (!pack) return [];
+	try {
+		const index = Array.from(await pack.getIndex());
+		return index.map((e) => ({ id: e._id, uuid: `Compendium.${packId}.${e._id}`, name: e.name ?? '', img: e.img }));
+	} catch (err) { console.warn(`[rippers-guise] cabinet index unavailable for ${packId}:`, err); return []; }
+}
 async function buildCabinetEntries() {
-	const pack = globalThis.game?.packs?.get?.(CABINET_PACK);
-	if (!pack) return { packId: CABINET_PACK, label: 'Cabinet', entries: [], missing: true };
-	let index = [];
-	try { index = Array.from(await pack.getIndex()); } catch (err) { console.warn('[rippers-guise] cabinet index unavailable:', err); }
-	const entries = index.map((e) => ({ id: e._id, uuid: `Compendium.${CABINET_PACK}.${e._id}`, name: e.name ?? '', img: e.img }));
-	return { packId: CABINET_PACK, label: pack.metadata?.label ?? 'Cabinet', entries };
+	const packs = globalThis.game?.packs;
+	const worldPack = packs?.get?.(CABINET_WORLD_PACK);          // writable stashes
+	const shippedPack = packs?.get?.(CABINET_PACK);              // read-only library
+	const worldEntries = await readPackEntries(CABINET_WORLD_PACK, worldPack);
+	const shippedEntries = await readPackEntries(CABINET_PACK, shippedPack);
+	const entries = [...worldEntries, ...shippedEntries];
+	// "missing" only when there is no store to read AND none to stash into yet (fresh world, no GM open).
+	const missing = !worldPack && !shippedPack;
+	return { packId: CABINET_WORLD_PACK, label: 'Cabinet', entries, missing };
 }
 
 /** Build the Party Vault embedded-tab VM (V1–V5). Async — reads the cabinet compendium index. */
@@ -705,9 +746,14 @@ async function vaultStashToCabinet(actor, guiseId) {
 	const innate = !!item.getFlag?.(MODULE_ID, 'isInnate') || item.system?.data?.mode === 'innate';
 	if (innate) { ui.notifications?.warn('The innate guise cannot be stashed.'); return { ok: false, reason: 'innate-untradable' }; }
 	if (!(globalThis.game?.user?.isGM || actor.isOwner)) { ui.notifications?.warn('You cannot write that character.'); return { ok: false, reason: 'no-write' }; }
+	// Writable target: the WORLD cabinet pack (never the locked module pack). Create on first use (GM),
+	// unlock if needed, then write. A player before any GM has opened the vault gets a clear message.
+	const pack = await ensureCabinetPack();
+	if (!pack) { ui.notifications?.warn('The cabinet is not set up yet — ask your GM to open the Party Vault once.'); return { ok: false, reason: 'no-cabinet' }; }
+	if (pack.locked && typeof pack.configure === 'function') { try { await pack.configure({ locked: false }); } catch (err) { console.warn('[rippers-guise] could not unlock the cabinet:', err); } }
 	if (getActiveGuise(actor) === guiseId) await dismissGuise(actor, guiseId); // unwear first (bind resets)
 	const obj = item.toObject(); delete obj._id;                              // heroic ref + lent layer + satchel ride in system.data
-	try { await getDocumentClass('Item').create(obj, { pack: CABINET_PACK }); }
+	try { await getDocumentClass('Item').create(obj, { pack: pack.collection ?? CABINET_WORLD_PACK }); }
 	catch (err) { console.warn('[rippers-guise] stash-to-cabinet failed:', err); ui.notifications?.warn('Could not stash to the cabinet.'); return { ok: false, reason: 'pack-write-failed' }; }
 	await item.delete();
 	ui.notifications?.info(`Stashed "${item.name}" to the cabinet.`);
@@ -3597,6 +3643,20 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		id: i.id, name: i.name ?? '', img: i.img,
 		fuid: i.getFlag?.('rippers-automation', 'fuid') ?? i.system?.fuid ?? '',
 	}));
+	// Editing (Austin: the whole sheet was read-only). Raw values for the Edit tab's two-way inputs —
+	// the character's OWN fields (name/identity handled on Study; here: attributes, HP/MP/IP + maxes,
+	// FP/EXP/Zenit, bonds). Guise class-skills stay fixed-at-distillation (separate lock). The template
+	// binds each input with data-edit="<dot path>" (or bond index/field), written on change by the sheet.
+	const editable = {
+		name: actor.name ?? '',
+		attributes: ['dex', 'ins', 'mig', 'wlp'].map((k) => {
+			const base = Number(sys.attributes?.[k]?.base ?? 8);
+			return { key: k, label: RS_ATTR_LABELS[k], base, options: [6, 8, 10, 12].map((n) => ({ n, sel: n === base })) };
+		}),
+		hp: { value: hp.value, max: hp.max ?? 0 }, mp: { value: mp.value, max: mp.max ?? 0 }, ip: { value: ip.value, max: ip.max ?? 0 },
+		fp: vitals.fp, exp: vitals.exp, zenit: vitals.zenit,
+		bonds: (sys.bonds ?? []).map((b, i) => ({ i, name: b.name ?? '', admInf: b.admInf ?? '', loyMis: b.loyMis ?? '', affHat: b.affHat ?? '', strength: Number(b.strength ?? 0) })),
+	};
 	// Editor tab (P2c): the affordance targets the worn guise, else the innate, else the first. It only
 	// OPENS the existing GuiseBuilderApp (which already enforces the fixed-at-distillation locks, the
 	// dismiss-before-edit guard, the GM override and the player Edit-SL toggle) — nothing is rebuilt.
@@ -3626,7 +3686,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		faces: { ...guiseFacesVM(actor) },       // H2: the two-portrait config + toggle availability
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
-		weapons, quirks, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
+		weapons, quirks, editable, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
 	};
 }
 
@@ -3714,7 +3774,9 @@ async function sheetPickArcana(actor, guiseId) {
 	const body = entries.length
 		? `<div class="rs-arcana-grid">${entries.map((e) => `<button type="button" class="rs-arcana-opt" data-path="${esc(e.path)}" title="${esc(e.name)}"><img src="${esc(e.path)}" alt="${esc(e.name)}"></button>`).join('')}</div>`
 		: `<p class="rs-arcana-empty-msg">${esc(game.i18n?.localize?.('RIPPERS.Sheet.ArcanaEmpty') ?? 'No images found in the arcana folder. Set the "Arcana art folder" setting to where your cards live.')}<br><code>${esc(base)}</code></p>`;
-	const content = `${body}<p style="margin-top:8px;text-align:center;"><button type="button" class="rs-arcana-opt" data-path="">${esc(clearLbl)}</button></p>`;
+	// Wrapped in .rg-arcana-picker: the DialogV2 renders OUTSIDE .rippers-sheet, so the sheet's scoped
+	// tokens don't reach it — the picker carries its own (unscoped) styling for contrast + scroll.
+	const content = `<div class="rg-arcana-picker">${body}<p class="rg-arcana-clear"><button type="button" class="rs-arcana-opt rg-arcana-clearbtn" data-path="">${esc(clearLbl)}</button></p></div>`;
 	const DV2 = foundry?.applications?.api?.DialogV2;
 	const pick = await new Promise((resolve) => {
 		const wire = (root) => root?.querySelectorAll?.('.rs-arcana-opt').forEach((b) => b.addEventListener('click', () => resolve(b.dataset.path ?? '')));
@@ -4075,6 +4137,32 @@ function getRippersActorSheetClass() {
 			try { Hooks.callAll('rippers-sheet:rendered', this, this.element); } catch (err) { console.warn('[rippers-guise] rippers-sheet:rendered hook failed:', err); }
 			try { this._wireVaultDnD(this.element); } catch (err) { console.warn('[rippers-guise] vault drag-drop wiring failed:', err); }
 			try { this._wireIdentityFields(this.element); } catch (err) { console.warn('[rippers-guise] identity-field wiring failed:', err); }
+			try { this._wireEditableFields(this.element); } catch (err) { console.warn('[rippers-guise] editable-field wiring failed:', err); }
+		}
+		// Item 3 (the headline): generic two-way editing of the character's own fields. A [data-edit]
+		// input/select writes its dot-path on change (data-dtype="number" coerces); bonds are an array, so
+		// [data-bond-index]+[data-bond-field] rewrite the whole system.bonds array element.
+		_wireEditableFields(root) {
+			if (!root?.querySelectorAll) return;
+			const self = this;
+			for (const el of root.querySelectorAll('[data-edit]')) {
+				el.addEventListener('change', async () => {
+					const path = el.dataset.edit; if (!path) return;
+					let val = el.value;
+					if (el.dataset.dtype === 'number') { val = Number(val); if (!Number.isFinite(val)) return; }
+					try { await self.document.update({ [path]: val }); } catch (err) { console.warn(`[rippers-guise] edit ${path} failed:`, err); }
+				});
+			}
+			for (const el of root.querySelectorAll('[data-bond-index]')) {
+				el.addEventListener('change', async () => {
+					const idx = Number(el.dataset.bondIndex); const field = el.dataset.bondField;
+					if (!Number.isFinite(idx) || !field) return;
+					const bonds = foundry.utils.deepClone(self.document.system?.bonds ?? []);
+					while (bonds.length <= idx) bonds.push({ name: '', admInf: '', loyMis: '', affHat: '', strength: 0 });
+					bonds[idx][field] = field === 'strength' ? (Number(el.value) || 0) : el.value;
+					try { await self.document.update({ 'system.bonds': bonds }); } catch (err) { console.warn('[rippers-guise] bond edit failed:', err); }
+				});
+			}
 		}
 		// Item 3: the character's own identity fields are editable inline. A [data-idfield] input writes on
 		// change — 'name' → the actor name; anything else → system.resources.<field>.name (FU's identity
@@ -4138,8 +4226,8 @@ function getRippersActorSheetClass() {
 		static onToggleConditions() { this._showConditions = !this._showConditions; this.render(); }
 		static onOpenConditions() { sheetOpenConditions(statusTargetActor(this.document, this._statusSelf, globalThis.game?.user?.targets) ?? this.document); }
 		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this.render(); } }
-		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (id) { await sheetGuiseWear(this.document, id); this.render(); } }
-		static async onPickArcana(event, target) { const id = target?.dataset?.guise; if (id) { await sheetPickArcana(this.document, id); this.render(); } }
+		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (!id) return; try { await sheetGuiseWear(this.document, id); } catch (err) { console.warn('[rippers-guise] guise wear/swap failed:', err); } finally { this.render(); } }
+		static async onPickArcana(event, target) { const id = target?.dataset?.guise; if (!id) return; try { await sheetPickArcana(this.document, id); } catch (err) { console.warn('[rippers-guise] arcana pick failed:', err); } finally { this.render(); } }
 		static async onToggleFace() { await sheetToggleFace(this.document); this.render(); }
 		static async onSetFace(event, target) {
 			const which = target?.dataset?.face; if (which !== 'normal' && which !== 'other') return;
@@ -4156,7 +4244,7 @@ function getRippersActorSheetClass() {
 			else if (guise.getFlag(MODULE_ID, GUISE_FACE_FLAG)) await guise.unsetFlag(MODULE_ID, GUISE_FACE_FLAG);
 			this.render();
 		}
-		static async onGuiseSwap() { await sheetGuiseSwap(this.document); this.render(); }
+		static async onGuiseSwap() { try { await sheetGuiseSwap(this.document); } catch (err) { console.warn('[rippers-guise] guise swap failed:', err); } finally { this.render(); } }
 		static async onRollWeapon(event, target) { const id = target?.dataset?.item; if (id) await sheetRollWeapon(this.document, id); }
 		static async onRollCheck() { await sheetRollCheck(this.document); }
 		static async onToggleRivalWaiver() {
@@ -4483,7 +4571,7 @@ Hooks.once('ready', async () => {
 	Hooks.on('deleteCombat', _resetTurns);
 	Hooks.on('canvasReady', () => { if (!game.combat?.started) _resetTurns(); });
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, applyGuiseFace, restoreBaseFace, sheetToggleFace, setFace, getFaces, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, actorInActiveCombat, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, applyGuiseFace, restoreBaseFace, sheetToggleFace, setFace, getFaces, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -4523,7 +4611,7 @@ export { faceForGuise, resolveFaceImg, nextManualFace, getFaces, setFace, applyG
 // H3 "The Turn": guise-swap action economy (pure decision + scene state + boundary clear).
 export { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, clearGuiseSceneState, USED_GUISES_FLAG, TURN_REFUND_FLAG };
 // Unit 3 Party Vault: field limit + slots (V1/V5), roster/cabinet VM (V2/V3/V4), cross-owner hand-off (X4).
-export { partySize, guiseFieldLimit, fieldSlots, partyActors, vaultGuiseCard, buildCabinetEntries, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, PARTY_SIZE_SETTING, CABINET_PACK };
+export { partySize, guiseFieldLimit, fieldSlots, partyActors, vaultGuiseCard, buildCabinetEntries, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, ensureCabinetPack, PARTY_SIZE_SETTING, CABINET_PACK, CABINET_WORLD_PACK };
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };
 export { sheetOpenEditor, sheetStashGuise, handOffDecision, sheetHandOffGuise };
 export { deeperBondsApi, bondClockPips, bondPanelRow, buildBondPanelRows, SOLID_BOND_CAP, DEEPER_BONDS_ID };
