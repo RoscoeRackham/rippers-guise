@@ -305,3 +305,48 @@
 .rippers-guise-header .guise-specialty-arm { margin-left: auto; }
 .rippers-guise-header .guise-specialty-arm.is-active { background: rgba(74,157,91,0.85); color: #fff; border-color: #4a9d5b; }
 .rippers-guise-header .guise-build { margin-left: 0.4rem; }
+
+/* ═══ v0.7.18 (P5a): re-skin the Guise editor to the 2a-Slash BLOOD register ═══
+   The builder renders in an ApplicationV2 window OUTSIDE .rippers-sheet, so the sheet's --rs-* tokens
+   don't reach it — the palette is (re)declared here. This supersedes the old template purple (#7b2d8e)
+   per the canon register ruling (blood is the app register; violet is reserved for Miasma/guise tags).
+   Colour + font + density only; layout structure (flex/grid) from the rules above is untouched. Later
+   source order wins at equal specificity, so these override the purple values without deleting them. */
+.application.guise-builder {
+	--gb-red: #c8102a; --gb-bone: #e8dccb; --gb-gold: #c9a227;
+	--gb-ground: #150c0e; --gb-panel: #1e1216; --gb-border: #4a1a22;
+	--gb-verb: 'Pirata One','Grenze Gotisch',fantasy,serif; --gb-mono: 'IBM Plex Mono',ui-monospace,monospace;
+}
+.application.guise-builder .guise-builder-body { background: var(--gb-ground); color: var(--gb-bone); gap: 0.45rem; }
+.application.guise-builder .gb-scroll { gap: 0.45rem; }
+.application.guise-builder fieldset { border-color: var(--gb-border); background: var(--gb-panel); padding: 0.35rem 0.55rem; }
+.application.guise-builder legend { color: var(--gb-red); font-family: var(--gb-verb); font-weight: 400; letter-spacing: .02em; font-size: 1.05rem; }
+.application.guise-builder input[type="text"],
+.application.guise-builder input[type="number"],
+.application.guise-builder textarea,
+.application.guise-builder select { background: rgba(0,0,0,.28); color: var(--gb-bone); border: 1px solid var(--gb-border); }
+.application.guise-builder .gb-hint,
+.application.guise-builder .gb-maxsl,
+.application.guise-builder .gb-empty,
+.application.guise-builder .gb-stepline,
+.application.guise-builder .gb-aff-summary { color: var(--gb-bone); opacity: .7; }
+.application.guise-builder .gb-budget { border-top-color: var(--gb-border); font-family: var(--gb-mono); }
+/* footer + buttons */
+.application.guise-builder .gb-footer { border-top-color: var(--gb-border); }
+.application.guise-builder .gb-footer button { border-color: var(--gb-red); background: var(--gb-red); color: #fff; font-family: var(--gb-verb); font-weight: 400; font-size: 1.05rem; letter-spacing: .02em; }
+.application.guise-builder .gb-footer .gb-nav-back { background: transparent; color: var(--gb-red); }
+/* step rail */
+.application.guise-builder .gb-step { border-color: var(--gb-border); }
+.application.guise-builder .gb-step.is-active { border-color: var(--gb-red); background: rgba(200,16,42,0.14); color: var(--gb-bone); }
+.application.guise-builder .gb-step-n { background: var(--gb-red); }
+.application.guise-builder .gb-step.is-done .gb-step-n { background: var(--gb-gold); color: #150c0e; }
+/* affinity chrome + drops */
+.application.guise-builder .gb-aff-set { border-color: var(--gb-border); }
+.application.guise-builder .gb-aff-add { border-color: var(--gb-red); color: var(--gb-red); }
+.application.guise-builder .gb-drop { border: 1px dashed var(--gb-border); border-radius: 4px; padding: 0.4rem; text-align: center; opacity: .8; font-size: 0.85rem; }
+.application.guise-builder .gb-chip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.5rem; border: 1px solid var(--gb-gold); border-radius: 3px; background: rgba(201,162,39,0.1); margin: 0 0.3rem 0.3rem 0; }
+.application.guise-builder .gb-review-h { color: var(--gb-gold); font-family: var(--gb-mono); font-size: 0.72rem; letter-spacing: .12em; text-transform: uppercase; margin: 0.4rem 0 0.2rem; }
+.application.guise-builder .gb-review-skill,
+.application.guise-builder .gb-review-aff { display: inline-block; padding: 0.05rem 0.4rem; margin: 0 0.25rem 0.25rem 0; border: 1px solid var(--gb-border); border-radius: 3px; font-size: 0.82rem; }
+.application.guise-builder .gb-error { color: #ff6b6b; }
+.application.guise-builder .gb-warn { color: var(--gb-gold); }

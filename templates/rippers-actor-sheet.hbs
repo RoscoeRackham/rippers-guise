@@ -154,6 +154,8 @@
 								</span>
 								<span>
 									{{#if g.worn}}<button class="rs-chip" data-action="guiseWear" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Unmask'}}</button>{{else}}<button class="rs-chip" data-action="guiseWear" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Wear'}}</button>{{/if}}
+									{{!-- v0.7.18 P5: edit this guise IN-CONTEXT (opens the themed GuiseBuilderApp, not a raw item window) --}}
+									<button class="rs-chip" data-action="openEditor" data-guise="{{g.id}}" title="{{localize 'RIPPERS.Sheet.EditGuise'}}">{{localize 'RIPPERS.Sheet.EditGuise'}}</button>
 									{{#if g.worn}}<button class="rs-chip" data-action="stashGuise" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Stash'}}</button>{{/if}}
 									{{#if g.tradable}}<button class="rs-chip" data-action="handOffGuise" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.HandOff'}}</button>{{else}}<span class="rs-tag-bound">{{localize 'RIPPERS.Sheet.Untradable'}}</span>{{/if}}
 								</span>
