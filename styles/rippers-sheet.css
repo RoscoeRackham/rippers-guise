@@ -140,6 +140,14 @@
 .rippers-sheet .rs-bar-mp .rs-bar-fill { background: var(--rs-mp, #2f6fb0); }
 .rippers-sheet .rs-bar-lent { height: 100%; background: repeating-linear-gradient(45deg, rgba(201,162,39,.85) 0 3px, rgba(201,162,39,.25) 3px 6px); }
 .rippers-sheet .rs-lent-num { color: var(--rs-gold, #c9a227); }
+/* 2a guise-identity arcana tile (bone frame, register −2° tilt) + the picker grid */
+.rippers-sheet .rs-arcana-tile { flex: none; width: 38px; height: 60px; padding: 2px; background: var(--rs-bone); border: 0; cursor: pointer; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); transform: rotate(-2deg); }
+.rippers-sheet .rs-arcana-tile img { width: 100%; height: 100%; object-fit: cover; display: block; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); }
+.rippers-sheet .rs-arcana-tile:not(.has-art) { background: var(--rs-card2); border: 1px dashed var(--rs-border); }
+.rippers-sheet .rs-arcana-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--rs-muted); font-size: 16px; }
+.rs-arcana-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-height: 60vh; overflow-y: auto; }
+.rs-arcana-opt { padding: 2px; background: var(--rs-bone, #e8dccb); border: 1px solid var(--rs-border, #2b1d16); cursor: pointer; }
+.rs-arcana-opt img { width: 100%; height: auto; display: block; }
 .rippers-sheet .rs-ipdots { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
 .rippers-sheet .rs-ipdot { width: 11px; height: 11px; border: 1px solid var(--rs-border); background: var(--rs-card2); } /* square pip, off */
 .rippers-sheet .rs-ipdot.filled { background: var(--rs-gold, #c9a227); border-color: var(--rs-gold, #c9a227); }

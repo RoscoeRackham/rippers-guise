@@ -3270,6 +3270,24 @@ function rivalWaiverVM(actor) {
 	return { has: true, armed: !!api.isRivalWaiverArmed?.(actor) };
 }
 
+// ── 2a Slash guise identity: the 22 major arcana tiles ────────────────────────────────────────────
+// Austin's art, LOCAL module assets ONLY (copyright: home-game rendering; NEVER push these to a remote
+// or publish — our no-push norm covers it). A guise's arcana persists as a slug on the Item flag
+// flags['rippers-guise'].arcana — the README's production mapping of the design's localStorage 'g:' key.
+const ARCANA_FLAG = 'arcana';
+const ARCANA = Object.freeze([
+	['00-the-fool', 'The Fool'], ['01-the-magician', 'The Magician'], ['02-the-high-priestess', 'The High Priestess'],
+	['03-the-empress', 'The Empress'], ['04-the-emperor', 'The Emperor'], ['05-the-hierophant', 'The Hierophant'],
+	['06-the-lovers', 'The Lovers'], ['07-the-chariot', 'The Chariot'], ['08-justice', 'Justice'],
+	['09-the-hermit', 'The Hermit'], ['10-wheel-of-fortune', 'Wheel of Fortune'], ['11-strength', 'Strength'],
+	['12-the-hanged-man', 'The Hanged Man'], ['13-death', 'Death'], ['14-temperance', 'Temperance'],
+	['15-the-devil', 'The Devil'], ['16-the-tower', 'The Tower'], ['17-the-star', 'The Star'],
+	['18-the-moon', 'The Moon'], ['19-the-sun', 'The Sun'], ['20-judgement', 'Judgement'], ['21-the-world', 'The World'],
+].map(([slug, name]) => ({ slug, name, img: `modules/${MODULE_ID}/assets/arcana/${slug}.png` })));
+const arcanaBySlug = (slug) => ARCANA.find((a) => a.slug === slug) ?? null;
+/** The arcana tile chosen for a guise (from its Item flag), or null when unset. */
+function guiseArcana(guise) { return arcanaBySlug(guise?.getFlag?.(MODULE_ID, ARCANA_FLAG)); }
+
 /** PURE: a bond clock's four sections as fill flags (filled up to `clock`). */
 function bondClockPips(clock, sections = 4) {
 	const n = Math.max(0, Math.min(sections, Number(clock) || 0));
@@ -3382,6 +3400,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 			lent: { hp: v.hp, mp: v.mp, ip: v.ip },
 			// H3: swapping TO this guise would be refunded by The Turn (free) this scene?
 			usedThisScene, swapWouldRefund: !worn && !usedThisScene && !turnRefundUsed,
+			arcana: guiseArcana(g), // 2a: the guise-identity tarot tile (null until picked)
 		});
 	}
 	guises.sort((a, b) => (Number(b.worn) - Number(a.worn)) || (Number(a.innate) - Number(b.innate)));
@@ -3517,6 +3536,26 @@ function sheetOpenConditions(actor) {
 async function sheetGuiseWear(actor, guiseId) {
 	if (!actor || !guiseId) return;
 	return getActiveGuise(actor) === guiseId ? dismissGuise(actor, guiseId) : bindGuise(actor, guiseId);
+}
+
+/** 2a arcana picker: open a grid of the 22 major arcana; the pick persists to the guise Item flag
+ *  flags['rippers-guise'].arcana (the README's production mapping). A "Clear" option removes it. */
+async function sheetPickArcana(actor, guiseId) {
+	const guise = actor?.items?.get?.(guiseId);
+	if (!guise) return;
+	const tiles = ARCANA.map((a) => `<button type="button" class="rs-arcana-opt" data-slug="${a.slug}" title="${a.name}"><img src="${a.img}" alt="${a.name}"></button>`).join('');
+	const content = `<div class="rs-arcana-grid">${tiles}</div><p style="margin-top:8px;text-align:center;"><button type="button" class="rs-arcana-opt" data-slug="">${game.i18n?.localize?.('RIPPERS.Sheet.ArcanaClear') ?? '— none —'}</button></p>`;
+	const DV2 = foundry?.applications?.api?.DialogV2;
+	const pick = await new Promise((resolve) => {
+		const wire = (root) => root?.querySelectorAll?.('.rs-arcana-opt').forEach((b) => b.addEventListener('click', () => resolve(b.dataset.slug ?? '')));
+		if (DV2?.wait) {
+			DV2.wait({ window: { title: game.i18n?.localize?.('RIPPERS.Sheet.PickArcana') ?? 'Choose an arcana' }, content, buttons: [{ action: 'cancel', label: game.i18n?.localize?.('RIPPERS.Sheet.Cancel') ?? 'Cancel' }], render: (_e, dlg) => wire(dlg.element ?? dlg), rejectClose: false })
+				.then((r) => { if (r === 'cancel' || r == null) resolve(undefined); }).catch(() => resolve(undefined));
+		} else { resolve(undefined); }
+	});
+	if (pick === undefined) return;                 // cancelled
+	if (pick) await guise.setFlag(MODULE_ID, ARCANA_FLAG, pick);
+	else if (guise.getFlag(MODULE_ID, ARCANA_FLAG)) await guise.unsetFlag(MODULE_ID, ARCANA_FLAG);
 }
 /** The Swap button: worn → unmask; else wear the first roster guise (the picker gives precise choice). */
 async function sheetGuiseSwap(actor) {
@@ -3769,6 +3808,7 @@ function getRippersActorSheetClass() {
 				openConditions: RippersActorSheet.onOpenConditions,
 				selectTab: RippersActorSheet.onSelectTab,
 				guiseWear: RippersActorSheet.onGuiseWear,
+				pickArcana: RippersActorSheet.onPickArcana,
 				guiseSwap: RippersActorSheet.onGuiseSwap,
 				rollWeapon: RippersActorSheet.onRollWeapon,
 				rollCheck: RippersActorSheet.onRollCheck,
@@ -3855,6 +3895,7 @@ function getRippersActorSheetClass() {
 		static onOpenConditions() { sheetOpenConditions(statusTargetActor(this.document, this._statusSelf, globalThis.game?.user?.targets) ?? this.document); }
 		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this.render(); } }
 		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (id) { await sheetGuiseWear(this.document, id); this.render(); } }
+		static async onPickArcana(event, target) { const id = target?.dataset?.guise; if (id) { await sheetPickArcana(this.document, id); this.render(); } }
 		static async onGuiseSwap() { await sheetGuiseSwap(this.document); this.render(); }
 		static async onRollWeapon(event, target) { const id = target?.dataset?.item; if (id) await sheetRollWeapon(this.document, id); }
 		static async onRollCheck() { await sheetRollCheck(this.document); }
@@ -4200,6 +4241,8 @@ export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifie
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
 export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
+// 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
+export { ARCANA, ARCANA_FLAG, arcanaBySlug, guiseArcana, sheetPickArcana };
 // H3 "The Turn": guise-swap action economy (pure decision + scene state + boundary clear).
 export { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, clearGuiseSceneState, USED_GUISES_FLAG, TURN_REFUND_FLAG };
 // Unit 3 Party Vault: field limit + slots (V1/V5), roster/cabinet VM (V2/V3/V4), cross-owner hand-off (X4).

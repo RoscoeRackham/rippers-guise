@@ -101,8 +101,12 @@
 				{{#if vm.guises.length}}
 					{{#each vm.guises as |g|}}
 						<div class="rs-classcard">
-							<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;">
-								<span class="rs-classcard-name">{{g.name}}</span>
+							<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+								<span style="display:flex;align-items:center;gap:10px;">
+									{{!-- 2a: the guise-identity tarot tile — click to pick from the 22 major arcana. --}}
+									<button class="rs-arcana-tile{{#if g.arcana}} has-art{{/if}}" data-action="pickArcana" data-guise="{{g.id}}" title="{{#if g.arcana}}{{g.arcana.name}}{{else}}{{localize 'RIPPERS.Sheet.PickArcana'}}{{/if}}">{{#if g.arcana}}<img src="{{g.arcana.img}}" alt="{{g.arcana.name}}">{{else}}<span class="rs-arcana-empty">★</span>{{/if}}</button>
+									<span class="rs-classcard-name">{{g.name}}</span>
+								</span>
 								<span class="rs-bond-strength">{{#if g.worn}}{{localize 'RIPPERS.Sheet.Worn'}}{{else if g.innate}}{{localize 'RIPPERS.Sheet.Innate'}}{{else}}{{localize 'RIPPERS.Sheet.Tradable'}}{{/if}}</span>
 							</div>
 							{{#if g.trio.length}}<div class="rs-affchips" style="margin-top:8px;">{{#each g.trio as |t|}}<span class="rs-affchip {{#if t.good}}rs-aff-good{{/if}}{{#if t.bad}}rs-aff-bad{{/if}}">{{t.word}} {{t.type}}</span>{{/each}}</div>{{/if}}

@@ -529,6 +529,28 @@ test('buildRippersSheetVM: guise rows hint The Turn refund, plus a top-level the
 	assert.equal(worn.swapWouldRefund, false);           // the worn guise is never a "fresh" swap
 });
 
+// ── 2a guise-identity arcana tiles ────────────────────────────────────────────────────────────────
+const { ARCANA, arcanaBySlug, guiseArcana } = mod;
+
+test('ARCANA: the 22 major arcana, each with a slug, name, and a local module img path', () => {
+	assert.equal(ARCANA.length, 22);
+	assert.equal(ARCANA[0].slug, '00-the-fool');
+	assert.equal(ARCANA[21].name, 'The World');
+	assert.ok(ARCANA.every((a) => a.img.startsWith('modules/rippers-guise/assets/arcana/') && a.img.endsWith('.png')));
+	assert.equal(arcanaBySlug('13-death').name, 'Death');
+	assert.equal(arcanaBySlug('nope'), null);
+});
+
+test('guiseArcana + VM: a guise renders its chosen arcana tile from the Item flag', async () => {
+	const g = { getFlag: (m, k) => (m === RGID && k === 'arcana' ? '18-the-moon' : undefined) };
+	assert.equal(guiseArcana(g).name, 'The Moon');
+	assert.equal(guiseArcana({ getFlag: () => undefined }), null);
+	// the Form-tab guise rows carry .arcana (null when unset in the base stub)
+	const vm = await buildRippersSheetVM(actorStub());
+	assert.ok(vm.guises.every((row) => 'arcana' in row));
+	assert.equal(vm.guises[0].arcana, null);
+});
+
 // ── Unit 3 Party Vault (V1–V5, X4) ────────────────────────────────────────────────────────────────
 const { guiseFieldLimit, fieldSlots, buildVaultVM } = mod;
 
