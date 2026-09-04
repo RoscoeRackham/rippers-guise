@@ -89,13 +89,16 @@ test('an innate draft carries the Hunter Weapon ref + validated material + origi
 	assert.equal(data.hunterOrigin, 'the beast that took my hand');
 });
 
-test('a non-canon Hunter Weapon material is dropped on compile', () => {
+test('C3=A: Hunter Weapon material is free-text flavour (any value kept); the single bane flag compiles', () => {
 	const d = threeClasses(emptyGuiseDraft());
 	d.mode = 'innate';
 	d.specialties = [SPECIALTY_LIST[0], SPECIALTY_LIST[1]];
-	d.hunterMaterial = 'plutonium';
-	assert.equal(guiseDraftToData(d, {}, 30).hunterMaterial, '');
-	assert.ok(HW_MATERIALS.includes('silver') && HW_MATERIALS.includes('cursed') && HW_MATERIALS.length === 5);
+	d.hunterMaterial = 'plutonium';   // no longer an enum — kept verbatim (trimmed)
+	d.hunterIsBane = true;
+	const data = guiseDraftToData(d, {}, 30);
+	assert.equal(data.hunterMaterial, 'plutonium');
+	assert.equal(data.hunterIsBane, true);
+	assert.ok(HW_MATERIALS.includes('silver') && HW_MATERIALS.length === 5); // survives as flavour suggestions
 });
 
 test('a WORN draft never carries Hunter-Weapon or Specialty data', () => {

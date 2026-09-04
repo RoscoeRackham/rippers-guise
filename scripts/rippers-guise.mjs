@@ -746,39 +746,21 @@ function getDocumentClass(name) {
 // deferred until that ruling. HW2 (shields on a Guise) is likewise owed.
 const isHunterWeapon = (item) => !!item?.getFlag?.(MODULE_ID, 'isHunterWeapon');
 
-// HW1 (RATIFIED 2026-08-20, PROPOSAL-hunter-weapon-banes.md). The weapon's MATERIAL *is* the bane
-// key the canon engine reads (0103 predicate wpn_material = any(foe.banes)) — the existing bane
-// effect (2× damage vs soldier/PC, +2 Pressure vs elite/champion, largest-fill no-stacking). NO new
-// mechanic: our job (weapon side) is to store material normalised to the ratified bane key.
-//   silver → 'silver' · cold_iron → 'cold_iron' · consecrated → 'consecrated' · wood → 'wood'
-//   cursed → NO default (GM authors the bane per weapon; pass baneKey explicitly).
-// (The monster-side species banes[] authoring is a separate task, not here.)
-const HW_MATERIAL_BANE = { silver: 'silver', cold_iron: 'cold_iron', consecrated: 'consecrated', wood: 'wood', cursed: null };
-const normalizeMaterial = (input) => (input == null ? null : String(input).trim().toLowerCase().replace(/[\s-]+/g, '_'));
-/** Resolve the bane key: an explicit key wins (GM-authored cursed bane); else derive from material. Returns undefined to leave unchanged. */
-function baneKeyForMaterial(material, explicit) {
-	if (explicit !== undefined) return explicit || null;
-	const m = normalizeMaterial(material);
-	if (m == null) return undefined;
-	return Object.prototype.hasOwnProperty.call(HW_MATERIAL_BANE, m) ? HW_MATERIAL_BANE[m] : null;
-}
-const hunterWeaponBaneKey = (weapon) => weapon?.getFlag?.(MODULE_ID, 'hunter')?.baneKey ?? null;
+// C3=A (RULED 4 Sep 2026, GUISE-v2-design.md:224 — SUPERSEDES HW1's material-as-bane-key of 20 Aug).
+// The five-material list is DROPPED as a mechanical field. A Hunter Weapon simply carries a BANE flag
+// or not (isBane: yes/no); the adversary Banes field is free-text flavour, NEVER string-matched. The
+// material survives ONLY as optional flavour prose (free text) with no distinct mechanics — so the old
+// baneKey / material-enum derivation (HW_MATERIAL_BANE, baneKeyForMaterial, normalizeMaterial) is gone.
+// Nothing in the module consumes a bane KEY any more; the canon-engine predicate lived Lodge-side.
+const hunterWeaponIsBane = (weapon) => !!weapon?.getFlag?.(MODULE_ID, 'hunter')?.isBane;
 
-async function setHunterWeapon(weapon, { isHunter = true, material, origin, baneKey } = {}) {
+async function setHunterWeapon(weapon, { isHunter = true, material, origin, isBane } = {}) {
 	if (!weapon) { console.warn('[rippers-guise] setHunterWeapon: no weapon.'); return; }
 	await weapon.setFlag(MODULE_ID, 'isHunterWeapon', !!isHunter);
 	const hunter = { ...(weapon.getFlag(MODULE_ID, 'hunter') ?? {}) };
-	if (material !== undefined) {
-		const m = normalizeMaterial(material);
-		hunter.material = m;
-		if (m && !Object.prototype.hasOwnProperty.call(HW_MATERIAL_BANE, m)) {
-			ui.notifications?.warn(`Unknown Hunter Weapon material "${material}" — expected silver / cold_iron / consecrated / wood / cursed.`);
-		}
-	}
+	if (material !== undefined) hunter.material = material == null ? '' : String(material).trim(); // C3=A: free-text flavour only
 	if (origin !== undefined) hunter.origin = origin;
-	// The material IS the bane key (HW1). Explicit baneKey wins (cursed → GM-authored).
-	const bk = baneKeyForMaterial(material, baneKey);
-	if (bk !== undefined) hunter.baneKey = bk;
+	if (isBane !== undefined) hunter.isBane = !!isBane;   // C3=A: a single bane flag replaces the 5-material key
 	await weapon.setFlag(MODULE_ID, 'hunter', hunter);
 	return weapon;
 }
@@ -1839,8 +1821,9 @@ function chooseBumpSlot(check, preferred) {
 	return 'primary';
 }
 
-// Hunter Weapon materials (Innate-mode authoring, v0.7.1). The five canon materials; each IS the bane
-// key the damage engine reads (HW_MATERIAL_BANE, defined below); 'cursed' = GM-authored bane.
+// Hunter Weapon material FLAVOUR suggestions (C3=A, 4 Sep 2026). The five canon names survive only as
+// datalist suggestions for the free-text material field — pure flavour prose, no mechanics. The bane
+// interaction is now the single isBane flag (see setHunterWeapon), not the material.
 const HW_MATERIALS = Object.freeze(['silver', 'cold_iron', 'consecrated', 'wood', 'cursed']);
 
 // D-Bonus is a NARRATIVE scope, not a mechanical check type (v0.7.4, Austin: "it's not a mechanical
@@ -1974,7 +1957,7 @@ function emptyGuiseDraft() {
 		affinityImmunity: '', affinityVulnerability: '', affinityResistance: '',
 		// innate-guise fields (Q1) + the Hunter Weapon (v0.7.1)
 		specialties: [], talented: false, innateHeroicUuid: '',
-		hunterWeaponUuid: '', hunterWeaponName: '', hunterMaterial: '', hunterOrigin: '',
+		hunterWeaponUuid: '', hunterWeaponName: '', hunterMaterial: '', hunterOrigin: '', hunterIsBane: false,
 		// innate armor + accessory (#2, v0.7.9): authored Item refs, materialised + equipped on the actor
 		armorUuid: '', armorName: '', accessoryUuid: '', accessoryName: '',
 	};
@@ -2030,7 +2013,7 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 		// v0.7.9: free text — no whitelist gate; trim, drop empties, cap at the Specialty count (4 if Talented).
 		const talented = draftIsTalented(draft);
 		const specialties = (draft.specialties ?? []).map((s) => (s ?? '').trim()).filter(Boolean).slice(0, specialtyCapFor(talented));
-		const hunterMaterial = HW_MATERIALS.includes(draft.hunterMaterial) ? draft.hunterMaterial : '';
+		const hunterMaterial = String(draft.hunterMaterial ?? '').trim(); // C3=A: free-text flavour, no enum gate
 		return {
 			mode, identity: draft.name ?? '', role: draft.role ?? '', nature: '', notes: draft.notes ?? '',
 			classes, equipment: [], affinityModifiers: [],
@@ -2038,7 +2021,7 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 			perk: '', bonus: null, tell: '', bane: '', flaw: '',
 			specialties, talented, innateHeroicUuid: draft.innateHeroicUuid ?? '',
 			// Hunter Weapon (v0.7.1): the weapon is materialised + marked in createGuiseFromDraft.
-			hunterWeaponUuid: draft.hunterWeaponUuid ?? '', hunterMaterial, hunterOrigin: draft.hunterOrigin ?? '',
+			hunterWeaponUuid: draft.hunterWeaponUuid ?? '', hunterMaterial, hunterOrigin: draft.hunterOrigin ?? '', hunterIsBane: !!draft.hunterIsBane,
 			// #2 (v0.7.9): innate armor + accessory refs, materialised + equipped in createGuiseFromDraft.
 			armorUuid: draft.armorUuid ?? '', accessoryUuid: draft.accessoryUuid ?? '',
 		};
@@ -2095,6 +2078,7 @@ function guiseDataToDraft(data = {}) {
 		draft.hunterWeaponUuid = data.hunterWeaponUuid ?? '';
 		draft.hunterMaterial = data.hunterMaterial ?? '';
 		draft.hunterOrigin = data.hunterOrigin ?? '';
+		draft.hunterIsBane = !!data.hunterIsBane;
 		draft.armorUuid = data.armorUuid ?? '';
 		draft.accessoryUuid = data.accessoryUuid ?? '';
 		return draft;
@@ -2164,14 +2148,14 @@ async function materialiseCreationHeroic(actor, uuid) {
 /** Materialise the Hunter Weapon as an owned Item and mark it (setHunterWeapon sets isHunterWeapon +
  *  material→bane key + origin). It belongs to the CHARACTER, so it is a plain owned weapon (not a
  *  guise-origin item). Returns the weapon Item, or null. */
-async function materialiseHunterWeapon(actor, uuid, { material, origin } = {}) {
+async function materialiseHunterWeapon(actor, uuid, { material, origin, isBane } = {}) {
 	if (!actor || !uuid) return null;
 	try {
 		const src = await safeFromUuid(uuid);
 		if (!src || !(src.type === 'weapon' || src.type === 'customWeapon')) { ui.notifications?.warn('The Hunter Weapon must be a weapon Item.'); return null; }
 		const obj = src.toObject(); delete obj._id;
 		const [weapon] = await actor.createEmbeddedDocuments('Item', [obj]);
-		if (weapon) await setHunterWeapon(weapon, { material: material || undefined, origin: origin || undefined });
+		if (weapon) await setHunterWeapon(weapon, { material: material || undefined, origin: origin || undefined, isBane });
 		return weapon ?? null;
 	} catch (err) { console.warn('[rippers-guise] Hunter Weapon materialisation failed:', err); return null; }
 }
@@ -2212,7 +2196,7 @@ async function createGuiseFromDraft(actor, draft, { skillMax = {}, bind = false 
 	// Weapon, innate armour + accessory. A worn guise never carries any of these.
 	if (item && mode === 'innate') {
 		if (data.innateHeroicUuid) await materialiseCreationHeroic(actor, data.innateHeroicUuid);
-		if (data.hunterWeaponUuid) await materialiseHunterWeapon(actor, data.hunterWeaponUuid, { material: data.hunterMaterial, origin: data.hunterOrigin });
+		if (data.hunterWeaponUuid) await materialiseHunterWeapon(actor, data.hunterWeaponUuid, { material: data.hunterMaterial, origin: data.hunterOrigin, isBane: data.hunterIsBane });
 		for (const slot of EQUIP_INNATE_SLOTS) {
 			const uuid = slot === 'armor' ? data.armorUuid : data.accessoryUuid;
 			if (uuid) await materialiseInnateEquip(actor, slot, uuid);
@@ -2235,9 +2219,9 @@ function innateKitReconcilePlan(oldData = {}, newData = {}) {
 	}
 	const owUuid = s(oldData.hunterWeaponUuid), nwUuid = s(newData.hunterWeaponUuid);
 	if (owUuid !== nwUuid) {
-		plan.hunterWeapon = { op: 'remake', from: owUuid, to: nwUuid, material: s(newData.hunterMaterial), origin: s(newData.hunterOrigin) };
-	} else if (nwUuid && (s(oldData.hunterMaterial) !== s(newData.hunterMaterial) || s(oldData.hunterOrigin) !== s(newData.hunterOrigin))) {
-		plan.hunterWeapon = { op: 'retag', material: s(newData.hunterMaterial), origin: s(newData.hunterOrigin) };
+		plan.hunterWeapon = { op: 'remake', from: owUuid, to: nwUuid, material: s(newData.hunterMaterial), origin: s(newData.hunterOrigin), isBane: !!newData.hunterIsBane };
+	} else if (nwUuid && (s(oldData.hunterMaterial) !== s(newData.hunterMaterial) || s(oldData.hunterOrigin) !== s(newData.hunterOrigin) || !!oldData.hunterIsBane !== !!newData.hunterIsBane)) {
+		plan.hunterWeapon = { op: 'retag', material: s(newData.hunterMaterial), origin: s(newData.hunterOrigin), isBane: !!newData.hunterIsBane };
 	}
 	for (const slot of EQUIP_INNATE_SLOTS) {
 		const key = slot === 'armor' ? 'armorUuid' : 'accessoryUuid';
@@ -2282,10 +2266,10 @@ async function reconcileInnateKit(actor, oldData = {}, newData = {}) {
 	if (plan.hunterWeapon) {
 		const existing = actor.items.find((i) => isHunterWeapon(i)) ?? null;
 		if (plan.hunterWeapon.op === 'retag') {
-			if (existing) await setHunterWeapon(existing, { material: plan.hunterWeapon.material || undefined, origin: plan.hunterWeapon.origin || undefined });
+			if (existing) await setHunterWeapon(existing, { material: plan.hunterWeapon.material || undefined, origin: plan.hunterWeapon.origin || undefined, isBane: plan.hunterWeapon.isBane });
 		} else {
 			if (existing) await existing.delete();
-			if (plan.hunterWeapon.to) await materialiseHunterWeapon(actor, plan.hunterWeapon.to, { material: plan.hunterWeapon.material, origin: plan.hunterWeapon.origin });
+			if (plan.hunterWeapon.to) await materialiseHunterWeapon(actor, plan.hunterWeapon.to, { material: plan.hunterWeapon.material, origin: plan.hunterWeapon.origin, isBane: plan.hunterWeapon.isBane });
 		}
 		changed.push('hunterWeapon');
 	}
@@ -2447,9 +2431,6 @@ function getGuiseBuilderApp() {
 			}));
 			const specialtyCount = specialtyDraft.slice(0, specialtyMax).filter((s) => (s ?? '').trim()).length;
 			const heroicName = this._draft.innateHeroicUuid ? (this._draft.innateHeroicName || this._draft.innateHeroicUuid) : '';
-			const hwMaterialOpts = [{ value: '', label: game.i18n.localize('RIPPERS.Builder.HWMaterialNone') }]
-				.concat(HW_MATERIALS.map((m) => ({ value: m, label: game.i18n.localize(`RIPPERS.Builder.HWMat.${m}`) })))
-				.map((o) => ({ ...o, selected: o.value === (this._draft.hunterMaterial || '') }));
 			const loadout = {
 				equipment, bonusValue: BONUS_VALUE,
 				perk: this._draft.perk ?? '', bonusDescriptor: this._draft.bonusDescriptor ?? '',
@@ -2457,7 +2438,9 @@ function getGuiseBuilderApp() {
 				specialtyInputs, specialtyHints: SPECIALTY_LIST, specialtyPlaceholder: game.i18n.localize('RIPPERS.Builder.SpecialtyPlaceholder'),
 				specialtyCount, specialtyMax, talented: draftIsTalented(this._draft), heroicName,
 				hunterName: this._draft.hunterWeaponUuid ? (this._draft.hunterWeaponName || this._draft.hunterWeaponUuid) : '',
-				hwMaterialOpts, hunterOrigin: this._draft.hunterOrigin ?? '',
+				// C3=A: material is now free-text flavour (the 5 names are datalist suggestions), plus a single bane flag.
+				hwMaterialSuggestions: HW_MATERIALS, hunterMaterial: this._draft.hunterMaterial ?? '', hunterIsBane: !!this._draft.hunterIsBane,
+				hunterOrigin: this._draft.hunterOrigin ?? '',
 				// #2 (v0.7.9): innate armor + accessory chips
 				armorName: this._draft.armorUuid ? (this._draft.armorName || this._draft.armorUuid) : '',
 				accessoryName: this._draft.accessoryUuid ? (this._draft.accessoryName || this._draft.accessoryUuid) : '',
@@ -2496,7 +2479,7 @@ function getGuiseBuilderApp() {
 				tell: isInnate ? '' : (this._draft.tell || ''), bane: isInnate ? '' : (this._draft.bane || ''), flaw: isInnate ? '' : (this._draft.flaw || ''),
 				specialties: isInnate ? (this._draft.specialties ?? []) : [], heroic: isInnate ? heroicName : '',
 				hunterWeapon: (isInnate && this._draft.hunterWeaponUuid)
-					? { name: this._draft.hunterWeaponName || this._draft.hunterWeaponUuid, material: this._draft.hunterMaterial || '', origin: this._draft.hunterOrigin || '' }
+					? { name: this._draft.hunterWeaponName || this._draft.hunterWeaponUuid, material: this._draft.hunterMaterial || '', origin: this._draft.hunterOrigin || '', isBane: !!this._draft.hunterIsBane }
 					: null,
 				errors: validation.errors, spent, budget,
 			};
@@ -2605,9 +2588,10 @@ function getGuiseBuilderApp() {
 			root.querySelectorAll('[data-action="clearHeroic"]').forEach((a) => a.addEventListener('click', (ev) => {
 				ev.preventDefault(); this._draft.innateHeroicUuid = ''; this._draft.innateHeroicName = ''; this.render();
 			}));
-			// Hunter Weapon (innate mode): material select, origin text, clear
-			root.querySelectorAll('select.guise-hw-material').forEach((sel) => sel.addEventListener('change', () => {
-				this._draft.hunterMaterial = HW_MATERIALS.includes(sel.value) ? sel.value : ''; this.render();
+			// Hunter Weapon (innate mode): the free-text material + origin ride the generic [data-draft]
+			// handler; the C3=A bane flag is a checkbox read by .checked, not .value.
+			root.querySelectorAll('input.guise-hw-bane').forEach((cb) => cb.addEventListener('change', () => {
+				this._draft.hunterIsBane = !!cb.checked; this.render();
 			}));
 			root.querySelectorAll('[data-action="clearHunter"]').forEach((a) => a.addEventListener('click', (ev) => {
 				ev.preventDefault(); this._draft.hunterWeaponUuid = ''; this._draft.hunterWeaponName = ''; this.render();
@@ -2884,8 +2868,9 @@ function defineGuiseModel() {
 				attachedEffects: new ArrayField(new SchemaField({ itemUuid: new StringField({ initial: '' }) })),
 				// Hunter Weapon record (v0.7.1); the weapon Item itself is materialised + flagged on the actor
 				hunterWeaponUuid: new StringField({ initial: '' }),
-				hunterMaterial: new StringField({ initial: '' }),
+				hunterMaterial: new StringField({ initial: '' }),  // C3=A: free-text flavour only
 				hunterOrigin: new StringField({ initial: '' }),
+				hunterIsBane: new BooleanField({ initial: false }), // C3=A: the single bane flag
 				// innate armor + accessory (#2, v0.7.9): authored refs; the Items are materialised +
 				// equipped on the actor at create (like the Hunter Weapon), so they are the character's
 				// own kit. Kept here for re-edit / display.
@@ -4167,7 +4152,7 @@ Hooks.once('ready', async () => {
 	Hooks.on('deleteCombat', _resetTurns);
 	Hooks.on('canvasReady', () => { if (!game.combat?.started) _resetTurns(); });
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -4181,7 +4166,7 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponBaneKey, baneKeyForMaterial, normalizeMaterial, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.

@@ -396,7 +396,7 @@ test('#4 guiseDataToDraft round-trips the INNATE guise (specialties/talented/kit
 	src.mode = 'innate'; src.name = 'The face'; src.notes = '<p>self</p>';
 	src.talented = true; src.specialties = ['Tracking', 'Lockpicking', 'Cooking', 'Riding'];
 	src.innateHeroicUuid = 'Compendium.x.heroics.Item.h';
-	src.hunterWeaponUuid = 'Compendium.x.weapons.Item.hw'; src.hunterMaterial = 'silver'; src.hunterOrigin = 'grandfather\'s cane';
+	src.hunterWeaponUuid = 'Compendium.x.weapons.Item.hw'; src.hunterMaterial = 'silver'; src.hunterOrigin = 'grandfather\'s cane'; src.hunterIsBane = true;
 	src.armorUuid = 'Compendium.x.armor.Item.a'; src.accessoryUuid = 'Compendium.x.accessory.Item.ac';
 	const data = guiseDraftToData(src);
 	const rebuilt = guiseDataToDraft(data);
@@ -404,6 +404,7 @@ test('#4 guiseDataToDraft round-trips the INNATE guise (specialties/talented/kit
 	assert.equal(rebuilt.talented, true);
 	assert.deepEqual(rebuilt.specialties, ['Tracking', 'Lockpicking', 'Cooking', 'Riding']);
 	assert.equal(rebuilt.hunterMaterial, 'silver');
+	assert.equal(rebuilt.hunterIsBane, true); // C3=A bane flag survives the round-trip
 	assert.equal(rebuilt.armorUuid, 'Compendium.x.armor.Item.a');
 });
 
