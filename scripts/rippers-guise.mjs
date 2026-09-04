@@ -605,6 +605,99 @@ async function clearAllGuiseSceneState() {
 }
 
 // ---------------------------------------------------------------------------
+// UNIT 3 — PARTY VAULT (Austin 4 Sep 2026, DECISIONS-RESOLVED V1–V5 + X4; Joiner spec 800d8243).
+// An EMBEDDED sheet TAB (V3, not a separate Application) showing the party's guises as a "field" of
+// slots per member plus a shared "cabinet". Rulings:
+//  • V1 — a member's field limit = party size + 2, COMPUTED + DISPLAYED, never enforced (no block).
+//  • V2 — party size comes from a MODULE SETTING (world-scoped Number).
+//  • V4 — the cabinet of owned-but-unslotted guises IS the module's compendium pack (packs/guises).
+//  • V5 — an unfilled field slot renders as a dashed outline only (no "Draw" CTA).
+//  • X4 — cross-owner hand-off is a GM drag-and-drop broker (the GM has write to both actors, so the
+//    existing handOffDecision/sheetHandOffGuise clean path already serves it; a player dropping onto
+//    another owner's field is still refused 'needs-gm-socket'). Wired to the tab in 3b.
+const PARTY_SIZE_SETTING = 'partySize';
+const CABINET_PACK = `${MODULE_ID}.guises`; // V4 — the declared compendium pack is the cabinet
+
+/** The configured party size (world setting), clamped to a sane floor. */
+function partySize() {
+	const n = Number(globalThis.game?.settings?.get?.(MODULE_ID, PARTY_SIZE_SETTING));
+	return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 4;
+}
+/** PURE (V1). A member's field limit = party size + 2. */
+const guiseFieldLimit = (size) => Math.max(1, (Number(size) || 0) + 2);
+
+/** PURE (V1/V5). Field slots for a member: one filled slot per guise, then dashed empties padding up
+ *  to the limit. Never truncates — over-limit fields keep every guise (limit is a guideline, not a
+ *  cap) and set overLimit. Returns { slots:[{filled,guise?}], count, limit, overLimit, empties }. */
+function fieldSlots(guises, limit) {
+	const list = Array.isArray(guises) ? guises : [];
+	const lim = Math.max(1, Number(limit) || 1); // limit = the already-computed field limit (partySize+2)
+	const slots = list.map((g) => ({ filled: true, guise: g }));
+	const empties = Math.max(0, lim - list.length);
+	for (let i = 0; i < empties; i++) slots.push({ filled: false }); // V5 dashed placeholders
+	return { slots, count: list.length, limit: lim, overLimit: list.length > lim, empties };
+}
+
+/** The party actors for the vault roster: player-owned characters for a GM (they broker every field),
+ *  else the player's own characters + self. No FU "party" document is relied on — flagged heuristic. */
+function partyActors(selfActor) {
+	const all = globalThis.game?.actors?.filter?.((a) => a.type === 'character') ?? [];
+	const isGM = !!globalThis.game?.user?.isGM;
+	const members = all.filter((a) => isGM ? a.hasPlayerOwner : (a.isOwner || a.id === selfActor?.id));
+	if (selfActor && !members.some((a) => a.id === selfActor.id)) members.unshift(selfActor);
+	return members;
+}
+
+/** A compact guise card for the vault field/cabinet (lent layer carried per X1 — same shape as the
+ *  Form-tab guise row so one rule renders everywhere). */
+function vaultGuiseCard(actor, g) {
+	const d = g.system?.data ?? {};
+	const innate = !!g.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
+	const v = guiseVitals(g);
+	return {
+		id: g.id, uuid: g.uuid, name: g.name ?? '', img: g.img, role: d.role ?? '',
+		innate, tradable: !innate, worn: g.id === getActiveGuise(actor),
+		lent: { hp: v.hp, mp: v.mp, ip: v.ip },
+	};
+}
+
+/** Read the cabinet compendium index → entries the tab can list/drag. { packId, label, entries }. */
+async function buildCabinetEntries() {
+	const pack = globalThis.game?.packs?.get?.(CABINET_PACK);
+	if (!pack) return { packId: CABINET_PACK, label: 'Cabinet', entries: [], missing: true };
+	let index = [];
+	try { index = Array.from(await pack.getIndex()); } catch (err) { console.warn('[rippers-guise] cabinet index unavailable:', err); }
+	const entries = index.map((e) => ({ id: e._id, uuid: `Compendium.${CABINET_PACK}.${e._id}`, name: e.name ?? '', img: e.img }));
+	return { packId: CABINET_PACK, label: pack.metadata?.label ?? 'Cabinet', entries };
+}
+
+/** Build the Party Vault embedded-tab VM (V1–V5). Async — reads the cabinet compendium index. */
+async function buildVaultVM(selfActor) {
+	const size = partySize();
+	const limit = guiseFieldLimit(size);
+	const isGM = !!globalThis.game?.user?.isGM;
+	const members = partyActors(selfActor).map((a) => {
+		const cards = (a.items?.filter?.(isGuiseItem) ?? []).map((g) => vaultGuiseCard(a, g));
+		const field = fieldSlots(cards, limit);
+		return {
+			actorId: a.id, name: a.name ?? '', img: a.img,
+			isSelf: a.id === selfActor?.id, canWrite: !!(isGM || a.isOwner),
+			worn: cards.find((c) => c.worn)?.name ?? '',
+			...field, // slots, count, limit, overLimit, empties
+		};
+	});
+	const cabinet = await buildCabinetEntries();
+	return { partySize: size, fieldLimit: limit, isGM, members, cabinet };
+}
+
+/** X4 — hand a guise from one party member to another (the vault drop handler calls this). Reuses the
+ *  clean hand-off path; cross-owner requires GM write, refused 'needs-gm-socket' otherwise. */
+async function vaultHandOff(sourceActor, guiseId, recipientActor) {
+	return sheetHandOffGuise(sourceActor, guiseId, recipientActor);
+}
+
+
+// ---------------------------------------------------------------------------
 // FDN-8 STAGE 8a — HUNTER WEAPON (port of GUISE-v2-design §8 / PHASE2-STEP0 §4a).
 // PFU's `customWeapon` already ships the two-form shape (system.isTransforming / activeForm /
 // secondaryForm), and slots `hoplosphere` items natively. This layer adds only what PFU lacks:
@@ -3747,6 +3840,15 @@ Hooks.once('setup', () => {
 			scope: 'world', config: true, type: Boolean, default: false,
 		});
 	} catch (err) { console.warn('[rippers-guise] could not register the edit-override setting:', err); }
+	// V2 (Party Vault): party size drives the field limit (partySize + 2). World-scoped Number.
+	try {
+		game.settings.register(MODULE_ID, PARTY_SIZE_SETTING, {
+			name: 'RIPPERS.Settings.PartySize',
+			hint: 'RIPPERS.Settings.PartySizeHint',
+			scope: 'world', config: true, type: Number, default: 4,
+			range: { min: 1, max: 12, step: 1 },
+		});
+	} catch (err) { console.warn('[rippers-guise] could not register the party-size setting:', err); }
 	const registry = CONFIG.FU?.classFeatureRegistry ?? globalThis.projectfu?.ClassFeatureRegistry;
 	if (!registry?.register) {
 		console.error('[rippers-guise] CONFIG.FU.classFeatureRegistry not available — projectfu must be active. Guise not registered.');
@@ -3988,7 +4090,7 @@ Hooks.once('ready', async () => {
 	Hooks.on('deleteCombat', _resetTurns);
 	Hooks.on('canvasReady', () => { if (!game.combat?.started) _resetTurns(); });
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -4023,6 +4125,8 @@ export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, R
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // H3 "The Turn": guise-swap action economy (pure decision + scene state + boundary clear).
 export { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, clearGuiseSceneState, USED_GUISES_FLAG, TURN_REFUND_FLAG };
+// Unit 3 Party Vault: field limit + slots (V1/V5), roster/cabinet VM (V2/V3/V4), cross-owner hand-off (X4).
+export { partySize, guiseFieldLimit, fieldSlots, partyActors, vaultGuiseCard, buildCabinetEntries, buildVaultVM, vaultHandOff, PARTY_SIZE_SETTING, CABINET_PACK };
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };
 export { sheetOpenEditor, sheetStashGuise, handOffDecision, sheetHandOffGuise };
 export { deeperBondsApi, bondClockPips, bondPanelRow, buildBondPanelRows, SOLID_BOND_CAP, DEEPER_BONDS_ID };

@@ -528,3 +528,55 @@ test('buildRippersSheetVM: guise rows hint The Turn refund, plus a top-level the
 	const worn = vm.guises.find((g) => g.worn);
 	assert.equal(worn.swapWouldRefund, false);           // the worn guise is never a "fresh" swap
 });
+
+// ── Unit 3 Party Vault (V1–V5, X4) ────────────────────────────────────────────────────────────────
+const { guiseFieldLimit, fieldSlots, buildVaultVM } = mod;
+
+test('guiseFieldLimit: party size + 2, floored at 1', () => {
+	assert.equal(guiseFieldLimit(4), 6);
+	assert.equal(guiseFieldLimit(0), 2);
+	assert.equal(guiseFieldLimit(-5), 1); // never below 1
+});
+
+test('fieldSlots: fills one slot per guise, pads dashed empties to the limit, never truncates', () => {
+	const two = fieldSlots(['a', 'b'], 4);
+	assert.equal(two.count, 2); assert.equal(two.limit, 4);
+	assert.equal(two.slots.length, 4);           // 2 filled + 2 dashed empties (V1/V5)
+	assert.equal(two.slots.filter((s) => s.filled).length, 2);
+	assert.equal(two.empties, 2); assert.equal(two.overLimit, false);
+	const over = fieldSlots(['a', 'b', 'c', 'd', 'e'], 4); // V1: display, do NOT enforce
+	assert.equal(over.slots.length, 5);          // every guise kept, no empties
+	assert.equal(over.empties, 0); assert.equal(over.overLimit, true);
+});
+
+test('buildVaultVM: party roster with field slots, worn tag, and the cabinet compendium (V2/V3/V4)', async () => {
+	const g1 = guise('vg1', { role: 'The Blade' });
+	const memberActor = {
+		id: 'M1', name: 'Vin', img: 'vin.png', isOwner: true, hasPlayerOwner: true,
+		items: { filter: (fn) => [g1].filter(fn) },
+		getFlag: (m, k) => (m === RGID && k === 'activeGuise' ? 'vg1' : undefined),
+	};
+	const savedGame = globalThis.game;
+	globalThis.game = {
+		modules: { get: () => null }, user: { isGM: true },
+		settings: { get: (m, k) => (m === RGID && k === 'partySize' ? 4 : undefined) },
+		actors: { filter: (fn) => [memberActor].filter(fn) },
+		packs: { get: (id) => (id === 'rippers-guise.guises' ? {
+			metadata: { label: 'Rippers Guises' },
+			async getIndex() { return [{ _id: 'c1', name: 'The Hollow', img: 'h.png' }]; },
+		} : null) },
+	};
+	try {
+		const vm = await buildVaultVM(memberActor);
+		assert.equal(vm.partySize, 4);
+		assert.equal(vm.fieldLimit, 6);
+		assert.equal(vm.members.length, 1);
+		const m = vm.members[0];
+		assert.equal(m.name, 'Vin'); assert.equal(m.worn, 'Guise vg1'); // getActiveGuise → vg1 worn
+		assert.equal(m.limit, 6); assert.equal(m.count, 1); assert.equal(m.slots.length, 6);
+		assert.equal(m.canWrite, true);
+		assert.equal(vm.cabinet.label, 'Rippers Guises');
+		assert.equal(vm.cabinet.entries.length, 1);
+		assert.equal(vm.cabinet.entries[0].uuid, 'Compendium.rippers-guise.guises.c1');
+	} finally { globalThis.game = savedGame; }
+});
