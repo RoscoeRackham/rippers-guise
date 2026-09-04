@@ -3759,6 +3759,10 @@ function bondPanelRow(fuBond, record, strength, ladder, { cap = SOLID_BOND_CAP, 
 		solidifyShow: isFleeting,
 		solidifyDisabled: isFleeting && solidCount >= cap,
 		canEternal: isSolid,
+		// v0.7.27: party-member flag (Deeper record). Gates Status-recover + Shared Resolve in the template;
+		// the die-size increase (attrDieUp) is emotional and NOT gated on it. cleanse/coverRegen ladder flags
+		// stay strength-based here; the template ANDs them with partyMember.
+		partyMember: !!record?.partyMember,
 		ladder: {
 			cleanse: !!ladder?.cleanse, coverRegen: !!ladder?.coverRegen,
 			attrDieUp: !!ladder?.attrDieUp, skillGrant: !!ladder?.skillGrant,
@@ -3949,10 +3953,14 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	// binds each input with data-edit="<dot path>" (or bond index/field), written on change by the sheet.
 	// Deeper-Bonds tier per bond name (fleeting by default) — read-only chip for the inline editor.
 	const bondTierByName = new Map();
+	const bondPartyByName = new Map();          // v0.7.27: Deeper party-member flag per bond name
+	let bondsDeeperActive = false;
 	try {
-		const _rec = deeperBondsApi()?.getRecords?.(actor) ?? [];
-		for (const r of _rec) if (r?.name) bondTierByName.set(r.name, r.tier ?? 'fleeting');
-	} catch { /* module absent or read failed → all fleeting */ }
+		const _api = deeperBondsApi();
+		bondsDeeperActive = !!_api?.setBondPartyMember;   // party toggle only offered when Deeper Bonds ≥0.2.3 is present
+		const _rec = _api?.getRecords?.(actor) ?? [];
+		for (const r of _rec) if (r?.name) { bondTierByName.set(r.name, r.tier ?? 'fleeting'); bondPartyByName.set(r.name, !!r.partyMember); }
+	} catch { /* module absent or read failed → all fleeting, no party toggle */ }
 	const editable = {
 		name: actor.name ?? '',
 		attributes: ['dex', 'ins', 'mig', 'wlp'].map((k) => {
@@ -3971,7 +3979,10 @@ async function buildRippersSheetVM(actor, ui = {}) {
 			admInfOpts: bondEmotionOptions('admInf', b.admInf), loyMisOpts: bondEmotionOptions('loyMis', b.loyMis), affHatOpts: bondEmotionOptions('affHat', b.affHat),
 			strength: Number(b.strength ?? bondStrengthOf(b)),
 			tier: bondTierByName.get(b.name ?? '') ?? 'fleeting',
+			partyMember: !!bondPartyByName.get(b.name ?? ''),
+			deeperActive: bondsDeeperActive,   // per-row: show the party-member toggle only when Deeper Bonds ≥0.2.3
 		})),
+		bondsDeeperActive,
 	};
 	// Editor tab (P2c): the affordance targets the worn guise, else the innate, else the first. It only
 	// OPENS the existing GuiseBuilderApp (which already enforces the fixed-at-distillation locks, the
@@ -4438,10 +4449,22 @@ async function sheetBondClockFill(actor, name) {
 	if (!res) { _bondWarn(game.i18n?.localize?.('RIPPERS.Sheet.BondClockRefused') ?? 'Only solid bonds carry a clock (GM only).'); return; }
 	if (res.emotionDelta) _bondNote(game.i18n?.localize?.('RIPPERS.Sheet.BondClockEmotion') ?? 'Clock filled — the player adds one emotion (their choice of axis).');
 }
-async function sheetBondCoverRegen(actor, name) {
-	const api = deeperBondsApi(); if (!api?.coverRegen || !name) return;
-	const res = await api.coverRegen(actor, [name]);
-	_bondNote(res ? `${game.i18n?.localize?.('RIPPERS.Sheet.BondCoverRegen') ?? 'Cover-regen'}: +${res.amount} MP (${res.bond}).` : (game.i18n?.localize?.('RIPPERS.Sheet.BondCoverRegenNone') ?? 'No qualifying bond for cover-regen.'));
+// v0.7.27: SHARED RESOLVE (was cover-regen). Per-bond, party-member only, once/scene, holder MP recovery.
+async function sheetBondSharedResolve(actor, name) {
+	const api = deeperBondsApi(); if (!api?.sharedResolve || !name) return;
+	const res = await api.sharedResolve(actor, name);
+	if (res && typeof res === 'object') { _bondNote(`${game.i18n?.localize?.('RIPPERS.Sheet.BondSharedResolve') ?? 'Shared Resolve'}: +${res.amount} MP (${res.bond}).`); return; }
+	const msg = {
+		'not-party': game.i18n?.localize?.('RIPPERS.Sheet.BondNotParty') ?? 'Only a party-member bond can do that.',
+		'too-weak': game.i18n?.localize?.('RIPPERS.Sheet.BondTooWeak') ?? 'Bond is too weak (needs strength 2).',
+		'used-this-scene': game.i18n?.localize?.('RIPPERS.Sheet.BondUsedScene') ?? 'Already used this scene.',
+	}[res] ?? (game.i18n?.localize?.('RIPPERS.Sheet.BondRefused') ?? 'Refused (GM only).');
+	_bondWarn(msg);
+}
+/** v0.7.27: toggle a bond's party-member flag (owner-writable via the Deeper Bonds API). */
+async function sheetBondPartyToggle(actor, name, isParty) {
+	const api = deeperBondsApi(); if (!api?.setBondPartyMember || !name) return;
+	await api.setBondPartyMember(actor, name, !!isParty);
 }
 async function sheetBondRaiseDie(actor, name) {
 	const api = deeperBondsApi(); if (!api?.raiseAttributeDie || !name) return;
@@ -4543,7 +4566,7 @@ function getRippersActorSheetClass() {
 				bondEternal: RippersActorSheet.onBondEternal,
 				bondClockFill: RippersActorSheet.onBondClockFill,
 				bondCleanse: RippersActorSheet.onBondCleanse,
-				bondCoverRegen: RippersActorSheet.onBondCoverRegen,
+				bondSharedResolve: RippersActorSheet.onBondSharedResolve,
 				bondRaiseDie: RippersActorSheet.onBondRaiseDie,
 				bondSkillGrant: RippersActorSheet.onBondSkillGrant,
 				bondSolidifyRest: RippersActorSheet.onBondSolidifyRest,
@@ -4565,12 +4588,21 @@ function getRippersActorSheetClass() {
 			try { this._wireIdentityFields(this.element); } catch (err) { console.warn('[rippers-guise] identity-field wiring failed:', err); }
 			try { this._wireEditableFields(this.element); } catch (err) { console.warn('[rippers-guise] editable-field wiring failed:', err); }
 			try { this._wireItemEdit(this.element); } catch (err) { console.warn('[rippers-guise] item-edit wiring failed:', err); }
+			try { this._wireBondParty(this.element); } catch (err) { console.warn('[rippers-guise] bond party-toggle wiring failed:', err); }
 			this._ensureDefaultGuise(); // P4: no active guise → wear the basic guise (fire-and-forget; re-renders)
 		}
 		// P4 (Austin: "Unmasked form doesn't make sense. It should default to his basic Guise."): when the
 		// sheet opens with NO active guise, wear the basic/innate guise so the character shows real skills/
 		// stats instead of the bare Unmasked shell. No swap cost (bindGuiseNoCost). Guarded against re-entry
 		// and the in-flight lock; a character with no guise at all stays Unmasked. Owner-only (writes state).
+		// v0.7.27: party-member checkbox on bonds (change → Deeper Bonds setBondPartyMember, owner-writable).
+		_wireBondParty(root) {
+			if (!root?.querySelectorAll) return;
+			const self = this;
+			for (const el of root.querySelectorAll('[data-bond-party]')) {
+				el.addEventListener('change', async () => { await sheetBondPartyToggle(self.document, el.dataset.bondParty, !!el.checked); self.render(); });
+			}
+		}
 		async _ensureDefaultGuise() {
 			try {
 				const actor = this.document;
@@ -4751,7 +4783,7 @@ function getRippersActorSheetClass() {
 		static async onBondEternal(event, target) { await sheetBondEternal(this.document, target?.dataset?.bond); this.render(); }
 		static async onBondClockFill(event, target) { await sheetBondClockFill(this.document, target?.dataset?.bond); this.render(); }
 		static async onBondCleanse(event, target) { await sheetBondCleanse(this.document, target?.dataset?.bond); this.render(); }
-		static async onBondCoverRegen(event, target) { await sheetBondCoverRegen(this.document, target?.dataset?.bond); this.render(); }
+		static async onBondSharedResolve(event, target) { await sheetBondSharedResolve(this.document, target?.dataset?.bond); this.render(); }
 		static async onBondRaiseDie(event, target) { await sheetBondRaiseDie(this.document, target?.dataset?.bond); this.render(); }
 		static async onBondSkillGrant(event, target) { await sheetBondSkillGrant(this.document, target?.dataset?.bond); this.render(); }
 		static async onBondSolidifyRest() { await sheetBondSolidifyRest(this.document); this.render(); }

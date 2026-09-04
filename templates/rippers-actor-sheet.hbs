@@ -248,9 +248,13 @@
 											{{!-- v0.7.24 item 2: → Eternal only while MASKED (an active guise is worn). Unmasked hides it. --}}
 											{{#if b.canEternal}}{{#if ../vm.worn}}<button type="button" class="rs-btn rdb-btn" data-action="bondEternal" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondEternal'}}</button>{{/if}}{{/if}}
 											{{#if b.showClock}}<button type="button" class="rs-btn rdb-btn" data-action="bondClockFill" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondClockFill'}}</button>{{/if}}
-											{{#if b.ladder.cleanse}}<button type="button" class="rs-btn rdb-btn" data-action="bondCleanse" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondCleanse'}}</button>{{/if}}
-											{{#if b.ladder.coverRegen}}<button type="button" class="rs-btn rdb-btn" data-action="bondCoverRegen" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondCoverRegen'}}</button>{{/if}}
+											{{!-- v0.7.27: Status-recover + Shared Resolve are PARTY-MEMBER only (Austin). Die-size (below) is not gated. --}}
+											{{#if b.partyMember}}
+												{{#if b.ladder.cleanse}}<button type="button" class="rs-btn rdb-btn" data-action="bondCleanse" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondCleanse'}}</button>{{/if}}
+												{{#if b.ladder.coverRegen}}<button type="button" class="rs-btn rdb-btn" data-action="bondSharedResolve" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondSharedResolve'}}</button>{{/if}}
+											{{/if}}
 											{{#if b.ladder.attrDieUp}}<button type="button" class="rs-btn rdb-btn" data-action="bondRaiseDie" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondRaiseDie'}}</button>{{/if}}
+											<label class="rs-bond-party"><input type="checkbox" data-bond-party="{{b.name}}" {{#if b.partyMember}}checked{{/if}}> {{localize 'RIPPERS.Sheet.BondPartyMember'}}</label>
 											{{#if b.ladder.skillGrant}}<button type="button" class="rs-btn rdb-btn" data-action="bondSkillGrant" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondSkillGrant'}}</button>{{/if}}
 										</span>
 									{{/if}}
@@ -283,6 +287,7 @@
 							<select data-bond-index="{{b.i}}" data-bond-field="affHat">{{#each b.affHatOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.label}}</option>{{/each}}</select>
 							<span class="rs-bond-tier rdb-tier-tag rdb-tier-{{b.tier}}">{{b.tier}}</span>
 							<span class="rs-edit-bond-str">{{localize 'RIPPERS.Sheet.Strength'}} {{b.strength}}</span>
+							{{#if b.deeperActive}}<label class="rs-bond-party"><input type="checkbox" data-bond-party="{{b.name}}" {{#if b.partyMember}}checked{{/if}}> {{localize 'RIPPERS.Sheet.BondPartyMember'}}</label>{{/if}}
 							<button type="button" class="rs-btn rs-edit-bond-rm" data-action="bondRemove" data-bond-index="{{b.i}}" title="{{localize 'RIPPERS.Sheet.BondRemove'}}">✕</button>
 						</div>
 					{{/each}}
@@ -549,6 +554,7 @@
 							<select data-bond-index="{{b.i}}" data-bond-field="affHat">{{#each b.affHatOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.label}}</option>{{/each}}</select>
 							<span class="rs-bond-tier rdb-tier-tag rdb-tier-{{b.tier}}">{{b.tier}}</span>
 							<span class="rs-edit-bond-str">{{localize 'RIPPERS.Sheet.Strength'}} {{b.strength}}</span>
+							{{#if b.deeperActive}}<label class="rs-bond-party"><input type="checkbox" data-bond-party="{{b.name}}" {{#if b.partyMember}}checked{{/if}}> {{localize 'RIPPERS.Sheet.BondPartyMember'}}</label>{{/if}}
 							<button type="button" class="rs-btn rs-edit-bond-rm" data-action="bondRemove" data-bond-index="{{b.i}}" title="{{localize 'RIPPERS.Sheet.BondRemove'}}">✕</button>
 						</div>
 					{{/each}}

@@ -279,6 +279,7 @@
 .rippers-sheet .rs-attr-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 14px; }
 /* v0.7.24: inline bond editor placed on the Bonds tab (item 1) */
 .rippers-sheet .rs-bond-edit-here { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rs-border); display: flex; flex-direction: column; gap: 6px; }
+.rippers-sheet .rs-bond-party { display: inline-flex; align-items: center; gap: 5px; font-family: var(--rs-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--rs-bone-dim); white-space: nowrap; }
 /* v0.7.15 — full inventory + native Active Effects */
 .rippers-sheet .rs-inv-head { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--rs-border); }
 .rippers-sheet .rs-inv-useeq { font-family: var(--rs-mono); font-size: 11px; color: var(--rs-bone); display: inline-flex; align-items: center; gap: 5px; }
