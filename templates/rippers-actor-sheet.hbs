@@ -1,0 +1,148 @@
+{{!-- Rippers character sheet — Phase 1 READ-ONLY render (Architecture B; SHEET-SKIN-SPIKE.md).
+      Binds live actor.system.* via the buildRippersSheetVM view-model. No control wiring (Phase 2).
+      Skin: Rippers Design System language (blood/bone/violet, notch-clipped cards). --}}
+<div class="rippers-sheet">
+
+	{{!-- ── Masthead ─────────────────────────────────────────────────── --}}
+	<header class="rs-masthead">
+		<div class="rs-portrait">
+			{{#if actor.img}}<img src="{{actor.img}}" alt="" />{{/if}}
+		</div>
+		<div class="rs-ident">
+			<h1 class="rs-name">{{vm.masthead.name}}</h1>
+			<div class="rs-ident-line">
+				{{#if vm.masthead.identity}}<span class="rs-identity">{{vm.masthead.identity}}</span>{{/if}}
+				{{#if vm.masthead.pronouns}}<span class="rs-pronouns">{{vm.masthead.pronouns}}</span>{{/if}}
+				<span class="rs-level">{{localize 'RIPPERS.Sheet.Level'}} {{vm.masthead.level}}</span>
+			</div>
+			<div class="rs-tags">
+				{{#each vm.masthead.classes as |c|}}<span class="rs-tag">{{c}}</span>{{/each}}
+				{{#if vm.masthead.theme}}<span class="rs-tag rs-tag-theme">{{vm.masthead.theme}}</span>{{/if}}
+				{{#if vm.masthead.origin}}<span class="rs-tag rs-tag-origin">{{vm.masthead.origin}}</span>{{/if}}
+			</div>
+		</div>
+		<div class="rs-crisis {{#if vm.vitals.crisis.inCrisis}}rs-crisis-on{{/if}}">
+			<div class="rs-crisis-label">{{localize 'RIPPERS.Sheet.Crisis'}}</div>
+			<div class="rs-crisis-val">{{#if vm.vitals.crisis.inCrisis}}{{localize 'RIPPERS.Sheet.InCrisis'}}{{else}}&le; {{vm.vitals.crisis.score}}{{/if}}</div>
+		</div>
+	</header>
+
+	<div class="rs-grid">
+
+		{{!-- ── Left column: vitals + attributes ───────────────────────── --}}
+		<section class="rs-col rs-col-left">
+			<div class="rs-card">
+				<h2 class="rs-card-title">{{localize 'RIPPERS.Sheet.Vitals'}}</h2>
+				<div class="rs-vitals">
+					<div class="rs-pool rs-hp"><span class="rs-pool-label">HP</span><span class="rs-pool-num">{{vm.vitals.hp.value}}<span class="rs-pool-max">/{{vm.vitals.hp.max}}</span></span></div>
+					<div class="rs-pool rs-mp"><span class="rs-pool-label">MP</span><span class="rs-pool-num">{{vm.vitals.mp.value}}<span class="rs-pool-max">/{{vm.vitals.mp.max}}</span></span></div>
+					<div class="rs-pool rs-ip"><span class="rs-pool-label">IP</span><span class="rs-pool-num">{{vm.vitals.ip.value}}<span class="rs-pool-max">/{{vm.vitals.ip.max}}</span></span></div>
+					<div class="rs-pool rs-fp"><span class="rs-pool-label">{{localize 'RIPPERS.Sheet.Fabula'}}</span><span class="rs-pool-num">{{vm.vitals.fp}}</span></div>
+				</div>
+				<div class="rs-meta-line">
+					<span>{{localize 'RIPPERS.Sheet.Exp'}} {{vm.vitals.exp}}</span>
+					<span>{{localize 'RIPPERS.Sheet.Zenit'}} {{vm.vitals.zenit}}</span>
+				</div>
+			</div>
+
+			<div class="rs-card">
+				<h2 class="rs-card-title">{{localize 'RIPPERS.Sheet.Attributes'}}</h2>
+				<div class="rs-attrs">
+					{{#each vm.attributes as |a|}}
+						<div class="rs-attr">
+							<div class="rs-attr-label">{{a.label}}</div>
+							<div class="rs-attr-die">{{a.die}}</div>
+						</div>
+					{{/each}}
+				</div>
+			</div>
+
+			<div class="rs-card">
+				<h2 class="rs-card-title">{{localize 'RIPPERS.Sheet.Affinities'}}</h2>
+				<div class="rs-affs">
+					{{#each vm.affinities as |aff|}}
+						<div class="rs-aff rs-aff-{{aff.type}} {{#if aff.normal}}rs-aff-normal{{/if}}" data-level="{{aff.level}}">
+							<span class="rs-aff-type">{{aff.type}}</span>
+							<span class="rs-aff-word">{{aff.word}}</span>
+						</div>
+					{{/each}}
+				</div>
+			</div>
+		</section>
+
+		{{!-- ── Middle column: guise roster ────────────────────────────── --}}
+		<section class="rs-col rs-col-mid">
+			<div class="rs-card rs-card-accent">
+				<h2 class="rs-card-title">{{localize 'RIPPERS.Sheet.Guises'}}</h2>
+				{{#if vm.guises.length}}
+					<div class="rs-guises">
+						{{#each vm.guises as |g|}}
+							<div class="rs-guise {{#if g.worn}}rs-guise-worn{{/if}} {{#if g.innate}}rs-guise-innate{{/if}}">
+								<header class="rs-guise-head">
+									{{#if g.img}}<img class="rs-guise-icon" src="{{g.img}}" alt="" />{{/if}}
+									<span class="rs-guise-name">{{g.name}}</span>
+									<span class="rs-guise-markers">
+										{{#if g.worn}}<span class="rs-marker rs-marker-worn" title="{{localize 'RIPPERS.Sheet.Worn'}}">{{localize 'RIPPERS.Sheet.Worn'}}</span>{{/if}}
+										{{#if g.innate}}<span class="rs-marker rs-marker-innate" title="{{localize 'RIPPERS.Sheet.Innate'}}">{{localize 'RIPPERS.Sheet.Innate'}}</span>{{/if}}
+										{{#if g.tradable}}<span class="rs-marker rs-marker-trade" title="{{localize 'RIPPERS.Sheet.Tradable'}}">{{localize 'RIPPERS.Sheet.Tradable'}}</span>{{/if}}
+									</span>
+								</header>
+								{{#if g.role}}<div class="rs-guise-role">{{g.role}}</div>{{/if}}
+
+								{{#if g.trio.length}}
+									<div class="rs-guise-trio">
+										{{#each g.trio as |t|}}<span class="rs-trio-chip rs-aff-{{t.type}}">{{t.word}} {{t.type}}</span>{{/each}}
+									</div>
+								{{/if}}
+
+								<div class="rs-guise-stats">
+									<span title="{{localize 'RIPPERS.Sheet.Skills'}}"><i class="fas fa-book"></i> {{g.skillCount}} · {{g.slTotal}}/{{g.budget}} SL</span>
+									{{#if g.heroicName}}<span title="{{localize 'RIPPERS.Sheet.Heroic'}}"><i class="fas fa-fire"></i> {{g.heroicName}}</span>{{/if}}
+								</div>
+
+								{{#if g.lent.hp.maximum}}<span class="rs-lent">{{localize 'RIPPERS.Sheet.LentHP'}} {{g.lent.hp.current}}/{{g.lent.hp.maximum}}</span>{{/if}}
+								{{#if g.lent.mp.maximum}}<span class="rs-lent">{{localize 'RIPPERS.Sheet.LentMP'}} {{g.lent.mp.current}}/{{g.lent.mp.maximum}}</span>{{/if}}
+								{{#if g.lent.ip.capacity}}<span class="rs-lent">{{localize 'RIPPERS.Sheet.Satchel'}} {{g.lent.ip.stock}}/{{g.lent.ip.capacity}}</span>{{/if}}
+							</div>
+						{{/each}}
+					</div>
+				{{else}}
+					<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoGuises'}}</p>
+				{{/if}}
+			</div>
+		</section>
+
+		{{!-- ── Right column: bonds + statuses ─────────────────────────── --}}
+		<section class="rs-col rs-col-right">
+			<div class="rs-card">
+				<h2 class="rs-card-title">{{localize 'RIPPERS.Sheet.Bonds'}}</h2>
+				{{#if vm.bonds.length}}
+					<ul class="rs-bonds">
+						{{#each vm.bonds as |b|}}
+							<li class="rs-bond">
+								<span class="rs-bond-name">{{b.name}}</span>
+								<span class="rs-bond-strength">{{b.strength}}</span>
+								<span class="rs-bond-emotions">{{#each b.emotions as |e|}}<span class="rs-emotion">{{e}}</span>{{/each}}</span>
+							</li>
+						{{/each}}
+					</ul>
+				{{else}}
+					<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoBonds'}}</p>
+				{{/if}}
+			</div>
+
+			<div class="rs-card">
+				<h2 class="rs-card-title">{{localize 'RIPPERS.Sheet.Status'}}</h2>
+				{{#if vm.statuses.length}}
+					<div class="rs-statuses">{{#each vm.statuses as |s|}}<span class="rs-status">{{s}}</span>{{/each}}</div>
+				{{else}}
+					<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoStatus'}}</p>
+				{{/if}}
+			</div>
+		</section>
+	</div>
+
+	<footer class="rs-foot">
+		<span class="rs-foot-note">{{localize 'RIPPERS.Sheet.ReadOnlyNote'}}</span>
+	</footer>
+</div>

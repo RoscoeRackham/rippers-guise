@@ -2899,6 +2899,113 @@ async function sanitizeActorGuises(actor) {
 Hooks.on('renderFUStandardActorSheet', (app) => injectGuisePanel(app));
 
 // ---------------------------------------------------------------------------
+// RIPPERS CHARACTER SHEET — custom Actor sheet, Architecture B (SHEET-SKIN-SPIKE.md, 4 Sep 2026).
+// Our own ApplicationV2 ActorSheetV2 view over FU's stable engine data — NOT a subclass of FU's own
+// sheet (FU is mid AppV1->AppV2 migration; a subclass would inherit that breaking rewrite; a parallel
+// view over the DataModel layer is insulated). Registered user-selectable (makeDefault:false) so it
+// never steals the default. PHASE 1 = READ-ONLY faithful render of real actor.system.* (no control
+// wiring — that is Phase 2). All FU read paths verified against the projectfu dev checkout.
+// Skin: the Rippers Design System language (blood/bone/violet, notch-clipped cards) — its exact 2a
+// "Slash" Foundry-sheet canvas was not reachable this build, so the visual is grounded in the readable
+// design-system tokens + hunters-ledger CharacterScreen, to be reconciled to 2a when the canvas lands.
+const RS_ATTR_LABELS = { dex: 'Dexterity', ins: 'Insight', mig: 'Might', wlp: 'Willpower' };
+const RS_AFFINITY_TYPES = ['physical', 'air', 'bolt', 'dark', 'earth', 'fire', 'ice', 'light', 'poison'];
+
+/** Build the read-only view-model for the Rippers character sheet from a live FU actor. Async (resolves
+ *  each worn/innate guise's heroic name). Binds ONLY real actor.system.* + our guise API — invents
+ *  nothing. Exported for headless testing of the pure shaping (given a plain actor-shaped object). */
+async function buildRippersSheetVM(actor) {
+	if (!actor) return null;
+	const sys = actor.system ?? {};
+	const res = sys.resources ?? {};
+	const pool = (r) => ({ value: Number(r?.value ?? 0), max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null });
+	const hp = pool(res.hp), mp = pool(res.mp), ip = pool(res.ip);
+	const vitals = {
+		hp, mp, ip,
+		fp: Number(res.fp?.value ?? 0),                              // FP has no max on a PC
+		exp: Number(res.exp?.value ?? 0), zenit: Number(res.zenit?.value ?? 0),
+		crisis: { inCrisis: !!res.hp?.inCrisis, score: Number(res.hp?.crisisScore ?? Math.floor((hp.max ?? 0) / 2)) },
+	};
+	const attributes = ['dex', 'ins', 'mig', 'wlp'].map((k) => ({
+		key: k, label: RS_ATTR_LABELS[k],
+		die: `d${Number(sys.attributes?.[k]?.current ?? sys.attributes?.[k]?.base ?? 8)}`,
+	}));
+	const affinities = RS_AFFINITY_TYPES.map((t) => {
+		const lvl = Number(sys.affinities?.[t]?.current ?? sys.affinities?.[t]?.base ?? 0);
+		return { type: t, level: lvl, word: lvl === 0 ? '—' : affinityWordOf(lvl), normal: lvl === 0 };
+	});
+	const idn = (k) => String(res[k]?.name ?? '').trim();
+	const masthead = {
+		name: actor.name ?? '', identity: idn('identity'), pronouns: idn('pronouns'),
+		theme: idn('theme'), origin: idn('origin'), level: Number(sys.level?.value ?? 0),
+		classes: (actor.itemTypes?.class ?? []).map((c) => c.name).filter(Boolean),
+	};
+	const activeId = getActiveGuise(actor);
+	const budget = budgetOf(actor);
+	const guiseItems = actor.items?.filter ? actor.items.filter(isGuiseItem) : [];
+	const guises = [];
+	for (const g of guiseItems) {
+		const d = g.system?.data ?? {};
+		const innate = !!g.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
+		const trio = (d.affinityModifiers ?? []).map((m) => ({ type: m.type, word: affinityWordOf(m.level), level: m.level }));
+		let skillCount = 0, slTotal = 0;
+		for (const cls of d.classes ?? []) for (const sk of cls.skills ?? []) { skillCount++; slTotal += Number(sk.sl) || 0; }
+		const heroicUuid = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
+		const heroicName = heroicUuid ? ((await safeFromUuid(heroicUuid))?.name ?? '(unresolved)') : null;
+		const v = guiseVitals(g);
+		guises.push({
+			id: g.id, name: g.name ?? '', img: g.img, role: d.role ?? '', identity: d.identity ?? '',
+			worn: g.id === activeId, innate, tradable: !innate,
+			trio, skillCount, slTotal, budget, heroicName,
+			lent: { hp: v.hp, mp: v.mp, ip: v.ip },
+		});
+	}
+	guises.sort((a, b) => (Number(b.worn) - Number(a.worn)) || (Number(a.innate) - Number(b.innate)));
+	const bonds = (sys.bonds ?? []).map((b) => ({
+		name: b.name ?? '', strength: Number(b.strength ?? 0),
+		emotions: [b.admInf, b.loyMis, b.affHat].filter(Boolean),
+	})).filter((b) => b.name || b.emotions.length);
+	const statuses = actor.statuses ? [...actor.statuses] : [];
+	return { masthead, vitals, attributes, affinities, guises, bonds, statuses };
+}
+
+let _RippersActorSheet = null;
+function getRippersActorSheetClass() {
+	if (_RippersActorSheet) return _RippersActorSheet;
+	const { HandlebarsApplicationMixin } = foundry.applications.api;
+	const { ActorSheetV2 } = foundry.applications.sheets;
+	class RippersActorSheet extends HandlebarsApplicationMixin(ActorSheetV2) {
+		static DEFAULT_OPTIONS = {
+			classes: ['rippers-guise', 'rippers-actor-sheet'],
+			position: { width: 940, height: 760 },
+			window: { resizable: true, title: 'RIPPERS.Sheet.Title', icon: 'fas fa-mask' },
+			// Phase 1: no actions — read-only. Control wiring is Phase 2.
+			actions: {},
+		};
+		static PARTS = { body: { template: `modules/${MODULE_ID}/templates/rippers-actor-sheet.hbs` } };
+		async _prepareContext(options) {
+			const ctx = await super._prepareContext(options);
+			const vm = await buildRippersSheetVM(this.document);
+			return { ...ctx, actor: this.document, vm };
+		}
+	}
+	_RippersActorSheet = RippersActorSheet;
+	return RippersActorSheet;
+}
+/** Register the Rippers character sheet as an ALTERNATIVE (user-selectable, never default). */
+function registerRippersSheet() {
+	try {
+		const Actors = foundry.documents?.collections?.Actors ?? globalThis.Actors;
+		if (!Actors?.registerSheet) { console.warn('[rippers-guise] Actors.registerSheet unavailable — Rippers sheet not registered.'); return; }
+		Actors.registerSheet(MODULE_ID, getRippersActorSheetClass(), {
+			types: ['character'], makeDefault: false, label: 'RIPPERS.Sheet.Label',
+		});
+		console.log(`[${MODULE_ID}] registered the Rippers character sheet (alternative, user-selectable, read-only P1).`);
+	} catch (err) { console.error('[rippers-guise] Rippers sheet registration failed:', err); }
+}
+Hooks.once('setup', registerRippersSheet);
+
+// ---------------------------------------------------------------------------
 // Registration + template preload.
 Hooks.once('setup', () => {
 	// #4 (v0.7.9): register the module-wide GM edit override (world scope ⇒ GM-only to change).
@@ -3152,3 +3259,4 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES };
