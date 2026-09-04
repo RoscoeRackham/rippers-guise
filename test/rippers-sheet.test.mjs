@@ -16,7 +16,7 @@ const UUIDS = new Map();
 globalThis.fromUuid = async (u) => UUIDS.get(u) ?? null;
 
 const mod = await import('../scripts/rippers-guise.mjs');
-const { buildRippersSheetVM, statusTargetActor, sheetAdjustResource, rsAffFlags, RS_STATUS_IDS, RS_TABS } = mod;
+const { buildRippersSheetVM, statusTargetActor, sheetAdjustResource, rsAffFlags, RS_STATUS_IDS, RS_TABS, sheetRollWeapon, sheetRest, sheetSpendFabula, sheetRollCheck } = mod;
 
 const FEATURE_TYPE = 'rippers-guise.guise';
 const RGID = 'rippers-guise';
@@ -208,4 +208,43 @@ test('buildRippersSheetVM: the background watermark initial is the character nam
 	assert.equal(vm.masthead.initial, 'C');          // "Cordelia"
 	const bare = await buildRippersSheetVM({ name: '', system: {}, items: { filter: () => [] }, getFlag: () => undefined });
 	assert.equal(bare.masthead.initial, '?');        // no name → placeholder, never a hardcoded 'V'
+});
+
+// ── P2b: weapons in the VM + the attack / rest / fabula control helpers ──
+test('buildRippersSheetVM: weapons (weapon + customWeapon) surface for the Kit tab', async () => {
+	const a = actorStub();
+	a.itemTypes.weapon = [{ id: 'wpn1', name: 'Consecrated Rifle', img: 'r.png', type: 'weapon' }];
+	a.itemTypes.customWeapon = [{ id: 'cw1', name: 'Maxim Fist', img: 'm.png', type: 'customWeapon' }];
+	const vm = await buildRippersSheetVM(a, { activeTab: 'kit' });
+	assert.deepEqual(vm.weapons.map((w) => w.id), ['wpn1', 'cw1']);
+	assert.equal(vm.tab.kit, true);
+	assert.equal(vm.tab.other, undefined);   // kit is implemented, not a stub tab
+});
+
+test('sheetRollWeapon: calls item.roll() on the resolved weapon (the FU attack→damage flow)', async () => {
+	let rolled = false;
+	const item = { id: 'wpn1', roll: async () => { rolled = true; } };
+	const actor = { items: { get: (id) => (id === 'wpn1' ? item : null) } };
+	await sheetRollWeapon(actor, 'wpn1');
+	assert.equal(rolled, true);
+	await sheetRollWeapon(actor, 'nope');    // missing → no throw
+});
+
+test('sheetRest: calls actor.rest(true) (fires REST_EVENT → lent-vitals refill)', async () => {
+	let restedWith = null;
+	await sheetRest({ rest: async (ip) => { restedWith = ip; } });
+	assert.equal(restedWith, true);
+	await sheetRest({});                      // no rest method → no throw
+});
+
+test('sheetSpendFabula: fallback spends 1 FP when >0, else notifies (deep import unavailable in node)', async () => {
+	function fpActor(v) { const a = { system: { resources: { fp: { value: v } } }, update: async (p) => { for (const [k, val] of Object.entries(p)) { const parts = k.split('.'); let o = a; for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]]; o[parts.at(-1)] = val; } } }; return a; }
+	const has = fpActor(3); await sheetSpendFabula(has);
+	assert.equal(has.system.resources.fp.value, 2);   // -1
+	const none = fpActor(0); await sheetSpendFabula(none);
+	assert.equal(none.system.resources.fp.value, 0);  // unchanged
+});
+
+test('sheetRollCheck: resolves without throwing when the CheckPrompt deep import is unavailable', async () => {
+	await sheetRollCheck({ name: 'x' });     // node has no /systems import → warns, no throw
 });

@@ -2924,7 +2924,6 @@ const RS_TABS = [
 ];
 const RS_TAB_STUBS = {
 	spells: 'Vin studies no magic. A spell from a class or a seated Clot would be entered here.',
-	kit: 'Weapons, armour and the purse are entered here.',
 	clots: 'No Clot is seated. A seated Clot rides its gear, not the character.',
 	quirk: 'The character\'s Quirk and Specialties are shown here.',
 	edit: 'The Editor tab (guise builder + trade / hand-off) arrives in a later phase.',
@@ -3002,12 +3001,15 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const statuses = [...activeStatuses];
 	const statusChips = RS_STATUS_IDS.map((id) => ({ id, label: id, active: activeStatuses.has(id) }));
 	const condGroups = RS_COND_GROUPS.map((grp) => ({ label: grp.label, items: grp.ids.map((id) => ({ id, label: id, active: activeStatuses.has(id) })) }));
+	// Weapons for the Kit tab's attack rows (weapon + customWeapon; item.roll() drives the attack flow).
+	const weaponItems = [...(actor.itemTypes?.weapon ?? []), ...(actor.itemTypes?.customWeapon ?? [])];
+	const weapons = weaponItems.map((w) => ({ id: w.id, name: w.name ?? '', img: w.img, type: w.type }));
 	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
-	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study' };
-	if (!tab.form && !tab.bonds && !tab.study) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', kit: activeTab === 'kit' };
+	if (!tab.form && !tab.bonds && !tab.study && !tab.kit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
 	return {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, statuses, statusChips, condGroups,
-		worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
+		weapons, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
 	};
 }
 
@@ -3085,6 +3087,40 @@ async function sheetGuiseSwap(actor) {
 	ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Sheet.NoGuises') ?? 'No guise to wear.');
 }
 
+// ── P2b controls: attack / check / rest / fabula (FU signatures recon-verified — nothing invented) ──
+/** Weapon attack — item.roll() (document method) posts the accuracy card whose buttons drive FU's
+ *  damage pipeline; no separate DamagePipeline call is needed for the standard attack→damage flow. */
+async function sheetRollWeapon(actor, itemId) {
+	const item = actor?.items?.get?.(itemId);
+	if (!item) return;
+	if (typeof item.roll === 'function') return item.roll();
+	ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Sheet.NotRollable') ?? 'That item cannot be rolled.');
+}
+/** One "Roll Check" button — CheckPrompt.openCheck prompts the user for the two attributes (deep import;
+ *  NOT on game.projectfu). Warns if unavailable rather than invent an arbitrary attribute pair. */
+async function sheetRollCheck(actor) {
+	if (!actor) return;
+	try {
+		const m = await import('/systems/projectfu/module/checks/check-prompt.mjs');
+		if (typeof m?.CheckPrompt?.openCheck === 'function') return m.CheckPrompt.openCheck(actor);
+	} catch (err) { console.warn('[rippers-guise] CheckPrompt unavailable:', err); }
+	ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Sheet.CheckUnavailable') ?? 'The check dialog is unavailable.');
+}
+/** Rest — actor.rest(true) restores HP/MP (+IP) and fires REST_EVENT → the lent-vitals refill I already
+ *  subscribed at ready runs off the same event. Document method. */
+async function sheetRest(actor) { if (typeof actor?.rest === 'function') return actor.rest(true); }
+/** Spend a Fabula Point — spendMetaCurrency confirms + guards fp>0 (deep import). Direct −1 fallback. */
+async function sheetSpendFabula(actor) {
+	if (!actor) return;
+	try {
+		const m = await import('/systems/projectfu/module/helpers/player-list-enhancements.mjs');
+		if (typeof m?.PlayerListEnhancements?.spendMetaCurrency === 'function') return m.PlayerListEnhancements.spendMetaCurrency(actor);
+	} catch (err) { console.warn('[rippers-guise] spendMetaCurrency unavailable — direct fallback:', err); }
+	const cur = Number(actor.system?.resources?.fp?.value ?? 0);
+	if (cur > 0) await actor.update({ 'system.resources.fp.value': cur - 1 });
+	else ui.notifications?.info(game.i18n?.localize?.('RIPPERS.Sheet.NoFabula') ?? 'No Fabula Points to spend.');
+}
+
 let _RippersActorSheet = null;
 function getRippersActorSheetClass() {
 	if (_RippersActorSheet) return _RippersActorSheet;
@@ -3107,6 +3143,10 @@ function getRippersActorSheetClass() {
 				selectTab: RippersActorSheet.onSelectTab,
 				guiseWear: RippersActorSheet.onGuiseWear,
 				guiseSwap: RippersActorSheet.onGuiseSwap,
+				rollWeapon: RippersActorSheet.onRollWeapon,
+				rollCheck: RippersActorSheet.onRollCheck,
+				rest: RippersActorSheet.onRest,
+				spendFabula: RippersActorSheet.onSpendFabula,
 			},
 		};
 		static PARTS = { body: { template: `modules/${MODULE_ID}/templates/rippers-actor-sheet.hbs` } };
@@ -3132,6 +3172,10 @@ function getRippersActorSheetClass() {
 		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this.render(); } }
 		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (id) { await sheetGuiseWear(this.document, id); this.render(); } }
 		static async onGuiseSwap() { await sheetGuiseSwap(this.document); this.render(); }
+		static async onRollWeapon(event, target) { const id = target?.dataset?.item; if (id) await sheetRollWeapon(this.document, id); }
+		static async onRollCheck() { await sheetRollCheck(this.document); }
+		static async onRest() { await sheetRest(this.document); this.render(); }
+		static async onSpendFabula() { await sheetSpendFabula(this.document); this.render(); }
 	}
 	_RippersActorSheet = RippersActorSheet;
 	return RippersActorSheet;
@@ -3405,3 +3449,4 @@ export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifie
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises };
 export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
+export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };

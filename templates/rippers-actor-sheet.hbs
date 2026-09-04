@@ -44,6 +44,7 @@
 					<span class="rs-stat rs-stat-small">
 						<span class="rs-stat-label">{{localize 'RIPPERS.Sheet.Fabula'}}</span>
 						<span class="rs-stat-num">{{vm.vitals.fp}}</span>
+						<span class="rs-step"><button data-action="spendFabula" title="{{localize 'RIPPERS.Sheet.SpendFabula'}}">{{localize 'RIPPERS.Sheet.Spend'}}</button></span>
 					</span>
 					{{!-- IP --}}
 					<span class="rs-stat rs-stat-small">
@@ -58,6 +59,10 @@
 					{{#each vm.attributes as |a|}} &nbsp;·&nbsp; {{a.label}} <b>{{a.die}}</b>{{/each}}
 				</div>
 				{{#if vm.masthead.classes.length}}<div><span class="rs-torment">{{#each vm.masthead.classes as |c|}}{{c}} {{/each}}</span></div>{{/if}}
+				<div class="rs-floor-row">
+					<button class="rs-chip" data-action="rollCheck">{{localize 'RIPPERS.Sheet.RollCheck'}}</button>
+					<button class="rs-chip" data-action="rest">{{localize 'RIPPERS.Sheet.Rest'}}</button>
+				</div>
 			</div>
 
 			{{!-- Swap column --}}
@@ -138,6 +143,17 @@
 					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Origin'}}</span><span class="rs-study-val">{{vm.masthead.origin}}</span>
 					<span class="rs-study-label">{{localize 'RIPPERS.Sheet.Pronouns'}}</span><span class="rs-study-val">{{vm.masthead.pronouns}}</span>
 				</div>
+			{{/if}}
+
+			{{#if vm.tab.kit}}
+				{{#if vm.weapons.length}}
+					{{#each vm.weapons as |w|}}
+						<div class="rs-classcard" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+							<span class="rs-classcard-name">{{w.name}}</span>
+							<button class="rs-chip" data-action="rollWeapon" data-item="{{w.id}}">{{localize 'RIPPERS.Sheet.Attack'}}</button>
+						</div>
+					{{/each}}
+				{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoWeapons'}}</p>{{/if}}
 			{{/if}}
 
 			{{#if vm.tab.other}}

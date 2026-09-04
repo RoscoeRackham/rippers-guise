@@ -201,5 +201,14 @@
   "RIPPERS.Sheet.Self": "Self",
   "RIPPERS.Sheet.Target": "Target",
   "RIPPERS.Sheet.NoTarget": "No target selected — target a token first.",
-  "RIPPERS.Sheet.NoConditionsModule": "rippers-conditions is not active."
+  "RIPPERS.Sheet.NoConditionsModule": "rippers-conditions is not active.",
+  "RIPPERS.Sheet.Attack": "Attack",
+  "RIPPERS.Sheet.RollCheck": "Roll Check",
+  "RIPPERS.Sheet.Rest": "Rest",
+  "RIPPERS.Sheet.Spend": "Spend",
+  "RIPPERS.Sheet.SpendFabula": "Spend a Fabula Point",
+  "RIPPERS.Sheet.NoWeapons": "No weapons carried.",
+  "RIPPERS.Sheet.NoFabula": "No Fabula Points to spend.",
+  "RIPPERS.Sheet.NotRollable": "That item cannot be rolled.",
+  "RIPPERS.Sheet.CheckUnavailable": "The check dialog is unavailable."
 }

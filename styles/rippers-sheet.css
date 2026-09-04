@@ -1,3 +1,7 @@
+/* Interim web-font load (god P2b): the four 2a faces from Google Fonts — no local bundle yet. Bundling
+   local files for offline tables is a deferred asset-polish pass. @import must lead the file. */
+@import url('https://fonts.googleapis.com/css2?family=Grenze+Gotisch:wght@700;800;900&family=IBM+Plex+Mono:wght@400;600&family=Pirata+One&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap');
+
 /* Rippers character sheet — the "Vin" 2a "The Slash" skin (SOURCE-vin-sheet-2a.dc.html, board id 2a).
    Palette + primitives transcribed from that canvas; scoped to .rippers-sheet so nothing leaks into
    other Foundry apps. Display faces (Grenze Gotisch / Pirata One / Spectral) fall back to system stacks
