@@ -3308,11 +3308,57 @@ function arcanaImgAt(base, slug) {
 }
 /** The image URL for an arcana slug at the CONFIGURED base, or null for unknown. */
 function arcanaImg(slug) { return arcanaImgAt(arcanaBasePath(), slug); }
-/** The arcana tile chosen for a guise (from its Item flag), with its resolved img, or null when unset. */
-function guiseArcana(guise) {
-	const entry = arcanaBySlug(guise?.getFlag?.(MODULE_ID, ARCANA_FLAG));
-	return entry ? { ...entry, img: arcanaImg(entry.slug) } : null;
+
+// Austin wants NO renaming: the picker ENUMERATES whatever image files live in arcanaBasePath at
+// runtime (FilePicker.browse) and the guise stores the CHOSEN FILE'S PATH — so any filenames work and
+// the semantic 22-slug list is no longer the lookup key (it survives only as the local default art's
+// actual filenames). A guise from the fixed-slug era stored a bare slug; that still resolves against
+// the base as a fallback.
+const ARCANA_IMAGE_EXTS = Object.freeze(['.png', '.webp', '.jpg', '.jpeg', '.gif', '.avif', '.svg']);
+/** PURE. Is this path an image we'll show as an arcana card? */
+function isArcanaImage(path) {
+	const p = String(path ?? '').toLowerCase();
+	return ARCANA_IMAGE_EXTS.some((e) => p.endsWith(e));
 }
+/** PURE. A human label from a file path: basename without extension, leading index stripped, tidied. */
+function prettifyArcanaName(path) {
+	const base = String(path ?? '').split('/').pop() ?? '';
+	const stem = base.replace(/\.[^.]+$/, '');
+	const cleaned = stem.replace(/^\s*\d+\s*[-_. ]+/, '').replace(/[-_]+/g, ' ').trim();
+	return cleaned || stem || base;
+}
+/** PURE. From a FilePicker.browse files[] list → sorted arcana entries {path, name}, images only. */
+function arcanaEntriesFromFiles(files) {
+	return (Array.isArray(files) ? files : [])
+		.filter(isArcanaImage)
+		.slice()
+		.sort((a, b) => String(a).localeCompare(String(b)))
+		.map((path) => ({ path, name: prettifyArcanaName(path) }));
+}
+/** PURE. Resolve a guise's stored arcana value → {img, name}, or null when unset. A stored FULL PATH
+ *  (has a slash or an image extension) is used directly; a legacy bare slug resolves against the base. */
+function resolveArcana(stored) {
+	if (!stored || typeof stored !== 'string') return null;
+	if (stored.includes('/') || isArcanaImage(stored)) return { img: stored, name: prettifyArcanaName(stored) };
+	const img = arcanaImg(stored);                       // legacy bare slug → base/<slug>.png
+	if (!img) return null;
+	return { img, name: arcanaBySlug(stored)?.name ?? prettifyArcanaName(stored) };
+}
+/** RUNTIME (FilePicker.browse is async, not available headless). Enumerate the image files in the
+ *  configured folder → sorted {path, name} entries. Returns [] on a missing/empty folder, never throws. */
+async function browseArcana(base) {
+	const FP = foundry?.applications?.apps?.FilePicker?.implementation ?? foundry?.applications?.apps?.FilePicker ?? globalThis.FilePicker;
+	if (!FP?.browse) return [];
+	try {
+		const res = await FP.browse('data', base);
+		return arcanaEntriesFromFiles(res?.files);
+	} catch (err) {
+		console.warn('[rippers-guise] could not browse the arcana folder', base, err);
+		return [];
+	}
+}
+/** The arcana tile chosen for a guise (from its Item flag), with its resolved img, or null when unset. */
+function guiseArcana(guise) { return resolveArcana(guise?.getFlag?.(MODULE_ID, ARCANA_FLAG)); }
 
 // ── H2 two-portrait swap (Austin 4 Sep: NORMAL + OTHER-SHAPE only; our own minimal build, NOT Visage) ─
 // Exactly two configurable face images per actor live on flags['rippers-guise'].faces = {normal, other}
@@ -3649,16 +3695,23 @@ async function sheetGuiseWear(actor, guiseId) {
 	return getActiveGuise(actor) === guiseId ? dismissGuise(actor, guiseId) : bindGuise(actor, guiseId);
 }
 
-/** 2a arcana picker: open a grid of the 22 major arcana; the pick persists to the guise Item flag
- *  flags['rippers-guise'].arcana (the README's production mapping). A "Clear" option removes it. */
+/** 2a arcana picker: ENUMERATE the image files in arcanaBasePath (no rename needed — any names work)
+ *  and show them as a visual grid; the chosen file's PATH persists to the guise Item flag
+ *  flags['rippers-guise'].arcana. A "Clear" option removes it. Empty/missing folder → a graceful hint. */
 async function sheetPickArcana(actor, guiseId) {
 	const guise = actor?.items?.get?.(guiseId);
 	if (!guise) return;
-	const tiles = ARCANA.map((a) => `<button type="button" class="rs-arcana-opt" data-slug="${a.slug}" title="${a.name}"><img src="${arcanaImg(a.slug)}" alt="${a.name}"></button>`).join('');
-	const content = `<div class="rs-arcana-grid">${tiles}</div><p style="margin-top:8px;text-align:center;"><button type="button" class="rs-arcana-opt" data-slug="">${game.i18n?.localize?.('RIPPERS.Sheet.ArcanaClear') ?? '— none —'}</button></p>`;
+	const base = arcanaBasePath();
+	const entries = await browseArcana(base);            // async, runtime; [] if the folder is empty/missing
+	const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+	const clearLbl = game.i18n?.localize?.('RIPPERS.Sheet.ArcanaClear') ?? '— none —';
+	const body = entries.length
+		? `<div class="rs-arcana-grid">${entries.map((e) => `<button type="button" class="rs-arcana-opt" data-path="${esc(e.path)}" title="${esc(e.name)}"><img src="${esc(e.path)}" alt="${esc(e.name)}"></button>`).join('')}</div>`
+		: `<p class="rs-arcana-empty-msg">${esc(game.i18n?.localize?.('RIPPERS.Sheet.ArcanaEmpty') ?? 'No images found in the arcana folder. Set the "Arcana art folder" setting to where your cards live.')}<br><code>${esc(base)}</code></p>`;
+	const content = `${body}<p style="margin-top:8px;text-align:center;"><button type="button" class="rs-arcana-opt" data-path="">${esc(clearLbl)}</button></p>`;
 	const DV2 = foundry?.applications?.api?.DialogV2;
 	const pick = await new Promise((resolve) => {
-		const wire = (root) => root?.querySelectorAll?.('.rs-arcana-opt').forEach((b) => b.addEventListener('click', () => resolve(b.dataset.slug ?? '')));
+		const wire = (root) => root?.querySelectorAll?.('.rs-arcana-opt').forEach((b) => b.addEventListener('click', () => resolve(b.dataset.path ?? '')));
 		if (DV2?.wait) {
 			DV2.wait({ window: { title: game.i18n?.localize?.('RIPPERS.Sheet.PickArcana') ?? 'Choose an arcana' }, content, buttons: [{ action: 'cancel', label: game.i18n?.localize?.('RIPPERS.Sheet.Cancel') ?? 'Cancel' }], render: (_e, dlg) => wire(dlg.element ?? dlg), rejectClose: false })
 				.then((r) => { if (r === 'cancel' || r == null) resolve(undefined); }).catch(() => resolve(undefined));
@@ -4383,7 +4436,7 @@ export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLay
 export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
-export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, guiseArcana, sheetPickArcana };
+export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };
 // H2 two-portrait swap (normal/other-shape; our own build, not Visage).
 export { faceForGuise, resolveFaceImg, nextManualFace, getFaces, setFace, applyGuiseFace, restoreBaseFace, sheetToggleFace, guiseFacesVM, GUISE_FACE_KEYS, FACES_FLAG, GUISE_FACE_FLAG, NO_PORTRAIT_WELL };
 // H3 "The Turn": guise-swap action economy (pure decision + scene state + boundary clear).

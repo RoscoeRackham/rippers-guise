@@ -530,7 +530,7 @@ test('buildRippersSheetVM: guise rows hint The Turn refund, plus a top-level the
 });
 
 // ── 2a guise-identity arcana tiles ────────────────────────────────────────────────────────────────
-const { ARCANA, arcanaBySlug, guiseArcana, arcanaImg, arcanaImgAt, arcanaBasePath, DEFAULT_ARCANA_BASE } = mod;
+const { ARCANA, arcanaBySlug, guiseArcana, arcanaImg, arcanaImgAt, arcanaBasePath, DEFAULT_ARCANA_BASE, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana } = mod;
 
 test('ARCANA: the 22 major arcana, each with a slug, name, and a <slug>.png filename', () => {
 	assert.equal(ARCANA.length, 22);
@@ -561,7 +561,37 @@ test('arcanaBasePath reads the setting when registered, stripping a trailing sla
 	} finally { globalThis.game = savedGame; }
 });
 
+test('arcana enumeration: image filter, name tidy, and sorted {path,name} entries from a browse listing', () => {
+	assert.ok(isArcanaImage('Rippers/Arcana/x.png') && isArcanaImage('a.WEBP') && isArcanaImage('a.jpeg'));
+	assert.ok(!isArcanaImage('notes.txt') && !isArcanaImage('folder') && !isArcanaImage(''));
+	// tidy: leading index + separators stripped; original capitalisation kept
+	assert.equal(prettifyArcanaName('Rippers/Arcana/Major Arcana/ 5 The Hierophant.png'), 'The Hierophant');
+	assert.equal(prettifyArcanaName('05-the-hierophant.png'), 'the hierophant');
+	assert.equal(prettifyArcanaName('Death.webp'), 'Death');
+	// filter to images + stable sort by path; non-images dropped
+	const entries = arcanaEntriesFromFiles(['base/b.png', 'base/readme.md', 'base/a.jpg', 'base/c.gif']);
+	assert.deepEqual(entries.map((e) => e.path), ['base/a.jpg', 'base/b.png', 'base/c.gif']);
+	assert.equal(arcanaEntriesFromFiles(null).length, 0);   // missing/empty → [] never throws
+});
+
+test('resolveArcana: a stored full PATH is used directly; a legacy bare slug resolves against the base', () => {
+	// new model: the guise stores the chosen file's path (any name, any folder)
+	const byPath = resolveArcana('Rippers/Arcana/Major Arcana/The Moon in Blood.png');
+	assert.equal(byPath.img, 'Rippers/Arcana/Major Arcana/The Moon in Blood.png');
+	assert.equal(byPath.name, 'The Moon in Blood');
+	// legacy fixed-slug value still works (resolves against the module default base)
+	assert.equal(resolveArcana('18-the-moon').img, 'modules/rippers-guise/assets/arcana/18-the-moon.png');
+	assert.equal(resolveArcana('18-the-moon').name, 'The Moon');
+	assert.equal(resolveArcana(''), null);
+	assert.equal(resolveArcana(undefined), null);
+});
+
 test('guiseArcana + VM: a guise renders its chosen arcana tile (name + resolved img) from the Item flag', async () => {
+	// stored as a full path (the new enumeration model)
+	const gp = { getFlag: (m, k) => (m === RGID && k === 'arcana' ? 'Rippers/Arcana/Major Arcana/The Moon.png' : undefined) };
+	assert.equal(guiseArcana(gp).img, 'Rippers/Arcana/Major Arcana/The Moon.png');
+	assert.equal(guiseArcana(gp).name, 'The Moon');
+	// legacy slug still resolves
 	const g = { getFlag: (m, k) => (m === RGID && k === 'arcana' ? '18-the-moon' : undefined) };
 	assert.equal(guiseArcana(g).name, 'The Moon');
 	assert.equal(guiseArcana(g).img, 'modules/rippers-guise/assets/arcana/18-the-moon.png');

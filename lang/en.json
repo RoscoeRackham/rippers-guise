@@ -220,6 +220,7 @@
   "RIPPERS.Sheet.ToggleFaceHint": "Flip the portrait between the Normal and Other-shape faces.",
   "RIPPERS.Sheet.PickArcana": "Choose an arcana",
   "RIPPERS.Sheet.ArcanaClear": "— none —",
+  "RIPPERS.Sheet.ArcanaEmpty": "No images found in the arcana folder. Set the \"Arcana art folder\" setting to where your cards live.",
   "RIPPERS.Sheet.Cancel": "Cancel",
   "RIPPERS.Sheet.RivalWaiver": "Rival",
   "RIPPERS.Sheet.RivalWaiverHint": "Rival Prodigies: waive this action's HP/MP cost for 1 Fabula Point (your chosen specialization, never spells). Toggle on before you roll a qualifying action; it fires once.",
