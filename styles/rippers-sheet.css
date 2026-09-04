@@ -86,16 +86,20 @@
 .rippers-sheet .rs-tab.rs-tab-active { background: var(--rs-red); color: #fff; border-color: var(--rs-red); }
 
 /* ── Tab body ─────────────────────────────────────────── */
-.rippers-sheet .rs-tbody { padding: 14px 22px 18px; min-height: 300px; display: flex; flex-direction: column; gap: 12px; }
+.rippers-sheet .rs-tbody { padding: 12px 16px 14px; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .rippers-sheet .rs-classgrid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
-.rippers-sheet .rs-classcard { background: var(--rs-card); border: 1px solid var(--rs-border); padding: 14px; clip-path: var(--rs-notch); }
+/* v0.7.21: tighten guise-card density — pull content together so the dark-red card ground isn't left
+   as empty panel around sparse content (Austin's live eyeball). Spacing/fill only; palette unchanged.
+   The card is a tight flex column; its child blocks' own top-margins are zeroed in favour of one gap. */
+.rippers-sheet .rs-classcard { background: var(--rs-card); border: 1px solid var(--rs-border); padding: 9px 12px; clip-path: var(--rs-notch); display: flex; flex-direction: column; gap: 5px; }
+.rippers-sheet .rs-classcard > * { margin-top: 0 !important; }
 .rippers-sheet .rs-classcard-name { font-family: var(--rs-disp); font-weight: 800; font-size: 20px; line-height: 1.2; color: var(--rs-bone); }
 .rippers-sheet .rs-skillrow { display: flex; justify-content: space-between; margin-top: 8px; font-family: var(--rs-mono); font-size: 13px; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-skillrow b { font-weight: 600; color: var(--rs-bone); }
-.rippers-sheet .rs-heroic { align-self: flex-start; background: var(--rs-red); padding: 10px 22px; transform: skewX(-10deg); display: flex; align-items: baseline; gap: 14px; }
+.rippers-sheet .rs-heroic { align-self: flex-start; background: var(--rs-red); padding: 6px 16px; transform: skewX(-10deg); display: flex; align-items: baseline; gap: 12px; }
 .rippers-sheet .rs-heroic > * { transform: skewX(10deg); }
 .rippers-sheet .rs-heroic-label { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .16em; color: rgba(255,255,255,.85); }
-.rippers-sheet .rs-heroic-name { font-family: var(--rs-disp); font-weight: 800; font-size: 22px; line-height: 1.2; color: #fff; }
+.rippers-sheet .rs-heroic-name { font-family: var(--rs-disp); font-weight: 800; font-size: 18px; line-height: 1.15; color: #fff; }
 .rippers-sheet .rs-affchips { display: flex; gap: 8px; flex-wrap: wrap; }
 .rippers-sheet .rs-affchip { font-family: var(--rs-mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--rs-border); color: var(--rs-bone-dim); display: inline-flex; align-items: center; gap: 6px; }
 .rippers-sheet .rs-affchip.rs-aff-good { color: var(--rs-green); border-color: rgba(75,191,154,.45); }
@@ -141,7 +145,7 @@
 .rippers-sheet .rs-bar-lent { height: 100%; background: repeating-linear-gradient(45deg, rgba(201,162,39,.85) 0 3px, rgba(201,162,39,.25) 3px 6px); }
 .rippers-sheet .rs-lent-num { color: var(--rs-gold, #c9a227); }
 /* H2 two-portrait faces config + per-guise assignment */
-.rippers-sheet .rs-faces, .rippers-sheet .rs-faceassign { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.rippers-sheet .rs-faces, .rippers-sheet .rs-faceassign { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
 .rippers-sheet .rs-faces-label, .rippers-sheet .rs-faceassign > span { font-family: var(--rs-mono); font-size: 10px; letter-spacing: .12em; color: var(--rs-bone-dim); text-transform: uppercase; }
 /* 2a guise-identity arcana tile (bone frame, register −2° tilt) + the picker grid */
 .rippers-sheet .rs-arcana-tile { flex: none; width: 38px; height: 60px; padding: 2px; background: var(--rs-bone); border: 0; cursor: pointer; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); transform: rotate(-2deg); }
