@@ -3414,6 +3414,79 @@ function buildInventoryVM(actor) {
 	});
 	return { sections, any: sections.some((s) => s.any), useEquipment: !!(actor?.system?.useEquipment?.value) };
 }
+/** v0.7.25 — 'The Guise' PLAY SURFACE: a Persona-style at-a-glance readout of the ACTIVE guise. Async
+ *  (resolves class/skill/heroic UUIDs + per-skill descriptions for look-closer). Real data only; where a
+ *  field isn't modelled it is marked with a `gap` flag rather than invented (per-skill sub-notes, a guise
+ *  flavour line). ATTRIBUTES are CHARACTER-level (post-effect .current), NOT per-guise (Austin ruling). */
+async function buildGuisePlayVM(actor) {
+	const guise = activeGuiseItem(actor);
+	if (!guise) return { active: false };
+	const d = guise.system?.data ?? {};
+	const innate = !!guise.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
+	// Classes → skills (name + SL + max + look-closer description). Resolve each class + skill Item once.
+	const classes = [];
+	for (const cls of d.classes ?? []) {
+		const cdoc = await safeFromUuid(cls.classUuid);
+		const defs = await skillsForClass(cls.classUuid);          // [{uuid,name,maxSl}] parsed from the class ref
+		const byUuid = new Map(defs.map((s) => [s.uuid, s]));
+		const skills = [];
+		for (const s of cls.skills ?? []) {
+			const skDoc = await safeFromUuid(s.skillUuid);
+			const desc = skDoc?.system?.description ?? '';
+			skills.push({
+				name: byUuid.get(s.skillUuid)?.name ?? skDoc?.name ?? '(skill)',
+				sl: Number(s.sl) || 0, maxSl: Number(byUuid.get(s.skillUuid)?.maxSl ?? 1),
+				desc, hasDesc: !!String(desc).trim(),
+			});
+		}
+		classes.push({ name: cdoc?.name ?? '(class)', skills });
+	}
+	const heroicUuid = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
+	const heroic = heroicUuid ? ((await safeFromUuid(heroicUuid))?.name ?? '(unresolved)') : '';
+	// Affinities/resistances (guise trio). Icons/colours are CSS by type + good/bad.
+	const affinities = (d.affinityModifiers ?? []).map((m) => ({ type: m.type, word: affinityWordOf(m.level), level: m.level, ...rsAffFlags(m.level) }));
+	// Attributes — CHARACTER-level, post-effect .current (fallback .base). Bars proportional to d12 cap.
+	const ABBR = { dex: 'DEX', ins: 'INS', mig: 'MIG', wlp: 'WLP' };
+	const attributes = ['dex', 'ins', 'mig', 'wlp'].map((k) => {
+		const a = actor?.system?.attributes?.[k] ?? {};
+		const die = Number(a.current ?? a.base ?? 6) || 6;
+		const base = Number(a.base ?? die) || die;
+		return { key: k, label: ABBR[k], die, pct: Math.round(Math.min(die, 12) / 12 * 100), buffed: die > base, debuffed: die < base };
+	});
+	// Equipped gear (native system.equipped record → resolved items). Armor line + a full equipped block.
+	const eq = actor?.system?.equipped ?? {};
+	const getItem = (id) => (id ? (actor?.items?.get?.(id) ?? null) : null);
+	const armorItem = getItem(eq.armor);
+	const armor = armorItem ? {
+		name: armorItem.name ?? '',
+		defFormula: `${(rsDotGet(armorItem, 'system.def.attribute') ?? 'dex').toUpperCase()}+${rsDotGet(armorItem, 'system.def.value') ?? 0}`,
+		mdefFormula: `${(rsDotGet(armorItem, 'system.mdef.attribute') ?? 'ins').toUpperCase()}+${rsDotGet(armorItem, 'system.mdef.value') ?? 0}`,
+	} : null;
+	const wornDef = Number(actor?.system?.derived?.def?.value ?? 0), wornMdef = Number(actor?.system?.derived?.mdef?.value ?? 0);
+	const equippedSlots = [['mainHand', eq.mainHand], ['offHand', eq.offHand], ['armor', eq.armor], ['accessory', eq.accessory]];
+	const seenEq = new Set();
+	const equipment = equippedSlots.map(([slot, id]) => {
+		if (!id || seenEq.has(id)) return null; seenEq.add(id);
+		const it = getItem(id); if (!it) return null;
+		return { slot, name: it.name ?? '', img: it.img, type: it.type };
+	}).filter(Boolean);
+	// Weapon / unarmed strike detail (reuse weaponStats). Prefer the equipped mainHand weapon, else first.
+	const weaponItems = [...(actor?.itemTypes?.weapon ?? []), ...(actor?.itemTypes?.customWeapon ?? [])];
+	const primaryWeapon = getItem(eq.mainHand) && weaponItems.some((w) => w.id === eq.mainHand) ? getItem(eq.mainHand) : weaponItems[0] ?? null;
+	const weapon = primaryWeapon ? { name: primaryWeapon.name ?? '', ...weaponStats(primaryWeapon) } : null;
+	// Guise trait cards (worn guise only — the innate guise carries none of these by rule).
+	const bonusDescriptor = d.bonus?.descriptor ?? '';
+	return {
+		active: true, guiseName: guise.name ?? '', innate, tradable: !innate,
+		classes, heroic, affinities, attributes,
+		armor, wornDef, wornMdef, equipment,
+		weapon,
+		bane: d.bane ?? '', tell: d.tell ?? '', perk: d.perk ?? '',
+		bonus: bonusDescriptor ? { descriptor: bonusDescriptor, value: Number(d.bonus?.value ?? 3) } : null,
+		flavor: (d.nature ?? '').trim(),          // no fixed mock flavour invented; nature if authored, else blank
+		fieldLimit: guiseFieldLimit(partySize()),
+	};
+}
 // The six core FU statuses (exact ids, projectfu config.mjs FU.temporaryEffects) + the boons/banes tray.
 const RS_STATUS_IDS = ['slow', 'dazed', 'weak', 'shaken', 'enraged', 'poisoned'];
 const RS_COND_GROUPS = [
@@ -3422,6 +3495,7 @@ const RS_COND_GROUPS = [
 	{ label: 'BOONS/BANES', ids: ['guard', 'cover', 'aura', 'barrier', 'flying', 'provoked', 'focus', 'pressure', 'stagger'] },
 ];
 const RS_TABS = [
+	{ key: 'play', label: 'The Guise' },
 	{ key: 'form', label: 'Form' }, { key: 'bonds', label: 'Bonds' }, { key: 'study', label: 'Study' },
 	{ key: 'resources', label: 'Resources' }, { key: 'vault', label: 'Vault' },
 	{ key: 'spells', label: 'Spells' }, { key: 'kit', label: 'Kit' }, { key: 'effects', label: 'Effects' },
@@ -3917,8 +3991,9 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		value: Number(r?.value) || 0, max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null,
 	})).filter((r) => r.label);
 	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
-	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', effects: activeTab === 'effects', spells: activeTab === 'spells', edit: activeTab === 'edit' };
-	if (!tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.effects && !tab.spells && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	const tab = { play: activeTab === 'play', form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', effects: activeTab === 'effects', spells: activeTab === 'spells', edit: activeTab === 'edit' };
+	if (!tab.play && !tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.effects && !tab.spells && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	const play = tab.play ? await buildGuisePlayVM(actor) : null; // v0.7.25: 'The Guise' play surface (active guise)
 	// v0.7.15: full inventory (Kit) + native Active Effects (Effects tab) — built only when their tab is open.
 	const inventory = tab.kit ? buildInventoryVM(actor) : null;
 	const effects = tab.effects ? buildEffectsVM(actor) : null;
@@ -3933,7 +4008,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, quirks, editable, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
-		inventory, effects, spells,
+		inventory, effects, spells, play,
 	};
 }
 
@@ -4412,7 +4487,7 @@ function getRippersActorSheetClass() {
 	const { HandlebarsApplicationMixin } = foundry.applications.api;
 	const { ActorSheetV2 } = foundry.applications.sheets;
 	class RippersActorSheet extends HandlebarsApplicationMixin(ActorSheetV2) {
-		_activeTab = 'form';       // sheet view-state (not persisted on the actor)
+		_activeTab = 'play';       // sheet view-state (not persisted): opens on 'The Guise' play surface
 		_statusSelf = true;
 		_showConditions = false;
 		static DEFAULT_OPTIONS = {
@@ -5063,7 +5138,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };

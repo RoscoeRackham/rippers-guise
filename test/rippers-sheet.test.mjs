@@ -157,7 +157,9 @@ test('buildRippersSheetVM: tabs reflect the active tab; unimplemented tabs get a
 	const form = await buildRippersSheetVM(actorStub(), { activeTab: 'form' });
 	assert.equal(form.tabs.find((t) => t.key === 'form').active, true);
 	assert.equal(form.tab.form, true);
-	assert.equal(RS_TABS[0].key, 'form');
+	assert.equal(RS_TABS[0].key, 'play');                            // v0.7.25: 'The Guise' play surface is first
+	const playVM = await buildRippersSheetVM(actorStub(), { activeTab: 'play' });
+	assert.equal(playVM.tab.play, true);                             // play tab resolves
 	const clots = await buildRippersSheetVM(actorStub(), { activeTab: 'clots' });
 	assert.equal(clots.tab.other, true);
 	assert.match(clots.tab.otherNote, /Clot/i);
@@ -980,6 +982,41 @@ test('sheetLevelUp: increments system.level.value; no milestone prompt off-miles
 	await sheetLevelUp(actor);
 	assert.equal(updates.length, 1);                       // just the level bump, no attr prompt at L6
 	assert.equal(updates[0]['system.level.value'], 6);
+});
+
+// ── v0.7.25 THE GUISE play surface ──
+test('buildGuisePlayVM: assembles the active guise (classes/skills+desc, heroic, attrs, weapon); inactive → {active:false}', async () => {
+	const { buildGuisePlayVM } = mod;
+	assert.equal((await buildGuisePlayVM({ getFlag: () => 'none' })).active, false); // no active guise flag
+	UUIDS.set('clsA', { name: 'Mutant', system: { description: '@UUID[skA]{Akromorphosis} <strong>【Max SL 3】</strong>' } });
+	UUIDS.set('skA', { name: 'Akromorphosis', system: { description: '<p>Grow a beast limb.</p>' } });
+	UUIDS.set('heroX', { name: 'Greater Theriomorphosis' });
+	const guise = {
+		id: 'g1', name: 'Corporal Venture',
+		getFlag: (_m, k) => (k === 'isInnate' ? false : undefined),
+		system: { data: { mode: 'worn', classes: [{ classUuid: 'clsA', skills: [{ skillUuid: 'skA', sl: 2 }] }], attachedHeroicUuid: 'heroX', affinityModifiers: [{ type: 'dark', level: 2 }], bane: 'Silver', tell: 'Twitching', perk: 'Nightsight' } },
+	};
+	const actor = {
+		getFlag: (_m, k) => (k === 'activeGuise' ? 'g1' : undefined),   // getActiveGuise reads FLAG 'activeGuise'
+		items: { get: (id) => (id === 'g1' ? guise : null) },
+		itemTypes: { weapon: [{ id: 'w1', name: 'Service Revolver', type: 'weapon', system: { attributes: { primary: { value: 'dex' }, secondary: { value: 'ins' } }, accuracy: { value: 1 }, damage: { value: 5 }, damageType: { value: 'physical' }, type: { value: 'ranged' } } }], customWeapon: [] },
+		system: { attributes: { dex: { base: 8, current: 10 }, ins: { base: 8 }, mig: { base: 6 }, wlp: { base: 8 } }, equipped: {}, derived: { def: { value: 11 }, mdef: { value: 7 } } },
+	};
+	const vm = await buildGuisePlayVM(actor);
+	assert.equal(vm.active, true);
+	assert.equal(vm.guiseName, 'Corporal Venture');
+	assert.equal(vm.classes[0].name, 'Mutant');
+	assert.equal(vm.classes[0].skills[0].name, 'Akromorphosis');
+	assert.equal(vm.classes[0].skills[0].sl, 2);
+	assert.equal(vm.classes[0].skills[0].hasDesc, true);           // look-closer description resolved
+	assert.equal(vm.heroic, 'Greater Theriomorphosis');
+	assert.equal(vm.attributes.find((a) => a.key === 'dex').die, 10); // post-effect .current, buffed over base 8
+	assert.equal(vm.attributes.find((a) => a.key === 'dex').buffed, true);
+	assert.equal(vm.affinities[0].type, 'dark');                   // trio surfaced
+	assert.equal(vm.bane, 'Silver'); assert.equal(vm.tell, 'Twitching'); assert.equal(vm.perk, 'Nightsight');
+	assert.equal(vm.wornDef, 11); assert.equal(vm.wornMdef, 7);
+	assert.ok(vm.weapon && vm.weapon.name === 'Service Revolver');
+	assert.ok(vm.fieldLimit >= 1);
 });
 
 // ── v0.7.23 cabinet restore = atomic MOVE (bugfix: was duplicating) ──

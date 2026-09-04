@@ -100,6 +100,57 @@
 
 		{{!-- ── Tab body ─────────────────────────────────────────── --}}
 		<div class="rs-tbody">
+			{{!-- v0.7.25 THE GUISE — Persona-style play surface for the ACTIVE guise. Real resolved data;
+			     gaps are marked, never invented. Attributes are CHARACTER-level (post-effect). --}}
+			{{#if vm.tab.play}}
+				{{#if vm.play.active}}
+					<div class="rs-play">
+						<div class="rs-play-title">{{vm.play.guiseName}}</div>
+						{{#if vm.play.heroic}}<div class="rs-play-heroic"><span class="rs-play-heroic-k">{{localize 'RIPPERS.Sheet.Heroic'}}</span> {{vm.play.heroic}}</div>{{/if}}
+						{{!-- classes as columns; each skill is look-closer (native details) --}}
+						<div class="rs-play-classes">
+							{{#each vm.play.classes as |c|}}
+								<div class="rs-play-class">
+									<div class="rs-play-class-name">{{c.name}}</div>
+									{{#each c.skills as |sk|}}
+										<details class="rs-play-skill">
+											<summary><span class="rs-play-skill-name">{{sk.name}}</span><span class="rs-play-skill-sl">SL {{sk.sl}}/{{sk.maxSl}}</span></summary>
+											{{#if sk.hasDesc}}<div class="rs-play-skill-desc">{{{sk.desc}}}</div>{{else}}<div class="rs-play-gap">{{localize 'RIPPERS.Sheet.NoSkillDesc'}}</div>{{/if}}
+										</details>
+									{{/each}}
+								</div>
+							{{/each}}
+						</div>
+						{{!-- attributes as stat bars (character-level, post-effect) --}}
+						<div class="rs-play-attrs">
+							{{#each vm.play.attributes as |a|}}
+								<div class="rs-play-attr"><span class="rs-play-attr-k">{{a.label}}</span><span class="rs-play-bar"><span class="rs-play-bar-fill{{#if a.buffed}} rs-buffed{{/if}}{{#if a.debuffed}} rs-debuffed{{/if}}" style="width:{{a.pct}}%"></span></span><span class="rs-play-attr-v">d{{a.die}}</span></div>
+							{{/each}}
+						</div>
+						{{!-- affinities/resistances --}}
+						{{#if vm.play.affinities.length}}<div class="rs-play-affs">{{#each vm.play.affinities as |aff|}}<span class="rs-affchip {{#if aff.good}}rs-aff-good{{/if}}{{#if aff.bad}}rs-aff-bad{{/if}}">{{aff.type}} — {{aff.word}}</span>{{/each}}</div>{{/if}}
+						{{!-- armor line + worn totals --}}
+						{{#if vm.play.armor}}<div class="rs-play-armor"><b>{{vm.play.armor.name}}</b> · DEF {{vm.play.armor.defFormula}} · M.DEF {{vm.play.armor.mdefFormula}} <span class="rs-play-worn">WORN: DEF {{vm.play.wornDef}} · M.DEF {{vm.play.wornMdef}}</span></div>{{else}}<div class="rs-play-armor">WORN: DEF {{vm.play.wornDef}} · M.DEF {{vm.play.wornMdef}}</div>{{/if}}
+						{{!-- weapon / unarmed --}}
+						{{#if vm.play.weapon}}<div class="rs-play-weapon"><b>{{vm.play.weapon.name}}</b> · {{vm.play.weapon.accLabel}} · {{vm.play.weapon.dmgLabel}} {{vm.play.weapon.dmgType}}{{#if vm.play.weapon.traits.length}} · {{#each vm.play.weapon.traits as |t|}}{{t}} {{/each}}{{/if}}</div>{{/if}}
+						{{!-- current equipment block --}}
+						{{#if vm.play.equipment.length}}<div class="rs-play-equip"><span class="rs-inv-label">{{localize 'RIPPERS.Sheet.Equipped'}}</span>{{#each vm.play.equipment as |e|}}<span class="rs-play-equip-item"><img src="{{e.img}}" alt="">{{e.name}}</span>{{/each}}</div>{{/if}}
+						{{!-- bane / tell / perk cards (worn guise) --}}
+						{{#if vm.play.bane}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> {{vm.play.bane}}</div>{{/if}}
+						{{#if vm.play.tell}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Tell'}}</span> {{vm.play.tell}}</div>{{/if}}
+						{{#if vm.play.perk}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Perk'}}</span> {{vm.play.perk}}</div>{{/if}}
+						{{#if vm.play.bonus}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bonus'}}</span> +{{vm.play.bonus.value}} to {{vm.play.bonus.descriptor}}</div>{{/if}}
+						{{!-- identity footer --}}
+						<div class="rs-play-footer">
+							{{#if vm.play.flavor}}<span class="rs-play-flavor">{{vm.play.flavor}}</span>{{/if}}
+							<span class="rs-tag-bound">{{#if vm.play.tradable}}{{localize 'RIPPERS.Sheet.Tradable'}}{{else}}{{localize 'RIPPERS.Sheet.Untradable'}}{{/if}}</span>
+							<span class="rs-play-field">{{localize 'RIPPERS.Sheet.FieldLimit'}}: {{vm.play.fieldLimit}}</span>
+							<span class="rs-play-turn">{{localize 'RIPPERS.Sheet.TheTurnNote'}}</span>
+						</div>
+					</div>
+				{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoActiveGuise'}}</p>{{/if}}
+			{{/if}}
+
 			{{#if vm.tab.form}}
 				{{!-- H2: the two configurable faces (NORMAL + OTHER-SHAPE). A worn guise assigns one below. --}}
 				<div class="rs-faces">

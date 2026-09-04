@@ -313,3 +313,42 @@
 .rippers-sheet .rs-weapon-traits { display: flex; gap: 5px; flex-wrap: wrap; width: 100%; }
 /* Styling bucket: guise names must not overflow the swap/select buttons. */
 .rippers-sheet .rs-guise-pick > span:first-child, .rippers-sheet .rs-classcard-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* ═══ v0.7.25 THE GUISE — play surface (2a-Slash register) ═══ */
+.rippers-sheet .rs-play { display: flex; flex-direction: column; gap: 10px; }
+.rippers-sheet .rs-play-title { font-family: var(--rs-disp); font-weight: 800; font-size: 26px; color: var(--rs-bone); line-height: 1.1; }
+.rippers-sheet .rs-play-heroic { align-self: flex-start; background: var(--rs-red); color: #fff; padding: 5px 16px; font-family: var(--rs-disp); font-weight: 800; font-size: 17px; transform: skewX(-10deg); }
+.rippers-sheet .rs-play-heroic > * { display: inline-block; transform: skewX(10deg); }
+.rippers-sheet .rs-play-heroic-k { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .16em; opacity: .85; margin-right: 6px; }
+.rippers-sheet .rs-play-classes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.rippers-sheet .rs-play-class { background: var(--rs-card); border: 1px solid var(--rs-border); padding: 8px 10px; }
+.rippers-sheet .rs-play-class-name { font-family: var(--rs-disp); font-weight: 800; font-size: 16px; color: var(--rs-red); border-bottom: 1px solid var(--rs-border); padding-bottom: 4px; margin-bottom: 5px; }
+.rippers-sheet .rs-play-skill { border-bottom: 1px solid rgba(74,26,34,.4); }
+.rippers-sheet .rs-play-skill > summary { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; cursor: pointer; padding: 3px 0; list-style: none; }
+.rippers-sheet .rs-play-skill > summary::-webkit-details-marker { display: none; }
+.rippers-sheet .rs-play-skill > summary::before { content: '▸'; color: var(--rs-red); margin-right: 5px; font-size: 10px; }
+.rippers-sheet .rs-play-skill[open] > summary::before { content: '▾'; }
+.rippers-sheet .rs-play-skill-name { font-family: var(--rs-body); font-size: 13px; color: var(--rs-bone); flex: 1; }
+.rippers-sheet .rs-play-skill-sl { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-gold); white-space: nowrap; }
+.rippers-sheet .rs-play-skill-desc { font-family: var(--rs-body); font-size: 12px; color: var(--rs-bone-dim); padding: 4px 0 6px 14px; line-height: 1.35; }
+.rippers-sheet .rs-play-skill-desc p { margin: 0 0 4px; }
+.rippers-sheet .rs-play-gap { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-muted); font-style: italic; padding: 4px 0 6px 14px; }
+.rippers-sheet .rs-play-attrs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.rippers-sheet .rs-play-attr { display: flex; align-items: center; gap: 6px; }
+.rippers-sheet .rs-play-attr-k { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--rs-bone-dim); width: 30px; }
+.rippers-sheet .rs-play-bar { flex: 1; height: 8px; background: rgba(0,0,0,.35); border: 1px solid var(--rs-border); }
+.rippers-sheet .rs-play-bar-fill { display: block; height: 100%; background: var(--rs-red); }
+.rippers-sheet .rs-play-bar-fill.rs-buffed { background: var(--rs-gold); }
+.rippers-sheet .rs-play-bar-fill.rs-debuffed { background: var(--rs-muted); }
+.rippers-sheet .rs-play-attr-v { font-family: var(--rs-mono); font-size: 12px; color: var(--rs-bone); width: 28px; text-align: right; }
+.rippers-sheet .rs-play-affs { display: flex; gap: 8px; flex-wrap: wrap; }
+.rippers-sheet .rs-play-armor, .rippers-sheet .rs-play-weapon { font-family: var(--rs-mono); font-size: 12px; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-play-armor b, .rippers-sheet .rs-play-weapon b { font-family: var(--rs-body); color: var(--rs-bone); }
+.rippers-sheet .rs-play-worn { color: var(--rs-gold); margin-left: 8px; }
+.rippers-sheet .rs-play-equip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rippers-sheet .rs-play-equip-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--rs-mono); font-size: 11px; color: var(--rs-bone); border: 1px solid var(--rs-border); padding: 2px 6px; }
+.rippers-sheet .rs-play-equip-item img { width: 18px; height: 18px; object-fit: contain; }
+.rippers-sheet .rs-play-card { font-family: var(--rs-body); font-size: 13px; color: var(--rs-bone-dim); border-left: 3px solid var(--rs-red); padding: 3px 10px; background: rgba(0,0,0,.2); }
+.rippers-sheet .rs-play-card-k { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--rs-gold); margin-right: 6px; }
+.rippers-sheet .rs-play-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--rs-border); font-family: var(--rs-mono); font-size: 10px; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-play-flavor { font-family: var(--rs-disp); font-size: 15px; color: var(--rs-bone); font-weight: 800; }
+.rippers-sheet .rs-play-turn { opacity: .8; }
