@@ -210,6 +210,57 @@
 				</div>
 			{{/if}}
 
+			{{#if vm.tab.vault}}
+				{{!-- V3: Party Vault embedded tab. Each member's FIELD shows one card per guise + dashed
+				      empty slots up to the limit (party size + 2, V1 display-only). The CABINET is the
+				      compendium pack (V4). Drag a guise card onto another member's field to trade (X4,
+				      GM-brokered), or onto the cabinet to stash; drag a cabinet entry onto a field to
+				      slot. Layout is intentionally thin — Austin owns the visual design. --}}
+				<div class="rs-vault">
+					<div class="rs-vault-note">{{localize 'RIPPERS.Vault.Field'}} limit {{vm.vault.fieldLimit}} (party {{vm.vault.partySize}} + 2)</div>
+					{{#each vm.vault.members as |m|}}
+						<div class="rs-vault-member" data-vault-drop="field" data-actor="{{m.actorId}}">
+							<div class="rs-vault-mhead">
+								<img class="rs-vault-portrait" src="{{m.img}}" alt="">
+								<span class="rs-vault-mname">{{m.name}}</span>
+								{{#if m.worn}}<span class="rs-worn-violet">{{m.worn}}</span>{{/if}}
+								<span class="rs-vault-count {{#if m.overLimit}}rs-vault-over{{/if}}">{{m.count}} / {{m.limit}}</span>
+							</div>
+							<div class="rs-vault-field">
+								{{#each m.slots as |s|}}
+									{{#if s.filled}}
+										<div class="rs-vault-card {{#if s.guise.worn}}rs-vault-worn{{/if}} {{#if s.guise.innate}}rs-vault-innate{{/if}}"
+										     draggable="{{#if s.guise.tradable}}true{{else}}false{{/if}}"
+										     data-vault-guise="{{s.guise.id}}" data-actor="{{m.actorId}}" data-uuid="{{s.guise.uuid}}">
+											<img src="{{s.guise.img}}" alt="">
+											<span class="rs-vault-cname">{{s.guise.name}}</span>
+											{{#if s.guise.lent.hp.current}}<span class="rs-vault-lent">HP (+{{s.guise.lent.hp.current}})</span>{{/if}}
+											{{#if s.guise.lent.mp.current}}<span class="rs-vault-lent">MP (+{{s.guise.lent.mp.current}})</span>{{/if}}
+											{{#if m.canWrite}}<button class="rs-vault-x" data-action="vaultStash" data-guise="{{s.guise.id}}" data-actor="{{m.actorId}}" title="{{localize 'RIPPERS.Vault.Cabinet'}}">▾</button>{{/if}}
+										</div>
+									{{else}}
+										<div class="rs-vault-slot" title="{{localize 'RIPPERS.Vault.Empty'}}"></div>
+									{{/if}}
+								{{/each}}
+							</div>
+						</div>
+					{{/each}}
+					<div class="rs-vault-cabinet" data-vault-drop="cabinet">
+						<div class="rs-vault-mhead"><span class="rs-vault-mname">{{vm.vault.cabinet.label}}</span></div>
+						{{#if vm.vault.cabinet.entries.length}}
+							<div class="rs-vault-field">
+								{{#each vm.vault.cabinet.entries as |e|}}
+									<div class="rs-vault-card" draggable="true" data-vault-cabinet="{{e.uuid}}" data-uuid="{{e.uuid}}">
+										<img src="{{e.img}}" alt="">
+										<span class="rs-vault-cname">{{e.name}}</span>
+									</div>
+								{{/each}}
+							</div>
+						{{else}}<p class="rs-empty">{{#if vm.vault.cabinet.missing}}Cabinet compendium not found.{{else}}The cabinet is empty.{{/if}}</p>{{/if}}
+					</div>
+				</div>
+			{{/if}}
+
 			{{#if vm.tab.kit}}
 				{{#if vm.weapons.length}}
 					{{#each vm.weapons as |w|}}

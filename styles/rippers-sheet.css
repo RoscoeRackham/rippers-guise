@@ -142,6 +142,24 @@
 .rippers-sheet .rs-ipdot.temp { background: var(--rs-gold, #c9a227); border-color: var(--rs-gold, #c9a227); }
 .rippers-sheet .rs-worn-violet { color: #fff; background: var(--rs-violet, #7b4bd8); border-color: var(--rs-violet, #7b4bd8); }
 .rippers-sheet .rs-resgrid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; }
+/* V3–V5 Party Vault (thin; Austin owns the visual design) */
+.rippers-sheet .rs-vault-note { font-family: var(--rs-mono); font-size: 10px; letter-spacing: .12em; color: var(--rs-bone-dim); margin-bottom: 10px; }
+.rippers-sheet .rs-vault-member, .rippers-sheet .rs-vault-cabinet { background: var(--rs-card); border: 1px solid var(--rs-border); padding: 10px 12px; margin-bottom: 10px; clip-path: var(--rs-notch); }
+.rippers-sheet .rs-vault-mhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rippers-sheet .rs-vault-portrait { width: 28px; height: 28px; object-fit: cover; border: 1px solid var(--rs-border); }
+.rippers-sheet .rs-vault-mname { font-family: var(--rs-disp); font-weight: 800; color: var(--rs-bone); }
+.rippers-sheet .rs-vault-count { margin-left: auto; font-family: var(--rs-mono); font-size: 11px; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-vault-over { color: var(--rs-gold, #c9a227); }
+.rippers-sheet .rs-vault-field { display: flex; flex-wrap: wrap; gap: 8px; }
+.rippers-sheet .rs-vault-card { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 84px; padding: 6px; background: var(--rs-card); border: 1px solid var(--rs-border); cursor: grab; }
+.rippers-sheet .rs-vault-card img { width: 48px; height: 48px; object-fit: cover; }
+.rippers-sheet .rs-vault-card[draggable="false"] { cursor: default; opacity: .85; }
+.rippers-sheet .rs-vault-worn { border-color: var(--rs-violet, #7b4bd8); box-shadow: 0 0 0 1px var(--rs-violet, #7b4bd8) inset; }
+.rippers-sheet .rs-vault-innate { border-style: dashed; }
+.rippers-sheet .rs-vault-cname { font-family: var(--rs-disp); font-size: 12px; text-align: center; color: var(--rs-bone); }
+.rippers-sheet .rs-vault-lent { font-family: var(--rs-mono); font-size: 9px; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-vault-x { font-size: 10px; padding: 0 4px; }
+.rippers-sheet .rs-vault-slot { width: 84px; height: 84px; border: 1.5px dashed var(--rs-border); opacity: .5; } /* V5: dashed outline only, no CTA */
 .rippers-sheet .rs-rescard { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--rs-card); border: 1px solid var(--rs-border); padding: 10px 12px; clip-path: var(--rs-notch); }
 .rippers-sheet .rs-res-name { font-family: var(--rs-disp); font-weight: 800; font-size: 16px; color: var(--rs-bone); }
 .rippers-sheet .rs-res-num { font-family: var(--rs-mono); font-size: 13px; color: var(--rs-bone-dim); }

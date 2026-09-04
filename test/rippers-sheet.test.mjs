@@ -580,3 +580,14 @@ test('buildVaultVM: party roster with field slots, worn tag, and the cabinet com
 		assert.equal(vm.cabinet.entries[0].uuid, 'Compendium.rippers-guise.guises.c1');
 	} finally { globalThis.game = savedGame; }
 });
+
+test('buildRippersSheetVM: the Vault embedded tab builds a vault VM (V3); other tabs skip it', async () => {
+	const off = await buildRippersSheetVM(actorStub(), { activeTab: 'form' });
+	assert.equal(off.vault, null);                     // not built when the tab is closed
+	const on = await buildRippersSheetVM(actorStub(), { activeTab: 'vault' });
+	assert.equal(on.tab.vault, true);
+	assert.ok(on.vault);                               // built when open (defensive w/ the minimal game stub)
+	assert.equal(on.vault.fieldLimit, 6);              // partySize falls back to 4 → +2
+	assert.equal(on.vault.cabinet.missing, true);      // no packs in the minimal stub
+	assert.ok(RS_TABS.some((t) => t.key === 'vault'));
+});
