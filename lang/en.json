@@ -210,5 +210,19 @@
   "RIPPERS.Sheet.NoWeapons": "No weapons carried.",
   "RIPPERS.Sheet.NoFabula": "No Fabula Points to spend.",
   "RIPPERS.Sheet.NotRollable": "That item cannot be rolled.",
-  "RIPPERS.Sheet.CheckUnavailable": "The check dialog is unavailable."
+  "RIPPERS.Sheet.CheckUnavailable": "The check dialog is unavailable.",
+  "RIPPERS.Sheet.Stash": "Stash",
+  "RIPPERS.Sheet.HandOff": "Hand Off",
+  "RIPPERS.Sheet.Untradable": "Bound — untradable",
+  "RIPPERS.Sheet.HandedOff": "Handed off",
+  "RIPPERS.Sheet.Editing": "Editing",
+  "RIPPERS.Sheet.Editor": "Editor",
+  "RIPPERS.Sheet.OpenBuilder": "Open the Guise Builder",
+  "RIPPERS.Sheet.BoundLockNote": "bound — structural fields locked while worn",
+  "RIPPERS.Sheet.FixedAtDistillation": "Fixed at distillation",
+  "RIPPERS.Sheet.FixedList": "Classes · equipment · affinity trio are locked; the GM override unlocks them",
+  "RIPPERS.Sheet.OverrideOn": "GM override ON",
+  "RIPPERS.Sheet.OverrideOff": "GM override off",
+  "RIPPERS.Sheet.SLToggleNote": "Skill levels edit behind the builder's Edit SL toggle (players).",
+  "RIPPERS.Sheet.NoGuiseToEdit": "No guise to edit."
 }

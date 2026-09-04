@@ -16,7 +16,7 @@ const UUIDS = new Map();
 globalThis.fromUuid = async (u) => UUIDS.get(u) ?? null;
 
 const mod = await import('../scripts/rippers-guise.mjs');
-const { buildRippersSheetVM, statusTargetActor, sheetAdjustResource, rsAffFlags, RS_STATUS_IDS, RS_TABS, sheetRollWeapon, sheetRest, sheetSpendFabula, sheetRollCheck } = mod;
+const { buildRippersSheetVM, statusTargetActor, sheetAdjustResource, rsAffFlags, RS_STATUS_IDS, RS_TABS, sheetRollWeapon, sheetRest, sheetSpendFabula, sheetRollCheck, handOffDecision, sheetHandOffGuise } = mod;
 
 const FEATURE_TYPE = 'rippers-guise.guise';
 const RGID = 'rippers-guise';
@@ -154,9 +154,9 @@ test('buildRippersSheetVM: tabs reflect the active tab; unimplemented tabs get a
 	assert.equal(form.tabs.find((t) => t.key === 'form').active, true);
 	assert.equal(form.tab.form, true);
 	assert.equal(RS_TABS[0].key, 'form');
-	const edit = await buildRippersSheetVM(actorStub(), { activeTab: 'edit' });
-	assert.equal(edit.tab.other, true);
-	assert.match(edit.tab.otherNote, /Editor/i);
+	const clots = await buildRippersSheetVM(actorStub(), { activeTab: 'clots' });
+	assert.equal(clots.tab.other, true);
+	assert.match(clots.tab.otherNote, /Clot/i);
 	// a bad tab falls back to form
 	const bad = await buildRippersSheetVM(actorStub(), { activeTab: 'nope' });
 	assert.equal(bad.tab.form, true);
@@ -247,4 +247,59 @@ test('sheetSpendFabula: fallback spends 1 FP when >0, else notifies (deep import
 
 test('sheetRollCheck: resolves without throwing when the CheckPrompt deep import is unavailable', async () => {
 	await sheetRollCheck({ name: 'x' });     // node has no /systems import → warns, no throw
+});
+
+// ── P2c: editor tab target + trade / hand-off ──
+test('buildRippersSheetVM: editor targets the worn guise, else innate, else first; edit tab implemented', async () => {
+	const worn = await buildRippersSheetVM(actorStub(), { activeTab: 'edit' });
+	assert.equal(worn.editor.has, true);
+	assert.equal(worn.editor.guiseId, 'w1');     // worn wins
+	assert.equal(worn.editor.bound, true);
+	assert.equal(worn.tab.edit, true);
+	assert.equal(worn.tab.other, undefined);     // edit is implemented, not a stub
+	// no worn guise → falls to innate
+	const a = actorStub(); a.getFlag = () => undefined; // activeGuise null
+	const unworn = await buildRippersSheetVM(a);
+	assert.equal(unworn.editor.guiseId, 'inn');  // innate is the fallback target
+	assert.equal(unworn.editor.bound, false);
+	// no guises at all
+	const bare = await buildRippersSheetVM({ name: 'x', system: {}, items: { filter: () => [] }, getFlag: () => undefined });
+	assert.equal(bare.editor.has, false);
+});
+
+test('handOffDecision: only a real non-innate guise, a distinct recipient, and write access pass', () => {
+	const g = { type: 'classFeature', system: { featureType: FEATURE_TYPE, data: { mode: 'worn' } }, getFlag: () => undefined };
+	const innate = { type: 'classFeature', system: { featureType: FEATURE_TYPE, data: { mode: 'innate' } }, getFlag: (m, k) => (k === 'isInnate' ? true : undefined) };
+	const src = { id: 'A' }; const rec = { id: 'B' };
+	assert.deepEqual(handOffDecision(src, null, rec, true), { ok: false, reason: 'no-guise' });
+	assert.deepEqual(handOffDecision(src, innate, rec, true), { ok: false, reason: 'innate-untradable' });
+	assert.deepEqual(handOffDecision(src, g, null, true), { ok: false, reason: 'no-recipient' });
+	assert.deepEqual(handOffDecision(src, g, { id: 'A' }, true), { ok: false, reason: 'same-actor' });
+	assert.deepEqual(handOffDecision(src, g, rec, false), { ok: false, reason: 'needs-gm-socket' }); // cross-owner, no write
+	assert.deepEqual(handOffDecision(src, g, rec, true), { ok: true, reason: 'ok' });
+});
+
+test('sheetHandOffGuise: refuses cleanly (no mutation) without write access; moves the Item on the clean path', async () => {
+	function guiseItem2(id, innate = false) {
+		let deleted = false;
+		return { id, name: `G${id}`, type: 'classFeature', system: { featureType: FEATURE_TYPE, data: { mode: innate ? 'innate' : 'worn' } },
+			getFlag: (m, k) => (innate && k === 'isInnate' ? true : undefined),
+			toObject: () => ({ type: 'classFeature', name: `G${id}`, system: { featureType: FEATURE_TYPE, data: { mode: innate ? 'innate' : 'worn' } }, flags: {} }),
+			delete: async () => { deleted = true; }, get _deleted() { return deleted; } };
+	}
+	const item = guiseItem2('g1');
+	const src = { id: 'A', getFlag: () => null, items: { get: (id) => (id === 'g1' ? item : null) } };
+	// no write access (recipient not owned, not GM) → needs-gm-socket, no move
+	const created = [];
+	const recNoWrite = { id: 'B', isOwner: false, createEmbeddedDocuments: async (_t, d) => created.push(...d) };
+	const r1 = await sheetHandOffGuise(src, 'g1', recNoWrite);
+	assert.equal(r1.reason, 'needs-gm-socket');
+	assert.equal(item._deleted, false); assert.equal(created.length, 0);
+	// clean path: recipient owned → the Item moves whole (create on B, delete on A)
+	const recOwned = { id: 'B', isOwner: true, createEmbeddedDocuments: async (_t, d) => created.push(...d) };
+	const r2 = await sheetHandOffGuise(src, 'g1', recOwned);
+	assert.equal(r2.ok, true);
+	assert.equal(created.length, 1);
+	assert.equal(created[0].system.data.mode, 'worn');   // guise data (lent layer/satchel would ride here too)
+	assert.equal(item._deleted, true);
 });

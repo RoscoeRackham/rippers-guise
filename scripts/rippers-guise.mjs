@@ -2926,7 +2926,6 @@ const RS_TAB_STUBS = {
 	spells: 'Vin studies no magic. A spell from a class or a seated Clot would be entered here.',
 	clots: 'No Clot is seated. A seated Clot rides its gear, not the character.',
 	quirk: 'The character\'s Quirk and Specialties are shown here.',
-	edit: 'The Editor tab (guise builder + trade / hand-off) arrives in a later phase.',
 };
 const rsAffFlags = (lvl) => ({ good: lvl >= 1, bad: lvl === -1 });
 
@@ -3004,12 +3003,22 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	// Weapons for the Kit tab's attack rows (weapon + customWeapon; item.roll() drives the attack flow).
 	const weaponItems = [...(actor.itemTypes?.weapon ?? []), ...(actor.itemTypes?.customWeapon ?? [])];
 	const weapons = weaponItems.map((w) => ({ id: w.id, name: w.name ?? '', img: w.img, type: w.type }));
+	// Editor tab (P2c): the affordance targets the worn guise, else the innate, else the first. It only
+	// OPENS the existing GuiseBuilderApp (which already enforces the fixed-at-distillation locks, the
+	// dismiss-before-edit guard, the GM override and the player Edit-SL toggle) — nothing is rebuilt.
+	const editorG = guises.find((g) => g.worn) ?? guises.find((g) => g.innate) ?? guises[0] ?? null;
+	let overrideOn = false;
+	try { overrideOn = editOverrideOn(); } catch { overrideOn = false; }
+	const editor = {
+		guiseId: editorG?.id ?? '', guiseName: editorG?.name ?? '',
+		bound: !!editorG?.worn, overrideOn, has: !!editorG,
+	};
 	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
-	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', kit: activeTab === 'kit' };
-	if (!tab.form && !tab.bonds && !tab.study && !tab.kit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', kit: activeTab === 'kit', edit: activeTab === 'edit' };
+	if (!tab.form && !tab.bonds && !tab.study && !tab.kit && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
 	return {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, statuses, statusChips, condGroups,
-		weapons, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
+		weapons, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
 	};
 }
 
@@ -3121,6 +3130,57 @@ async function sheetSpendFabula(actor) {
 	else ui.notifications?.info(game.i18n?.localize?.('RIPPERS.Sheet.NoFabula') ?? 'No Fabula Points to spend.');
 }
 
+// ── P2c: Editor tab (opens the existing builder) + the trade / hand-off card ──────────────────────
+/** Open the EXISTING GuiseBuilderApp for a guise on the actor (999191e). The builder itself enforces
+ *  the fixed-at-distillation locks, the dismiss-before-edit guard, the GM override and the Edit-SL
+ *  toggle — this only surfaces it; nothing is rebuilt. */
+function sheetOpenEditor(actor, guiseId) {
+	const item = guiseId ? actor?.items?.get?.(guiseId) : null;
+	if (!item || !isGuiseItem(item)) { ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Sheet.NoGuiseToEdit') ?? 'No guise to edit.'); return; }
+	return openGuiseBuilder(actor, item);
+}
+/** Stash a guise — unwear it (dismiss the active guise); a no-op if it is not currently worn. */
+async function sheetStashGuise(actor, guiseId) {
+	if (getActiveGuise(actor) === guiseId) return dismissGuise(actor, guiseId);
+}
+/** PURE hand-off gate. A guise Item may be handed off only if it is a real, non-innate (tradable) guise,
+ *  there is a distinct recipient, and the current user can WRITE the recipient (canWrite = GM or the
+ *  recipient is owned by this user). Cross-owner transfer without write access needs a GM-mediated
+ *  socket — reported as reason 'needs-gm-socket', NOT half-built. Returns { ok, reason }. */
+function handOffDecision(sourceActor, item, recipient, canWrite) {
+	if (!item || !isGuiseItem(item)) return { ok: false, reason: 'no-guise' };
+	const innate = !!item.getFlag?.(MODULE_ID, 'isInnate') || item.system?.data?.mode === 'innate';
+	if (innate) return { ok: false, reason: 'innate-untradable' };
+	if (!recipient) return { ok: false, reason: 'no-recipient' };
+	if (recipient.id && sourceActor?.id && recipient.id === sourceActor.id) return { ok: false, reason: 'same-actor' };
+	if (!canWrite) return { ok: false, reason: 'needs-gm-socket' };
+	return { ok: true, reason: 'ok' };
+}
+/** Hand a TRADABLE guise Item whole to a recipient actor: its attached heroic ref, lent HP/MP layer and
+ *  IP satchel all ride (they live on the Item's system.data), and bind RESETS — the guise is unworn on
+ *  the source first, then moved, arriving unbound on the recipient. Clean path only (write access to the
+ *  recipient); cross-owner without access is refused with 'needs-gm-socket' (a follow-on for god). */
+async function sheetHandOffGuise(actor, guiseId, recipient) {
+	const item = actor?.items?.get?.(guiseId);
+	const canWrite = !!(globalThis.game?.user?.isGM || recipient?.isOwner);
+	const d = handOffDecision(actor, item, recipient, canWrite);
+	if (!d.ok) {
+		const msg = {
+			'no-guise': 'That is not a guise.', 'innate-untradable': 'The innate guise cannot be handed off.',
+			'no-recipient': 'Target a recipient token first.', 'same-actor': 'Cannot hand a guise to its own bearer.',
+			'needs-gm-socket': 'You cannot write that character — a GM must mediate this hand-off.',
+		}[d.reason] ?? 'Hand-off refused.';
+		ui.notifications?.warn(msg);
+		return d;
+	}
+	if (getActiveGuise(actor) === guiseId) await dismissGuise(actor, guiseId); // unwear first (bind resets)
+	const obj = item.toObject(); delete obj._id;                              // heroic ref + lent layer + satchel ride in system.data
+	await recipient.createEmbeddedDocuments('Item', [obj]);
+	await item.delete();
+	ui.notifications?.info(`${game.i18n?.localize?.('RIPPERS.Sheet.HandedOff') ?? 'Handed off'} "${item.name}".`);
+	return { ok: true, reason: 'ok' };
+}
+
 let _RippersActorSheet = null;
 function getRippersActorSheetClass() {
 	if (_RippersActorSheet) return _RippersActorSheet;
@@ -3147,6 +3207,9 @@ function getRippersActorSheetClass() {
 				rollCheck: RippersActorSheet.onRollCheck,
 				rest: RippersActorSheet.onRest,
 				spendFabula: RippersActorSheet.onSpendFabula,
+				openEditor: RippersActorSheet.onOpenEditor,
+				stashGuise: RippersActorSheet.onStashGuise,
+				handOffGuise: RippersActorSheet.onHandOffGuise,
 			},
 		};
 		static PARTS = { body: { template: `modules/${MODULE_ID}/templates/rippers-actor-sheet.hbs` } };
@@ -3176,6 +3239,13 @@ function getRippersActorSheetClass() {
 		static async onRollCheck() { await sheetRollCheck(this.document); }
 		static async onRest() { await sheetRest(this.document); this.render(); }
 		static async onSpendFabula() { await sheetSpendFabula(this.document); this.render(); }
+		static onOpenEditor(event, target) { sheetOpenEditor(this.document, target?.dataset?.guise); }
+		static async onStashGuise(event, target) { const id = target?.dataset?.guise; if (id) { await sheetStashGuise(this.document, id); this.render(); } }
+		static async onHandOffGuise(event, target) {
+			const id = target?.dataset?.guise; if (!id) return;
+			const recipient = [...(globalThis.game?.user?.targets ?? [])][0]?.actor ?? null;
+			await sheetHandOffGuise(this.document, id, recipient); this.render();
+		}
 	}
 	_RippersActorSheet = RippersActorSheet;
 	return RippersActorSheet;
@@ -3450,3 +3520,4 @@ export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLay
 export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };
+export { sheetOpenEditor, sheetStashGuise, handOffDecision, sheetHandOffGuise };

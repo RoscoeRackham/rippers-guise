@@ -110,6 +110,8 @@
 								</span>
 								<span>
 									{{#if g.worn}}<button class="rs-chip" data-action="guiseWear" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Unmask'}}</button>{{else}}<button class="rs-chip" data-action="guiseWear" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Wear'}}</button>{{/if}}
+									{{#if g.worn}}<button class="rs-chip" data-action="stashGuise" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Stash'}}</button>{{/if}}
+									{{#if g.tradable}}<button class="rs-chip" data-action="handOffGuise" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.HandOff'}}</button>{{else}}<span class="rs-tag-bound">{{localize 'RIPPERS.Sheet.Untradable'}}</span>{{/if}}
 								</span>
 							</div>
 						</div>
@@ -154,6 +156,26 @@
 						</div>
 					{{/each}}
 				{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoWeapons'}}</p>{{/if}}
+			{{/if}}
+
+			{{#if vm.tab.edit}}
+				{{#if vm.editor.has}}
+					<div class="rs-mini">
+						<div class="rs-mini-label">{{localize 'RIPPERS.Sheet.Editing'}}</div>
+						<div class="rs-mini-body" style="color:var(--rs-bone);">{{vm.editor.guiseName}}{{#if vm.editor.bound}} — {{localize 'RIPPERS.Sheet.BoundLockNote'}}{{/if}}</div>
+					</div>
+					<button class="rs-heroic" data-action="openEditor" data-guise="{{vm.editor.guiseId}}" style="border:none;cursor:pointer;">
+						<span class="rs-heroic-label">{{localize 'RIPPERS.Sheet.Editor'}}</span>
+						<span class="rs-heroic-name">{{localize 'RIPPERS.Sheet.OpenBuilder'}}</span>
+					</button>
+					<div class="rs-mini rs-mini-bane">
+						<div class="rs-mini-label">{{localize 'RIPPERS.Sheet.FixedAtDistillation'}}</div>
+						<div class="rs-mini-body">{{localize 'RIPPERS.Sheet.FixedList'}} — {{#if vm.editor.overrideOn}}{{localize 'RIPPERS.Sheet.OverrideOn'}}{{else}}{{localize 'RIPPERS.Sheet.OverrideOff'}}{{/if}}</div>
+						<div class="rs-mini-body">{{localize 'RIPPERS.Sheet.SLToggleNote'}}</div>
+					</div>
+				{{else}}
+					<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoGuiseToEdit'}}</p>
+				{{/if}}
 			{{/if}}
 
 			{{#if vm.tab.other}}
