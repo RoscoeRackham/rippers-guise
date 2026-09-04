@@ -202,3 +202,10 @@ test('sheetAdjustResource: falls back to a clamped direct update when the FU pip
 	const noop = resActor(10, 40); await sheetAdjustResource(noop, 'hp', 0);
 	assert.equal(noop.system.resources.hp.value, 10);          // zero delta = no change
 });
+
+test('buildRippersSheetVM: the background watermark initial is the character name first letter (dynamic)', async () => {
+	const vm = await buildRippersSheetVM(actorStub());
+	assert.equal(vm.masthead.initial, 'C');          // "Cordelia"
+	const bare = await buildRippersSheetVM({ name: '', system: {}, items: { filter: () => [] }, getFlag: () => undefined });
+	assert.equal(bare.masthead.initial, '?');        // no name → placeholder, never a hardcoded 'V'
+});

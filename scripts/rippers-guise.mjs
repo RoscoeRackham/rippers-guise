@@ -2967,6 +2967,8 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		name: actor.name ?? '', identity: idn('identity'), pronouns: idn('pronouns'),
 		theme: idn('theme'), origin: idn('origin'), level: Number(sys.level?.value ?? 0),
 		classes: (actor.itemTypes?.class ?? []).map((c) => c.name).filter(Boolean),
+		// 2a skin: the big background letter is the character's own initial (Austin), not a fixed 'V'.
+		initial: (String(actor.name ?? '').trim().charAt(0) || '?').toUpperCase(),
 	};
 	const activeId = getActiveGuise(actor);
 	const budget = budgetOf(actor);
