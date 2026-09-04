@@ -2142,6 +2142,8 @@ function getGuiseBuilderApp() {
 			this._classSkills = {}; // classUuid -> [{uuid,name,maxSl}]
 			this._step = 1;         // active wizard step (1..WIZARD_STEPS.length)
 			this._editingId = null; // #4: the id of the guise Item being edited (null = create a new one)
+			this._gmOverride = false; // G2: TRANSIENT per-session GM override (right-click a fixed field);
+			                          // never persisted, no stored mark — dies with the builder instance.
 		}
 		static DEFAULT_OPTIONS = {
 			classes: ['rippers-guise', 'guise-builder'],
@@ -2249,7 +2251,7 @@ function getGuiseBuilderApp() {
 
 			// ---- validation (guardrails: Q4 three classes, Q7 trio, Q1 innate specialties, min-per-class + budget) ----
 			// #4 (v0.7.9): with the GM override ON, validation is soft (findings → warnings, never block).
-			const override = editOverrideOn();
+			const override = editOverrideOn() || this._gmOverride; // G2: world setting OR the transient right-click override
 			const validation = validateGuiseDraft(this._draft, mode, skillMax, budget, { override });
 			// per-step errors so the CURRENT step gates its own Next button and shows its own errors
 			// (v0.7.6 — the guardrails were computed but never consumed by the wizard chrome).
@@ -2404,6 +2406,19 @@ function getGuiseBuilderApp() {
 				ev.preventDefault(); this._draft.attachedHeroicUuid = ''; this._draft.attachedHeroicName = ''; this.render();
 			}));
 
+			// ---- G2 (Austin 4 Sep): RIGHT-CLICK a fixed field to override its distillation fixity ----
+			// The affordance is a contextmenu on a fixed fieldset (classes / affinities / loadout), GM-only.
+			// It flips the TRANSIENT per-session override (soft validation) — never a persisted setting, and
+			// no per-field "overridden" mark (only the session-wide override note shows). Dies with the app.
+			root.querySelectorAll('[data-gb-fixed]').forEach((el) => el.addEventListener('contextmenu', (ev) => {
+				if (!globalThis.game?.user?.isGM) return;      // players never override fixity
+				ev.preventDefault();
+				if (this._gmOverride) return;                  // already overriding this session
+				this._gmOverride = true;
+				ui.notifications?.info(game.i18n?.localize?.('RIPPERS.Builder.OverrideRightClick') ?? 'Fixed fields unlocked for this edit (GM override).');
+				this.render();
+			}));
+
 			// ---- drop targets: equipment (worn) + creation heroic (innate) ----
 			root.querySelectorAll('[data-guise-drop]').forEach((zone) => {
 				zone.addEventListener('dragover', (ev) => { ev.preventDefault(); zone.classList.add('drop-hover'); });
@@ -2460,7 +2475,7 @@ function getGuiseBuilderApp() {
 		static onNext(event) { event.preventDefault(); this._step = clampWizardStep(this._step + 1); this.render(); }
 		async _doCreate(bind) {
 			const mode = GUISE_MODES.includes(this._draft.mode) ? this._draft.mode : 'worn';
-			const override = editOverrideOn();
+			const override = editOverrideOn() || this._gmOverride; // G2: transient right-click override counts here too
 			// Belt-and-suspenders gate: recompute the FULL guardrail set (incl. min-per-class + budget)
 			// and refuse to commit an invalid guise even if a disabled button were somehow triggered.
 			// With the GM override on, validation is SOFT — findings surface as warnings, never block.

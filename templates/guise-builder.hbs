@@ -40,7 +40,7 @@
 		{{/if}}
 
 		{{#if stepClasses}}
-			<fieldset class="gb-classes">
+			<fieldset class="gb-classes" data-gb-fixed {{#if isEditing}}title="{{localize 'RIPPERS.Builder.FixedHint'}}"{{/if}}>
 				<legend>{{localize "RIPPERS.Builder.Classes"}} — {{localize "RIPPERS.Builder.Exactly3"}}</legend>
 				{{#each slots}}
 					<select class="guise-class-slot" data-slot="{{i}}">
@@ -121,7 +121,7 @@
 					<div class="guise-drop gb-drop" data-guise-drop="accessory">{{localize "RIPPERS.Builder.DropAccessory"}}</div>
 				</fieldset>
 			{{else}}
-				<fieldset class="gb-equipment">
+				<fieldset class="gb-equipment" data-gb-fixed {{#if isEditing}}title="{{localize 'RIPPERS.Builder.FixedHint'}}"{{/if}}>
 					<legend>{{localize "RIPPERS.Builder.Equipment"}}</legend>
 					<p class="gb-hint">{{localize "RIPPERS.Builder.EquipmentHint"}}</p>
 					{{#each loadout.equipment}}

@@ -58,6 +58,8 @@
   "RIPPERS.Builder.CreateBind": "Create & Bind",
   "RIPPERS.Builder.Save": "Save changes",
   "RIPPERS.Builder.OverrideOn": "GM edit override is ON — fixed fields are editable and validation only warns.",
+  "RIPPERS.Builder.OverrideRightClick": "Fixed fields unlocked for this edit (GM override).",
+  "RIPPERS.Builder.FixedHint": "Fixed at distillation. GM: right-click to override for this edit.",
   "RIPPERS.Builder.DismissFirst": "Dismiss this guise before editing it — a bound guise has its skills and equipment live on the character. (A GM can bypass this with the edit override.)",
   "RIPPERS.Builder.EditBoundWarn": "Editing a bound guise via the override — dismiss and re-bind it to re-materialise its skills and equipment.",
   "RIPPERS.Builder.Steps": "Wizard steps",
