@@ -187,20 +187,21 @@ test('statusTargetActor: self → the sheet actor; target → the first targeted
 	assert.equal(statusTargetActor(me, false, null), null);
 });
 
-test('sheetAdjustResource: falls back to a clamped direct update when the FU pipeline import is unavailable', async () => {
-	// In node there is no /systems/projectfu import → the adapter throws → clamped fallback runs.
+test('sheetAdjustResource: IP (no lent layer) falls back to a clamped direct update when the FU pipeline import is unavailable', async () => {
+	// IP has no lent layer, so it always takes the ResourcePipeline path; in node that import throws →
+	// clamped direct fallback (HP/MP spend now route through applyResourceCost — covered elsewhere).
 	function resActor(value, max) {
-		const a = { system: { resources: { hp: { value, max } } }, update: async (p) => { for (const [k, v] of Object.entries(p)) { const parts = k.split('.'); let o = a; for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]]; o[parts.at(-1)] = v; } } };
+		const a = { system: { resources: { ip: { value, max } } }, update: async (p) => { for (const [k, v] of Object.entries(p)) { const parts = k.split('.'); let o = a; for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]]; o[parts.at(-1)] = v; } } };
 		return a;
 	}
-	const dmg = resActor(10, 40); await sheetAdjustResource(dmg, 'hp', -3);
-	assert.equal(dmg.system.resources.hp.value, 7);
-	const overheal = resActor(38, 40); await sheetAdjustResource(overheal, 'hp', 100);
-	assert.equal(overheal.system.resources.hp.value, 40);      // clamped to max
-	const overkill = resActor(2, 40); await sheetAdjustResource(overkill, 'hp', -100);
-	assert.equal(overkill.system.resources.hp.value, 0);       // clamped to 0
-	const noop = resActor(10, 40); await sheetAdjustResource(noop, 'hp', 0);
-	assert.equal(noop.system.resources.hp.value, 10);          // zero delta = no change
+	const dmg = resActor(6, 6); await sheetAdjustResource(dmg, 'ip', -3);
+	assert.equal(dmg.system.resources.ip.value, 3);
+	const overheal = resActor(5, 6); await sheetAdjustResource(overheal, 'ip', 100);
+	assert.equal(overheal.system.resources.ip.value, 6);       // clamped to max
+	const overkill = resActor(2, 6); await sheetAdjustResource(overkill, 'ip', -100);
+	assert.equal(overkill.system.resources.ip.value, 0);       // clamped to 0
+	const noop = resActor(4, 6); await sheetAdjustResource(noop, 'ip', 0);
+	assert.equal(noop.system.resources.ip.value, 4);           // zero delta = no change
 });
 
 test('buildRippersSheetVM: the background watermark initial is the character name first letter (dynamic)', async () => {

@@ -225,3 +225,13 @@ test('sheetAdjustResource: the MP stepper SPEND draws lent-MP first; a heal does
 	assert.equal(g.system.data.lentMp.current, 0);       // layer untouched by a heal
 	assert.equal(actor.system.resources.mp.value, 10);   // own refilled to 10 (fallback clamp)
 });
+
+test('sheetAdjustResource: the manual HP stepper SPEND draws lent-HP first (symmetry with MP); heal does not', async () => {
+	const g = guiseItem('g1', { lentHp: { current: 3, maximum: 6 } });
+	const actor = actorWith([g], { active: 'g1', hp: 20 });
+	await sheetAdjustResource(actor, 'hp', -5);           // spend 5 → 3 lent + 2 own
+	assert.equal(g.system.data.lentHp.current, 0);
+	assert.equal(actor.system.resources.hp.value, 18);   // 20 - 2 own
+	await sheetAdjustResource(actor, 'hp', 4);            // heal → never touches the lent layer
+	assert.equal(g.system.data.lentHp.current, 0);
+});

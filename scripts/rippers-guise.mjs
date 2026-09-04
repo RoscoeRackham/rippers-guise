@@ -3106,12 +3106,12 @@ async function fuAdapter() {
  *  sign is the loss/gain switch (recon-confirmed). Falls back to a clamped direct update on import drift. */
 async function sheetAdjustResource(actor, resourceType, amount) {
 	if (!actor || !['hp', 'mp', 'ip'].includes(resourceType) || !amount) return;
-	// MP-LAYER-ROUTING: a SPEND of MP (amount<0) draws the worn guise's lent-MP layer FIRST, then own —
-	// the applyResourceCost seam (lent-then-own), mirroring the lent-HP damage intercept. (HP spend on this
-	// manual stepper is intentionally NOT lent-routed here: real HP damage is intercepted on the damage
-	// pipeline in P3; this stepper is a manual nudge. Heals/gains, amount>0, never touch the lent layer —
-	// only a rest refills it.)
-	if (resourceType === 'mp' && amount < 0) { await applyResourceCost(actor, 'mp', -amount); return; }
+	// A manual SPEND of HP or MP (amount<0) draws the worn guise's lent layer FIRST, then own — via the
+	// applyResourceCost seam (lent-then-own). This mirrors the automatic intercepts (lent-HP on the damage
+	// pipeline P3, lent-MP on the expense event) so the sheet's manual steppers are symmetric and never
+	// surprise (god ruling, 4 Sep 2026). IP has no lent layer here; heals/gains (amount>0) never touch the
+	// lent layer — only a rest refills it.
+	if ((resourceType === 'hp' || resourceType === 'mp') && amount < 0) { await applyResourceCost(actor, resourceType, -amount); return; }
 	try {
 		const { ResourceRequest, ResourcePipeline, InlineSourceInfo } = await fuAdapter();
 		const req = new ResourceRequest(InlineSourceInfo.fromInstance(actor), [actor], resourceType, amount, false);
