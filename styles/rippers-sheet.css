@@ -267,6 +267,9 @@
 .rippers-sheet .rs-edit-bond .rs-bond-tier { justify-self: center; }
 .rippers-sheet .rs-edit-bond-str { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-gold); white-space: nowrap; }
 .rippers-sheet .rs-edit-bond-rm { padding: 2px 8px; font-family: var(--rs-verb); line-height: 1; }
+.rippers-sheet .rs-level-row { display: flex; align-items: center; gap: 8px; }
+.rippers-sheet .rs-level-row input { width: 4.5rem; }
+.rippers-sheet .rs-level-row .rs-btn { font-family: var(--rs-verb); padding: 3px 12px; }
 /* v0.7.15 — full inventory + native Active Effects */
 .rippers-sheet .rs-inv-head { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--rs-border); }
 .rippers-sheet .rs-inv-useeq { font-family: var(--rs-mono); font-size: 11px; color: var(--rs-bone); display: inline-flex; align-items: center; gap: 5px; }

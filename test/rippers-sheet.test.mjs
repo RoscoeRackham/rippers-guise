@@ -957,3 +957,41 @@ test('defaultActiveGuiseId (P4): prefers the innate guise, else first; null with
 	assert.equal(defaultActiveGuiseId(mk([])), null);
 	assert.equal(defaultActiveGuiseId({}), null);
 });
+
+// ── v0.7.20 level-up (Tier-1 #4) ──
+const { raiseDieSize, levelUpMilestone, sheetLevelUp } = mod;
+
+test('raiseDieSize: climbs the FU ladder 6→8→10→12, capped at d12', () => {
+	assert.equal(raiseDieSize(6), 8);
+	assert.equal(raiseDieSize(8), 10);
+	assert.equal(raiseDieSize(10), 12);
+	assert.equal(raiseDieSize(12), 12);   // cap
+	assert.equal(raiseDieSize(7), 7);     // off-ladder returns itself (no invention)
+});
+
+test('levelUpMilestone: only levels 20 and 40 (FU attribute milestones)', () => {
+	for (const l of [20, 40]) assert.equal(levelUpMilestone(l), true);
+	for (const l of [1, 10, 19, 21, 30, 39, 41, 50]) assert.equal(levelUpMilestone(l), false);
+});
+
+test('sheetLevelUp: increments system.level.value; no milestone prompt off-milestone', async () => {
+	let updates = [];
+	const actor = { system: { level: { value: 5 }, attributes: { dex: { base: 8 } } }, async update(u) { updates.push(u); } };
+	await sheetLevelUp(actor);
+	assert.equal(updates.length, 1);                       // just the level bump, no attr prompt at L6
+	assert.equal(updates[0]['system.level.value'], 6);
+});
+
+test('sheetLevelUp: reaching L20 raises the chosen attribute a die size (cap-aware)', async () => {
+	const origPrompt = globalThis.foundry;
+	// stub DialogV2.prompt to choose 'mig'
+	globalThis.foundry = { applications: { api: { DialogV2: { prompt: async () => 'mig' } } } };
+	globalThis.ui = { notifications: { info() {} } };
+	globalThis.game = { i18n: { localize: (k) => k } };
+	let updates = [];
+	const actor = { system: { level: { value: 19 }, attributes: { mig: { base: 10 } } }, async update(u) { updates.push(u); Object.assign(actor.system, {}); } };
+	await sheetLevelUp(actor);
+	assert.equal(updates[0]['system.level.value'], 20);    // crossed into the milestone
+	assert.equal(updates[1]['system.attributes.mig.base'], 12); // d10 → d12
+	globalThis.foundry = origPrompt;
+});
