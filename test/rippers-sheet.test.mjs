@@ -982,6 +982,51 @@ test('sheetLevelUp: increments system.level.value; no milestone prompt off-miles
 	assert.equal(updates[0]['system.level.value'], 6);
 });
 
+// ── v0.7.23 cabinet restore = atomic MOVE (bugfix: was duplicating) ──
+const _guiseDoc = (name, pack, onDelete) => ({
+	type: 'classFeature', name, pack,
+	system: { featureType: 'rippers-guise.guise', data: {} },
+	toObject() { return { type: 'classFeature', name, system: { featureType: 'rippers-guise.guise', data: {} }, _id: 'src' }; },
+	async delete() { return onDelete(); },
+});
+
+test('vaultSlotFromCabinet: world-cabinet restore MOVES — actor +1, cabinet doc deleted', async () => {
+	const { vaultSlotFromCabinet, CABINET_WORLD_PACK } = mod;
+	let deleted = false, created = 0;
+	const uuid = 'Compendium.world.rippers-cabinet.g1';
+	UUIDS.set(uuid, _guiseDoc('Ashface', CABINET_WORLD_PACK, () => { deleted = true; }));
+	const actor = { isOwner: true, async createEmbeddedDocuments() { created++; return [{ id: 'new1' }]; }, async deleteEmbeddedDocuments() {} };
+	const prev = globalThis.game.packs; globalThis.game.packs = { get: () => ({ locked: false }) };
+	const r = await vaultSlotFromCabinet(actor, uuid);
+	globalThis.game.packs = prev;
+	assert.equal(r.ok, true); assert.equal(r.reason, 'moved');
+	assert.equal(created, 1); assert.equal(deleted, true);   // exactly one on the actor, cabinet emptied → no duplication
+});
+
+test('vaultSlotFromCabinet: shipped-library slot COPIES — actor +1, library entry NOT deleted', async () => {
+	const { vaultSlotFromCabinet, CABINET_PACK } = mod;
+	let deleted = false, created = 0;
+	const uuid = 'Compendium.rippers-guise.guises.lib1';
+	UUIDS.set(uuid, _guiseDoc('Template', CABINET_PACK, () => { deleted = true; }));
+	const actor = { isOwner: true, async createEmbeddedDocuments() { created++; return [{ id: 'new2' }]; }, async deleteEmbeddedDocuments() {} };
+	const r = await vaultSlotFromCabinet(actor, uuid);
+	assert.equal(r.ok, true); assert.equal(r.reason, 'copied');
+	assert.equal(created, 1); assert.equal(deleted, false);  // read-only template library is never consumed
+});
+
+test('vaultSlotFromCabinet: delete-failure rolls back the actor copy — no duplication, refused to GM', async () => {
+	const { vaultSlotFromCabinet, CABINET_WORLD_PACK } = mod;
+	let rolledBack = null, created = 0;
+	const uuid = 'Compendium.world.rippers-cabinet.g2';
+	UUIDS.set(uuid, _guiseDoc('Nogm', CABINET_WORLD_PACK, () => { throw new Error('no compendium delete rights'); }));
+	const actor = { isOwner: true, async createEmbeddedDocuments() { created++; return [{ id: 'new3' }]; }, async deleteEmbeddedDocuments(type, ids) { rolledBack = ids; } };
+	const prev = globalThis.game.packs; globalThis.game.packs = { get: () => ({ locked: false }) };
+	const r = await vaultSlotFromCabinet(actor, uuid);
+	globalThis.game.packs = prev;
+	assert.equal(r.ok, false); assert.equal(r.reason, 'needs-gm-delete');
+	assert.equal(created, 1); assert.deepEqual(rolledBack, ['new3']);  // created, then undone → net zero on actor, cabinet intact
+});
+
 test('sheetLevelUp: reaching L20 raises the chosen attribute a die size (cap-aware)', async () => {
 	const origPrompt = globalThis.foundry;
 	// stub DialogV2.prompt to choose 'mig'

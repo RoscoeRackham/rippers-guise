@@ -779,16 +779,42 @@ async function vaultStashToCabinet(actor, guiseId) {
 	return { ok: true, reason: 'ok' };
 }
 
-/** V4 — slot a guise FROM the cabinet compendium onto a member (import the pack doc as an owned Item;
- *  the cabinet copy is left in place — slotting draws a working copy, matching the whole-Item model). */
+/** V4 — restore a guise FROM the cabinet onto a member. This is an atomic MOVE for a WORLD-cabinet stash
+ *  (create on the actor, then DELETE the cabinet source — the mirror of vaultStashToCabinet), so a
+ *  stash→restore cycle never duplicates. The SHIPPED library pack (read-only template guises) is instead
+ *  COPIED — it is a library, its entries are not consumed. To avoid orphan-duplication the move is
+ *  guarded: the source is deleted only after the actor create succeeds, and if the delete fails (e.g. a
+ *  non-GM lacks compendium-delete rights on the world pack) the just-created actor copy is rolled back and
+ *  the restore is refused cleanly — the guise is never lost and never doubled. */
 async function vaultSlotFromCabinet(actor, uuid) {
 	if (!(globalThis.game?.user?.isGM || actor?.isOwner)) { ui.notifications?.warn('You cannot write that character.'); return { ok: false, reason: 'no-write' }; }
 	const doc = await safeFromUuid(uuid);
 	if (!doc || !isGuiseItem(doc)) { ui.notifications?.warn('That cabinet entry is not a guise.'); return { ok: false, reason: 'no-guise' }; }
 	const obj = doc.toObject(); delete obj._id;
-	await actor.createEmbeddedDocuments('Item', [obj]);
-	ui.notifications?.info(`Slotted "${doc.name}" from the cabinet.`);
-	return { ok: true, reason: 'ok' };
+	let created;
+	try { created = await actor.createEmbeddedDocuments('Item', [obj]); }
+	catch (err) { console.warn('[rippers-guise] restore-from-cabinet: actor create failed:', err); ui.notifications?.warn('Could not slot the guise onto the character.'); return { ok: false, reason: 'actor-create-failed' }; }
+	const newId = created?.[0]?.id ?? created?.[0]?._id;
+	if (!newId) { ui.notifications?.warn('Could not slot the guise onto the character.'); return { ok: false, reason: 'actor-create-failed' }; }
+	// MOVE (world cabinet) vs COPY (shipped read-only library) — decided by the source pack.
+	if (doc.pack === CABINET_WORLD_PACK) {
+		const pack = globalThis.game?.packs?.get?.(CABINET_WORLD_PACK);
+		if (pack?.locked && typeof pack.configure === 'function') { try { await pack.configure({ locked: false }); } catch (err) { console.warn('[rippers-guise] could not unlock the cabinet for restore:', err); } }
+		try { await doc.delete(); }
+		catch (err) {
+			// Delete failed (typically a non-GM without world-compendium delete rights). Roll back the actor
+			// copy so we never leave a duplicate, and route to the GM.
+			console.warn('[rippers-guise] restore delete failed — rolling back actor copy to avoid duplication:', err);
+			try { await actor.deleteEmbeddedDocuments('Item', [newId]); } catch (err2) { console.warn('[rippers-guise] rollback of actor copy failed:', err2); }
+			ui.notifications?.warn('Restore needs a GM — the cabinet is world-owned. Ask your GM to restore this guise.');
+			return { ok: false, reason: 'needs-gm-delete' };
+		}
+		ui.notifications?.info(`Restored "${doc.name}" from the cabinet.`);
+		return { ok: true, reason: 'moved' };
+	}
+	// Shipped library template: leave it in place (it is not consumed).
+	ui.notifications?.info(`Slotted "${doc.name}" from the cabinet library.`);
+	return { ok: true, reason: 'copied' };
 }
 
 /** getDocumentClass shim (v13 global) — resolves the Item document class for a compendium write. */
