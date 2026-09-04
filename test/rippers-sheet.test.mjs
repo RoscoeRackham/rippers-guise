@@ -530,20 +530,41 @@ test('buildRippersSheetVM: guise rows hint The Turn refund, plus a top-level the
 });
 
 // ── 2a guise-identity arcana tiles ────────────────────────────────────────────────────────────────
-const { ARCANA, arcanaBySlug, guiseArcana } = mod;
+const { ARCANA, arcanaBySlug, guiseArcana, arcanaImg, arcanaImgAt, arcanaBasePath, DEFAULT_ARCANA_BASE } = mod;
 
-test('ARCANA: the 22 major arcana, each with a slug, name, and a local module img path', () => {
+test('ARCANA: the 22 major arcana, each with a slug, name, and a <slug>.png filename', () => {
 	assert.equal(ARCANA.length, 22);
 	assert.equal(ARCANA[0].slug, '00-the-fool');
 	assert.equal(ARCANA[21].name, 'The World');
-	assert.ok(ARCANA.every((a) => a.img.startsWith('modules/rippers-guise/assets/arcana/') && a.img.endsWith('.png')));
+	assert.ok(ARCANA.every((a) => a.file === `${a.slug}.png`));
 	assert.equal(arcanaBySlug('13-death').name, 'Death');
 	assert.equal(arcanaBySlug('nope'), null);
 });
 
-test('guiseArcana + VM: a guise renders its chosen arcana tile from the Item flag', async () => {
+test('arcana image base is configurable: default is the module folder; a set base composes base/<slug>.png', () => {
+	// no game.settings registered here → falls back to the module-internal default
+	assert.equal(DEFAULT_ARCANA_BASE, 'modules/rippers-guise/assets/arcana');
+	assert.equal(arcanaBasePath(), DEFAULT_ARCANA_BASE);
+	assert.equal(arcanaImg('00-the-fool'), 'modules/rippers-guise/assets/arcana/00-the-fool.png');
+	assert.equal(arcanaImg('nope'), null);
+	// PURE join tolerates a trailing slash and works with a Forge world-data path (spaces included)
+	assert.equal(arcanaImgAt('Rippers/Arcana/Major Arcana', '05-the-hierophant'), 'Rippers/Arcana/Major Arcana/05-the-hierophant.png');
+	assert.equal(arcanaImgAt('Rippers/Arcana/Major Arcana/', '21-the-world'), 'Rippers/Arcana/Major Arcana/21-the-world.png');
+});
+
+test('arcanaBasePath reads the setting when registered, stripping a trailing slash', () => {
+	const savedGame = globalThis.game;
+	try {
+		globalThis.game = { settings: { get: (m, k) => (m === RGID && k === 'arcanaBasePath' ? 'Rippers/Arcana/Major Arcana/' : undefined) }, modules: { get: () => null }, user: { isGM: false } };
+		assert.equal(arcanaBasePath(), 'Rippers/Arcana/Major Arcana');
+		assert.equal(arcanaImg('13-death'), 'Rippers/Arcana/Major Arcana/13-death.png');
+	} finally { globalThis.game = savedGame; }
+});
+
+test('guiseArcana + VM: a guise renders its chosen arcana tile (name + resolved img) from the Item flag', async () => {
 	const g = { getFlag: (m, k) => (m === RGID && k === 'arcana' ? '18-the-moon' : undefined) };
 	assert.equal(guiseArcana(g).name, 'The Moon');
+	assert.equal(guiseArcana(g).img, 'modules/rippers-guise/assets/arcana/18-the-moon.png');
 	assert.equal(guiseArcana({ getFlag: () => undefined }), null);
 	// the Form-tab guise rows carry .arcana (null when unset in the base stub)
 	const vm = await buildRippersSheetVM(actorStub());

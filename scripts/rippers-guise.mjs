@@ -3277,6 +3277,13 @@ function rivalWaiverVM(actor) {
 // or publish — our no-push norm covers it). A guise's arcana persists as a slug on the Item flag
 // flags['rippers-guise'].arcana — the README's production mapping of the design's localStorage 'g:' key.
 const ARCANA_FLAG = 'arcana';
+// The arcana IMAGE base is a world SETTING (arcanaBasePath): a code-only module ships WITHOUT the art
+// (copyright — assets/arcana is excised + gitignored), so the tiles/picker resolve to wherever the GM
+// actually put the files. Default is the module-internal folder, so a LOCAL dev instance with the
+// untracked art still renders. Austin sets it to his Forge data path, e.g. "Rippers/Arcana/Major Arcana".
+// The filename convention is FIXED — each major is `<slug>.png` (the 22 slugs below). URL = base/<slug>.png.
+const ARCANA_BASE_SETTING = 'arcanaBasePath';
+const DEFAULT_ARCANA_BASE = `modules/${MODULE_ID}/assets/arcana`;
 const ARCANA = Object.freeze([
 	['00-the-fool', 'The Fool'], ['01-the-magician', 'The Magician'], ['02-the-high-priestess', 'The High Priestess'],
 	['03-the-empress', 'The Empress'], ['04-the-emperor', 'The Emperor'], ['05-the-hierophant', 'The Hierophant'],
@@ -3285,10 +3292,27 @@ const ARCANA = Object.freeze([
 	['12-the-hanged-man', 'The Hanged Man'], ['13-death', 'Death'], ['14-temperance', 'Temperance'],
 	['15-the-devil', 'The Devil'], ['16-the-tower', 'The Tower'], ['17-the-star', 'The Star'],
 	['18-the-moon', 'The Moon'], ['19-the-sun', 'The Sun'], ['20-judgement', 'Judgement'], ['21-the-world', 'The World'],
-].map(([slug, name]) => ({ slug, name, img: `modules/${MODULE_ID}/assets/arcana/${slug}.png` })));
+].map(([slug, name]) => ({ slug, name, file: `${slug}.png` })));
 const arcanaBySlug = (slug) => ARCANA.find((a) => a.slug === slug) ?? null;
-/** The arcana tile chosen for a guise (from its Item flag), or null when unset. */
-function guiseArcana(guise) { return arcanaBySlug(guise?.getFlag?.(MODULE_ID, ARCANA_FLAG)); }
+/** The configured arcana image base folder (no trailing slash). Falls back to the module folder when
+ *  the setting is unregistered (e.g. under `node --test`, or before init). Pure but for the game read. */
+function arcanaBasePath() {
+	const raw = globalThis.game?.settings?.get?.(MODULE_ID, ARCANA_BASE_SETTING);
+	const base = (typeof raw === 'string' && raw.trim()) ? raw.trim() : DEFAULT_ARCANA_BASE;
+	return base.replace(/\/+$/, '');
+}
+/** PURE join: the image URL for an arcana slug at a given base (base/<slug>.png), or null for unknown. */
+function arcanaImgAt(base, slug) {
+	const entry = arcanaBySlug(slug);
+	return entry ? `${String(base).replace(/\/+$/, '')}/${entry.file}` : null;
+}
+/** The image URL for an arcana slug at the CONFIGURED base, or null for unknown. */
+function arcanaImg(slug) { return arcanaImgAt(arcanaBasePath(), slug); }
+/** The arcana tile chosen for a guise (from its Item flag), with its resolved img, or null when unset. */
+function guiseArcana(guise) {
+	const entry = arcanaBySlug(guise?.getFlag?.(MODULE_ID, ARCANA_FLAG));
+	return entry ? { ...entry, img: arcanaImg(entry.slug) } : null;
+}
 
 // ── H2 two-portrait swap (Austin 4 Sep: NORMAL + OTHER-SHAPE only; our own minimal build, NOT Visage) ─
 // Exactly two configurable face images per actor live on flags['rippers-guise'].faces = {normal, other}
@@ -3630,7 +3654,7 @@ async function sheetGuiseWear(actor, guiseId) {
 async function sheetPickArcana(actor, guiseId) {
 	const guise = actor?.items?.get?.(guiseId);
 	if (!guise) return;
-	const tiles = ARCANA.map((a) => `<button type="button" class="rs-arcana-opt" data-slug="${a.slug}" title="${a.name}"><img src="${a.img}" alt="${a.name}"></button>`).join('');
+	const tiles = ARCANA.map((a) => `<button type="button" class="rs-arcana-opt" data-slug="${a.slug}" title="${a.name}"><img src="${arcanaImg(a.slug)}" alt="${a.name}"></button>`).join('');
 	const content = `<div class="rs-arcana-grid">${tiles}</div><p style="margin-top:8px;text-align:center;"><button type="button" class="rs-arcana-opt" data-slug="">${game.i18n?.localize?.('RIPPERS.Sheet.ArcanaClear') ?? '— none —'}</button></p>`;
 	const DV2 = foundry?.applications?.api?.DialogV2;
 	const pick = await new Promise((resolve) => {
@@ -4073,6 +4097,17 @@ Hooks.once('setup', () => {
 			range: { min: 1, max: 12, step: 1 },
 		});
 	} catch (err) { console.warn('[rippers-guise] could not register the party-size setting:', err); }
+	// 2a arcana art base: a folder path the arcana tiles/picker resolve against. Code-only module ships
+	// without the art, so on Forge the GM points this at their uploaded Major-Arcana folder. String +
+	// folder FilePicker; default the module-internal folder so a local instance with the art still works.
+	try {
+		game.settings.register(MODULE_ID, ARCANA_BASE_SETTING, {
+			name: 'RIPPERS.Settings.ArcanaBasePath',
+			hint: 'RIPPERS.Settings.ArcanaBasePathHint',
+			scope: 'world', config: true, type: String, default: DEFAULT_ARCANA_BASE,
+			filePicker: 'folder',
+		});
+	} catch (err) { console.warn('[rippers-guise] could not register the arcana-base-path setting:', err); }
 	const registry = CONFIG.FU?.classFeatureRegistry ?? globalThis.projectfu?.ClassFeatureRegistry;
 	if (!registry?.register) {
 		console.error('[rippers-guise] CONFIG.FU.classFeatureRegistry not available — projectfu must be active. Guise not registered.');
@@ -4348,7 +4383,7 @@ export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLay
 export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
-export { ARCANA, ARCANA_FLAG, arcanaBySlug, guiseArcana, sheetPickArcana };
+export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, guiseArcana, sheetPickArcana };
 // H2 two-portrait swap (normal/other-shape; our own build, not Visage).
 export { faceForGuise, resolveFaceImg, nextManualFace, getFaces, setFace, applyGuiseFace, restoreBaseFace, sheetToggleFace, guiseFacesVM, GUISE_FACE_KEYS, FACES_FLAG, GUISE_FACE_FLAG, NO_PORTRAIT_WELL };
 // H3 "The Turn": guise-swap action economy (pure decision + scene state + boundary clear).
