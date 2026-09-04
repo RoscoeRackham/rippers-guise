@@ -16,7 +16,7 @@ const UUIDS = new Map();
 globalThis.fromUuid = async (u) => UUIDS.get(u) ?? null;
 
 const mod = await import('../scripts/rippers-guise.mjs');
-const { buildRippersSheetVM } = mod;
+const { buildRippersSheetVM, statusTargetActor, sheetAdjustResource, rsAffFlags, RS_STATUS_IDS, RS_TABS } = mod;
 
 const FEATURE_TYPE = 'rippers-guise.guise';
 const RGID = 'rippers-guise';
@@ -137,4 +137,68 @@ test('buildRippersSheetVM tolerates a bare actor (no guises, no crisis fields)',
 	assert.deepEqual(vm.bonds, []);
 	assert.deepEqual(vm.statuses, []);
 	assert.equal(vm.vitals.crisis.inCrisis, false);
+});
+
+// ── P2a additions: derived, worn state, tabs, status chips, control helpers ──
+test('buildRippersSheetVM adds derived def/mdef/init + worn state', async () => {
+	const a = actorStub();
+	a.system.derived = { def: { value: 11 }, mdef: { value: 7 }, init: { value: 4 } };
+	const vm = await buildRippersSheetVM(a);
+	assert.deepEqual(vm.derived, { def: 11, mdef: 7, init: 4 });
+	assert.equal(vm.worn, true);            // activeGuise = 'w1'
+	assert.equal(vm.wornName, 'Guise w1');
+});
+
+test('buildRippersSheetVM: tabs reflect the active tab; unimplemented tabs get a stub note', async () => {
+	const form = await buildRippersSheetVM(actorStub(), { activeTab: 'form' });
+	assert.equal(form.tabs.find((t) => t.key === 'form').active, true);
+	assert.equal(form.tab.form, true);
+	assert.equal(RS_TABS[0].key, 'form');
+	const edit = await buildRippersSheetVM(actorStub(), { activeTab: 'edit' });
+	assert.equal(edit.tab.other, true);
+	assert.match(edit.tab.otherNote, /Editor/i);
+	// a bad tab falls back to form
+	const bad = await buildRippersSheetVM(actorStub(), { activeTab: 'nope' });
+	assert.equal(bad.tab.form, true);
+});
+
+test('buildRippersSheetVM: status chips + condition groups reflect actor.statuses; self/showConditions carry', async () => {
+	const vm = await buildRippersSheetVM(actorStub(), { statusSelf: false, showConditions: true });
+	assert.deepEqual(vm.statusChips.map((c) => c.id), RS_STATUS_IDS);
+	assert.equal(vm.statusChips.find((c) => c.id === 'slow').active, true);   // actorStub has slow
+	assert.equal(vm.statusChips.find((c) => c.id === 'weak').active, false);
+	assert.equal(vm.statusSelf, false);
+	assert.equal(vm.showConditions, true);
+	assert.ok(vm.condGroups.length >= 1 && vm.condGroups[0].items.length);
+});
+
+test('rsAffFlags: >=1 is good (resist/immune/absorb), -1 is bad (vulnerable), 0 neither', () => {
+	assert.deepEqual(rsAffFlags(2), { good: true, bad: false });
+	assert.deepEqual(rsAffFlags(-1), { good: false, bad: true });
+	assert.deepEqual(rsAffFlags(0), { good: false, bad: false });
+});
+
+test('statusTargetActor: self → the sheet actor; target → the first targeted token actor, else null', () => {
+	const me = { id: 'me' };
+	const other = { id: 'them' };
+	assert.equal(statusTargetActor(me, true, null), me);
+	assert.equal(statusTargetActor(me, false, new Set([{ actor: other }])), other);
+	assert.equal(statusTargetActor(me, false, new Set()), null);
+	assert.equal(statusTargetActor(me, false, null), null);
+});
+
+test('sheetAdjustResource: falls back to a clamped direct update when the FU pipeline import is unavailable', async () => {
+	// In node there is no /systems/projectfu import → the adapter throws → clamped fallback runs.
+	function resActor(value, max) {
+		const a = { system: { resources: { hp: { value, max } } }, update: async (p) => { for (const [k, v] of Object.entries(p)) { const parts = k.split('.'); let o = a; for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]]; o[parts.at(-1)] = v; } } };
+		return a;
+	}
+	const dmg = resActor(10, 40); await sheetAdjustResource(dmg, 'hp', -3);
+	assert.equal(dmg.system.resources.hp.value, 7);
+	const overheal = resActor(38, 40); await sheetAdjustResource(overheal, 'hp', 100);
+	assert.equal(overheal.system.resources.hp.value, 40);      // clamped to max
+	const overkill = resActor(2, 40); await sheetAdjustResource(overkill, 'hp', -100);
+	assert.equal(overkill.system.resources.hp.value, 0);       // clamped to 0
+	const noop = resActor(10, 40); await sheetAdjustResource(noop, 'hp', 0);
+	assert.equal(noop.system.resources.hp.value, 10);          // zero delta = no change
 });

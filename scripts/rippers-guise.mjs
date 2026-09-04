@@ -2910,12 +2910,36 @@ Hooks.on('renderFUStandardActorSheet', (app) => injectGuisePanel(app));
 // design-system tokens + hunters-ledger CharacterScreen, to be reconciled to 2a when the canvas lands.
 const RS_ATTR_LABELS = { dex: 'Dexterity', ins: 'Insight', mig: 'Might', wlp: 'Willpower' };
 const RS_AFFINITY_TYPES = ['physical', 'air', 'bolt', 'dark', 'earth', 'fire', 'ice', 'light', 'poison'];
+// The six core FU statuses (exact ids, projectfu config.mjs FU.temporaryEffects) + the boons/banes tray.
+const RS_STATUS_IDS = ['slow', 'dazed', 'weak', 'shaken', 'enraged', 'poisoned'];
+const RS_COND_GROUPS = [
+	{ label: 'ATTR UP', ids: ['dex-up', 'ins-up', 'mig-up', 'wlp-up'] },
+	{ label: 'ATTR DOWN', ids: ['dex-down', 'ins-down', 'mig-down', 'wlp-down'] },
+	{ label: 'BOONS/BANES', ids: ['guard', 'cover', 'aura', 'barrier', 'flying', 'provoked', 'focus', 'pressure', 'stagger'] },
+];
+const RS_TABS = [
+	{ key: 'form', label: 'Form' }, { key: 'bonds', label: 'Bonds' }, { key: 'study', label: 'Study' },
+	{ key: 'spells', label: 'Spells' }, { key: 'kit', label: 'Kit' }, { key: 'clots', label: 'Clots' },
+	{ key: 'quirk', label: 'Quirk' }, { key: 'edit', label: 'Edit' },
+];
+const RS_TAB_STUBS = {
+	spells: 'Vin studies no magic. A spell from a class or a seated Clot would be entered here.',
+	kit: 'Weapons, armour and the purse are entered here.',
+	clots: 'No Clot is seated. A seated Clot rides its gear, not the character.',
+	quirk: 'The character\'s Quirk and Specialties are shown here.',
+	edit: 'The Editor tab (guise builder + trade / hand-off) arrives in a later phase.',
+};
+const rsAffFlags = (lvl) => ({ good: lvl >= 1, bad: lvl === -1 });
 
 /** Build the read-only view-model for the Rippers character sheet from a live FU actor. Async (resolves
- *  each worn/innate guise's heroic name). Binds ONLY real actor.system.* + our guise API — invents
- *  nothing. Exported for headless testing of the pure shaping (given a plain actor-shaped object). */
-async function buildRippersSheetVM(actor) {
+ *  each guise's heroic name). Binds ONLY real actor.system.* + our guise API — invents nothing. `ui`
+ *  carries the sheet's own view state (activeTab / statusSelf / showConditions). Exported for headless
+ *  testing of the pure shaping (given a plain actor-shaped object). */
+async function buildRippersSheetVM(actor, ui = {}) {
 	if (!actor) return null;
+	const activeTab = RS_TABS.some((t) => t.key === ui.activeTab) ? ui.activeTab : 'form';
+	const statusSelf = ui.statusSelf !== false;
+	const showConditions = !!ui.showConditions;
 	const sys = actor.system ?? {};
 	const res = sys.resources ?? {};
 	const pool = (r) => ({ value: Number(r?.value ?? 0), max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null });
@@ -2926,13 +2950,17 @@ async function buildRippersSheetVM(actor) {
 		exp: Number(res.exp?.value ?? 0), zenit: Number(res.zenit?.value ?? 0),
 		crisis: { inCrisis: !!res.hp?.inCrisis, score: Number(res.hp?.crisisScore ?? Math.floor((hp.max ?? 0) / 2)) },
 	};
+	const derived = {
+		def: Number(sys.derived?.def?.value ?? 0), mdef: Number(sys.derived?.mdef?.value ?? 0),
+		init: Number(sys.derived?.init?.value ?? 0),
+	};
 	const attributes = ['dex', 'ins', 'mig', 'wlp'].map((k) => ({
 		key: k, label: RS_ATTR_LABELS[k],
 		die: `d${Number(sys.attributes?.[k]?.current ?? sys.attributes?.[k]?.base ?? 8)}`,
 	}));
 	const affinities = RS_AFFINITY_TYPES.map((t) => {
 		const lvl = Number(sys.affinities?.[t]?.current ?? sys.affinities?.[t]?.base ?? 0);
-		return { type: t, level: lvl, word: lvl === 0 ? '—' : affinityWordOf(lvl), normal: lvl === 0 };
+		return { type: t, level: lvl, word: lvl === 0 ? '—' : affinityWordOf(lvl), normal: lvl === 0, ...rsAffFlags(lvl) };
 	});
 	const idn = (k) => String(res[k]?.name ?? '').trim();
 	const masthead = {
@@ -2944,18 +2972,21 @@ async function buildRippersSheetVM(actor) {
 	const budget = budgetOf(actor);
 	const guiseItems = actor.items?.filter ? actor.items.filter(isGuiseItem) : [];
 	const guises = [];
+	let wornName = '';
 	for (const g of guiseItems) {
 		const d = g.system?.data ?? {};
 		const innate = !!g.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
-		const trio = (d.affinityModifiers ?? []).map((m) => ({ type: m.type, word: affinityWordOf(m.level), level: m.level }));
+		const trio = (d.affinityModifiers ?? []).map((m) => ({ type: m.type, word: affinityWordOf(m.level), level: m.level, ...rsAffFlags(m.level) }));
 		let skillCount = 0, slTotal = 0;
 		for (const cls of d.classes ?? []) for (const sk of cls.skills ?? []) { skillCount++; slTotal += Number(sk.sl) || 0; }
 		const heroicUuid = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
 		const heroicName = heroicUuid ? ((await safeFromUuid(heroicUuid))?.name ?? '(unresolved)') : null;
 		const v = guiseVitals(g);
+		const worn = g.id === activeId;
+		if (worn) wornName = g.name ?? '';
 		guises.push({
 			id: g.id, name: g.name ?? '', img: g.img, role: d.role ?? '', identity: d.identity ?? '',
-			worn: g.id === activeId, innate, tradable: !innate,
+			worn, innate, tradable: !innate,
 			trio, skillCount, slTotal, budget, heroicName,
 			lent: { hp: v.hp, mp: v.mp, ip: v.ip },
 		});
@@ -2965,8 +2996,91 @@ async function buildRippersSheetVM(actor) {
 		name: b.name ?? '', strength: Number(b.strength ?? 0),
 		emotions: [b.admInf, b.loyMis, b.affHat].filter(Boolean),
 	})).filter((b) => b.name || b.emotions.length);
-	const statuses = actor.statuses ? [...actor.statuses] : [];
-	return { masthead, vitals, attributes, affinities, guises, bonds, statuses };
+	const activeStatuses = actor.statuses ? new Set([...actor.statuses]) : new Set();
+	const statuses = [...activeStatuses];
+	const statusChips = RS_STATUS_IDS.map((id) => ({ id, label: id, active: activeStatuses.has(id) }));
+	const condGroups = RS_COND_GROUPS.map((grp) => ({ label: grp.label, items: grp.ids.map((id) => ({ id, label: id, active: activeStatuses.has(id) })) }));
+	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
+	const tab = { form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study' };
+	if (!tab.form && !tab.bonds && !tab.study) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
+	return {
+		masthead, vitals, derived, attributes, affinities, guises, bonds, statuses, statusChips, condGroups,
+		worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
+	};
+}
+
+// ── FU public-API adapter (P2a control wiring; SHEET-SKIN-SPIKE.md + signature recon) ────────────
+// The pipelines / Effects / InlineSourceInfo are real FU exports but NOT on game.projectfu, so we
+// dynamic-import them by served path and cache. Deep-import is the least-guaranteed API surface (pin
+// FU's version); every call feature-detects and FALLS BACK so a path drift degrades, never throws to
+// the user. system.json serves from the repo root, so the 'module/' segment is part of the path.
+const FU_IMPORT = {
+	resource: '/systems/projectfu/module/pipelines/resource-pipeline.mjs',
+	effects: '/systems/projectfu/module/pipelines/effects.mjs',
+	inline: '/systems/projectfu/module/helpers/inline-helper.mjs',
+};
+let _fuAdapter = null;
+async function fuAdapter() {
+	if (_fuAdapter) return _fuAdapter;
+	const [rp, ef, ih] = await Promise.all([import(FU_IMPORT.resource), import(FU_IMPORT.effects), import(FU_IMPORT.inline)]);
+	_fuAdapter = { ResourceRequest: rp.ResourceRequest, ResourcePipeline: rp.ResourcePipeline, Effects: ef.Effects, InlineSourceInfo: ih.InlineSourceInfo };
+	return _fuAdapter;
+}
+
+/** HP/MP/IP damage (amount<0) or heal (amount>0) via FU's ResourcePipeline — ResourceRequest's amount
+ *  sign is the loss/gain switch (recon-confirmed). Falls back to a clamped direct update on import drift. */
+async function sheetAdjustResource(actor, resourceType, amount) {
+	if (!actor || !['hp', 'mp', 'ip'].includes(resourceType) || !amount) return;
+	try {
+		const { ResourceRequest, ResourcePipeline, InlineSourceInfo } = await fuAdapter();
+		const req = new ResourceRequest(InlineSourceInfo.fromInstance(actor), [actor], resourceType, amount, false);
+		return await ResourcePipeline.process(req);
+	} catch (err) {
+		console.warn('[rippers-guise] ResourcePipeline unavailable — clamped direct fallback:', err);
+		const r = actor.system?.resources?.[resourceType] ?? {};
+		const max = Number.isFinite(Number(r.max)) ? Number(r.max) : Infinity;
+		const next = Math.max(0, Math.min(max, Number(r.value ?? 0) + amount));
+		await actor.update({ [`system.resources.${resourceType}.value`]: next });
+	}
+}
+
+/** Which actor a status control acts on: SELF = the sheet's actor; TARGET = the user's first targeted
+ *  token's actor (null if none). Pure given (actor, self, targets-iterable). */
+function statusTargetActor(actor, self, targets) {
+	if (self) return actor ?? null;
+	const first = (targets && targets[Symbol.iterator]) ? [...targets][0] : null;
+	return first?.actor ?? null;
+}
+/** Toggle a FU status on an actor via Effects.toggleStatusEffect (falls back to core toggleStatusEffect). */
+async function sheetToggleStatus(actor, statusId) {
+	if (!actor || !statusId) return;
+	try {
+		const { Effects, InlineSourceInfo } = await fuAdapter();
+		return await Effects.toggleStatusEffect(actor, statusId, InlineSourceInfo.fromInstance(actor));
+	} catch (err) {
+		console.warn('[rippers-guise] Effects.toggleStatusEffect unavailable — core fallback:', err);
+		if (typeof actor.toggleStatusEffect === 'function') return actor.toggleStatusEffect(statusId);
+	}
+}
+/** Open rippers-conditions' Affliction/Regeneration dialog on the actor (reuses its published api). */
+function sheetOpenConditions(actor) {
+	const api = globalThis.game?.modules?.get?.('rippers-conditions')?.api;
+	if (typeof api?.openConditionDialog === 'function') return api.openConditionDialog(actor);
+	ui.notifications?.info(game.i18n?.localize?.('RIPPERS.Sheet.NoConditionsModule') ?? 'rippers-conditions is not active.');
+}
+/** Guise swap from the roster: worn → dismiss (unmask); otherwise bind it. */
+async function sheetGuiseWear(actor, guiseId) {
+	if (!actor || !guiseId) return;
+	return getActiveGuise(actor) === guiseId ? dismissGuise(actor, guiseId) : bindGuise(actor, guiseId);
+}
+/** The Swap button: worn → unmask; else wear the first roster guise (the picker gives precise choice). */
+async function sheetGuiseSwap(actor) {
+	if (!actor) return;
+	const cur = getActiveGuise(actor);
+	if (cur) return dismissGuise(actor, cur);
+	const first = actor.items?.filter ? actor.items.filter(isGuiseItem)[0] : null;
+	if (first) return bindGuise(actor, first.id);
+	ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Sheet.NoGuises') ?? 'No guise to wear.');
 }
 
 let _RippersActorSheet = null;
@@ -2975,19 +3089,47 @@ function getRippersActorSheetClass() {
 	const { HandlebarsApplicationMixin } = foundry.applications.api;
 	const { ActorSheetV2 } = foundry.applications.sheets;
 	class RippersActorSheet extends HandlebarsApplicationMixin(ActorSheetV2) {
+		_activeTab = 'form';       // sheet view-state (not persisted on the actor)
+		_statusSelf = true;
+		_showConditions = false;
 		static DEFAULT_OPTIONS = {
 			classes: ['rippers-guise', 'rippers-actor-sheet'],
-			position: { width: 940, height: 760 },
+			position: { width: 1000, height: 780 },
 			window: { resizable: true, title: 'RIPPERS.Sheet.Title', icon: 'fas fa-mask' },
-			// Phase 1: no actions — read-only. Control wiring is Phase 2.
-			actions: {},
+			actions: {
+				resAdjust: RippersActorSheet.onResAdjust,
+				toggleStatus: RippersActorSheet.onToggleStatus,
+				statusMode: RippersActorSheet.onStatusMode,
+				toggleConditions: RippersActorSheet.onToggleConditions,
+				openConditions: RippersActorSheet.onOpenConditions,
+				selectTab: RippersActorSheet.onSelectTab,
+				guiseWear: RippersActorSheet.onGuiseWear,
+				guiseSwap: RippersActorSheet.onGuiseSwap,
+			},
 		};
 		static PARTS = { body: { template: `modules/${MODULE_ID}/templates/rippers-actor-sheet.hbs` } };
 		async _prepareContext(options) {
 			const ctx = await super._prepareContext(options);
-			const vm = await buildRippersSheetVM(this.document);
+			const vm = await buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions });
 			return { ...ctx, actor: this.document, vm };
 		}
+		// ── actions (AppV2 binds `this` to the app instance) ──
+		static async onResAdjust(event, target) {
+			const res = target?.dataset?.res; const dir = Number(target?.dataset?.dir) || 0;
+			if (res && dir) { await sheetAdjustResource(this.document, res, dir); this.render(); }
+		}
+		static async onToggleStatus(event, target) {
+			const id = target?.dataset?.status;
+			const act = statusTargetActor(this.document, this._statusSelf, globalThis.game?.user?.targets);
+			if (!act) { ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Sheet.NoTarget') ?? 'No target selected.'); return; }
+			if (id) { await sheetToggleStatus(act, id); this.render(); }
+		}
+		static onStatusMode(event, target) { this._statusSelf = target?.dataset?.mode !== 'target'; this.render(); }
+		static onToggleConditions() { this._showConditions = !this._showConditions; this.render(); }
+		static onOpenConditions() { sheetOpenConditions(statusTargetActor(this.document, this._statusSelf, globalThis.game?.user?.targets) ?? this.document); }
+		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this.render(); } }
+		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (id) { await sheetGuiseWear(this.document, id); this.render(); } }
+		static async onGuiseSwap() { await sheetGuiseSwap(this.document); this.render(); }
 	}
 	_RippersActorSheet = RippersActorSheet;
 	return RippersActorSheet;
@@ -3259,4 +3401,5 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags };
+export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
