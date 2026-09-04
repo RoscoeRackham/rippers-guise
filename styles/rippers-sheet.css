@@ -353,3 +353,74 @@
 .rippers-sheet .rs-play-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--rs-border); font-family: var(--rs-mono); font-size: 10px; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-play-flavor { font-family: var(--rs-disp); font-size: 15px; color: var(--rs-bone); font-weight: 800; }
 .rippers-sheet .rs-play-turn { opacity: .8; }
+
+/* ── v0.7.29: THE GUISE play surface skinned to the Design mockup (2a "The Slash") ────────────────── */
+.rippers-sheet .rs-warn { color: var(--rs-vuln); font-weight: 700; }
+.rippers-sheet .rs-dashed { border: 1px dashed var(--rs-muted) !important; background: transparent !important; }
+/* title bar */
+.rippers-sheet .rs-play-titlebar { border-bottom: 1px solid var(--rs-border-red); padding-bottom: 5px; }
+.rippers-sheet .rs-play-tb-k { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .18em; color: var(--rs-muted); }
+/* 2. character summary strip */
+.rippers-sheet .rs-play-strip { background: var(--rs-card2); border: 1px solid var(--rs-border); border-left: 3px solid var(--rs-red); padding: 10px 14px; display: flex; flex-direction: column; gap: 9px; }
+.rippers-sheet .rs-play-who { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.rippers-sheet .rs-play-cname { font-family: var(--rs-disp); font-weight: 900; font-size: 26px; line-height: 1.15; color: var(--rs-bone); }
+.rippers-sheet .rs-play-meta { font-family: var(--rs-mono); font-size: 10px; letter-spacing: .12em; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-play-vitals { display: flex; gap: 16px; flex-wrap: wrap; }
+.rippers-sheet .rs-play-vital { font-family: var(--rs-mono); font-size: 12px; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-play-vk { font-size: 9px; letter-spacing: .14em; color: var(--rs-muted); margin-right: 4px; }
+.rippers-sheet .rs-play-vv { color: var(--rs-bone); font-weight: 600; }
+.rippers-sheet .rs-play-vsub { font-size: 9px; letter-spacing: .1em; color: var(--rs-vuln); margin-left: 4px; }
+.rippers-sheet .rs-play-lent { color: var(--rs-green); font-weight: 600; }
+/* 2b. die-shape attributes */
+.rippers-sheet .rs-play-dice { display: flex; gap: 14px; flex-wrap: wrap; }
+.rippers-sheet .rs-die { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
+.rippers-sheet .rs-die-shape { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: var(--rs-panel); border: 1px solid var(--rs-border); }
+.rippers-sheet .rs-die-sq .rs-die-shape { clip-path: none; }
+.rippers-sheet .rs-die-dia .rs-die-shape { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.rippers-sheet .rs-die-kite .rs-die-shape { clip-path: polygon(50% 0, 100% 38%, 50% 100%, 0 38%); }
+.rippers-sheet .rs-die-hex .rs-die-shape { clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+.rippers-sheet .rs-die-val { font-family: var(--rs-mono); font-size: 13px; font-weight: 600; color: var(--rs-bone); }
+.rippers-sheet .rs-die-lbl { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-die-up .rs-die-shape { border-color: var(--rs-green); background: rgba(75,191,154,.12); }
+.rippers-sheet .rs-die-up .rs-die-val { color: var(--rs-green); }
+.rippers-sheet .rs-die-down .rs-die-shape { border-color: var(--rs-vuln); }
+.rippers-sheet .rs-die-down .rs-die-val { color: var(--rs-vuln); }
+/* 3. guise title + preview */
+.rippers-sheet .rs-play-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.rippers-sheet .rs-play-previewing { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .16em; color: var(--rs-violet); border: 1px solid var(--rs-violet); padding: 2px 6px; vertical-align: middle; }
+.rippers-sheet .rs-play-preview { display: inline-flex; align-items: center; gap: 6px; }
+.rippers-sheet .rs-play-preview-k { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .14em; color: var(--rs-muted); }
+.rippers-sheet .rs-play-preview select { font-family: var(--rs-mono); font-size: 11px; background: var(--rs-panel); color: var(--rs-bone); border: 1px solid var(--rs-border); padding: 3px 6px; }
+/* 4b. class sub-note + source tag + caret */
+.rippers-sheet .rs-play-subnote { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .12em; color: var(--rs-muted); margin: -2px 0 4px; }
+.rippers-sheet .rs-play-caret { color: var(--rs-red); font-size: 9px; }
+.rippers-sheet .rs-play-skill[open] .rs-play-caret { transform: rotate(90deg); display: inline-block; }
+.rippers-sheet .rs-play-source { font-family: var(--rs-mono); font-size: 9px; color: var(--rs-muted); margin-top: 3px; opacity: .8; }
+/* 5. heroic row */
+.rippers-sheet .rs-play-heroics { display: flex; gap: 10px; flex-wrap: wrap; }
+.rippers-sheet .rs-play-heroic-slot { flex: 1 1 200px; }
+.rippers-sheet .rs-play-heroic-slot > summary { list-style: none; cursor: pointer; }
+.rippers-sheet .rs-play-heroic-req { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-gold); margin: 4px 0; }
+.rippers-sheet .rs-play-heroic-empty { flex: 1 1 200px; font-family: var(--rs-mono); font-size: 10px; letter-spacing: .12em; color: var(--rs-muted); padding: 6px 12px; transform: skewX(-10deg); text-align: center; }
+/* 6. what-this-guise-changes + armor columns */
+.rippers-sheet .rs-play-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rippers-sheet .rs-play-changes, .rippers-sheet .rs-play-armorbox { background: var(--rs-card); border: 1px solid var(--rs-border); padding: 8px 10px; }
+.rippers-sheet .rs-play-sec-k { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .14em; color: var(--rs-muted); margin-bottom: 6px; }
+.rippers-sheet .rs-play-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.rippers-sheet .rs-play-chip { font-family: var(--rs-mono); font-size: 11px; color: var(--rs-bone); border: 1px solid var(--rs-border); padding: 3px 8px; transform: skewX(-10deg); }
+.rippers-sheet .rs-play-chip > * { display: inline-block; transform: skewX(10deg); }
+.rippers-sheet .rs-play-chip i { font-size: 9px; color: var(--rs-muted); font-style: normal; }
+.rippers-sheet .rs-play-chip.rs-chip-die { color: var(--rs-green); border-color: rgba(75,191,154,.45); }
+.rippers-sheet .rs-play-chip.rs-chip-lent { color: var(--rs-green); }
+.rippers-sheet .rs-play-martial { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-gold); border: 1px solid var(--rs-gold); padding: 1px 4px; }
+.rippers-sheet .rs-play-owed { font-family: var(--rs-mono); font-size: 10px; letter-spacing: .06em; margin-top: 4px; }
+/* 7. affinity states */
+.rippers-sheet .rs-affchip.rs-aff-immune { color: var(--rs-green); border-color: rgba(75,191,154,.45); }
+.rippers-sheet .rs-affchip.rs-aff-resistant { color: var(--rs-bone-dim); border-color: var(--rs-border); }
+.rippers-sheet .rs-affchip.rs-aff-vulnerable { color: var(--rs-vuln); border-color: rgba(255,90,106,.45); }
+.rippers-sheet .rs-affchip.rs-aff-neutral { color: var(--rs-muted); border-style: dashed; }
+/* 8. bane/tell/perk + 9. clot */
+.rippers-sheet .rs-play-btp { display: flex; flex-direction: column; gap: 5px; }
+.rippers-sheet .rs-play-clot { font-family: var(--rs-mono); font-size: 11px; color: var(--rs-bone-dim); border: 1px solid var(--rs-border); padding: 5px 10px; }
+/* 10. footer trade tag */
+.rippers-sheet .rs-tag-trade { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .12em; color: var(--rs-violet); border: 1px solid var(--rs-violet); padding: 2px 8px; }

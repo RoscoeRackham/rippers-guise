@@ -3414,46 +3414,100 @@ function buildInventoryVM(actor) {
 	});
 	return { sections, any: sections.some((s) => s.any), useEquipment: !!(actor?.system?.useEquipment?.value) };
 }
-/** v0.7.25 — 'The Guise' PLAY SURFACE: a Persona-style at-a-glance readout of the ACTIVE guise. Async
- *  (resolves class/skill/heroic UUIDs + per-skill descriptions for look-closer). Real data only; where a
- *  field isn't modelled it is marked with a `gap` flag rather than invented (per-skill sub-notes, a guise
- *  flavour line). ATTRIBUTES are CHARACTER-level (post-effect .current), NOT per-guise (Austin ruling). */
-async function buildGuisePlayVM(actor) {
-	const guise = activeGuiseItem(actor);
-	if (!guise) return { active: false };
+/** v0.7.25 — 'The Guise' PLAY SURFACE: a Persona-style at-a-glance readout of a guise. Async (resolves
+ *  class/skill/heroic UUIDs + per-skill descriptions for the look-closer layer). v0.7.29 skins it to the
+ *  Design mockup (GUISE-PLAY-SURFACE-DESIGN-SPEC.md, 2a "The Slash"): 9-element affinity grid, 3 heroic
+ *  slots, WHAT-THIS-GUISE-CHANGES chips, die-shape attributes, PREVIEW of another guise, clot stub.
+ *  HARD RULE: ⚠ is never silently filled — dashed = empty/unrecorded, green = live effect/immune, red =
+ *  vulnerable/owed. Real data only; where a field isn't in our books it is rendered as the ⚠ hole exactly
+ *  as the design draws it. ATTRIBUTES are CHARACTER-level (post-effect .current), NOT per-guise (Austin).
+ *  `opts.previewId` renders ANOTHER owned guise's readout WITHOUT binding it (the character strip, which is
+ *  character-level, is unaffected and stays on the root VM). */
+async function buildGuisePlayVM(actor, opts = {}) {
+	const activeItem = activeGuiseItem(actor);
+	// PREVIEW (spec §3): show a different owned guise's readout — no Swap, no Turn, player-visible.
+	let guise = activeItem, preview = false;
+	if (opts.previewId) {
+		const pv = actor?.items?.get?.(opts.previewId) ?? null;
+		if (pv && isGuiseItem(pv) && pv.id !== activeItem?.id) { guise = pv; preview = true; }
+	}
+	// The preview MENU: every guise the actor owns; the worn one carries the BOUND marker.
+	const guiseMenu = (actor?.items?.filter ? actor.items.filter(isGuiseItem) : []).map((g) => ({
+		id: g.id, name: g.name ?? '(guise)', worn: g.id === activeItem?.id,
+		previewing: preview && g.id === guise?.id, marker: g.id === activeItem?.id ? 'BOUND' : '',
+	}));
+	if (!guise) return { active: false, guiseMenu };
 	const d = guise.system?.data ?? {};
 	const innate = !!guise.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
-	// Classes → skills (name + SL + max + look-closer description). Resolve each class + skill Item once.
+	// Classes → skills (name + SL + max + look-closer description + source tag). An unresolvable class UUID
+	// is an UNAUTHORED class slot (dashed ⚠), not an error — the design draws Carbolic Coat that way.
 	const classes = [];
 	for (const cls of d.classes ?? []) {
 		const cdoc = await safeFromUuid(cls.classUuid);
+		if (!cdoc) { classes.push({ name: '', unauthored: true, skills: [], hasSubNote: false }); continue; }
 		const defs = await skillsForClass(cls.classUuid);          // [{uuid,name,maxSl}] parsed from the class ref
 		const byUuid = new Map(defs.map((s) => [s.uuid, s]));
 		const skills = [];
 		for (const s of cls.skills ?? []) {
 			const skDoc = await safeFromUuid(s.skillUuid);
 			const desc = skDoc?.system?.description ?? '';
+			// Source tag: from the skill Item where authored (a citation flag or system.source); else omitted.
+			const source = String(skDoc?.getFlag?.(MODULE_ID, 'source') ?? skDoc?.system?.source?.value ?? '').trim();
 			skills.push({
 				name: byUuid.get(s.skillUuid)?.name ?? skDoc?.name ?? '(skill)',
 				sl: Number(s.sl) || 0, maxSl: Number(byUuid.get(s.skillUuid)?.maxSl ?? 1),
-				desc, hasDesc: !!String(desc).trim(),
+				desc, hasDesc: !!String(desc).trim(), source, hasSource: !!source,
 			});
 		}
-		classes.push({ name: cdoc?.name ?? '(class)', skills });
+		// Sub-note line (therioform names etc.): NO structured selection dataset exists (flagged to god);
+		// rendered only if authored on the class entry, never invented.
+		const subNote = String(cls.subNote ?? '').trim();
+		classes.push({ name: cdoc.name ?? '(class)', unauthored: false, skills, subNote, hasSubNote: !!subNote });
 	}
+	// Heroic row — THREE slots. Slot 0 = the guise's own (signature/innate) Heroic; 1 & 2 are drawn empty
+	// (whether extra heroics attach to a bound guise is UNDECIDED — Austin; render dashed EMPTY, no invent).
 	const heroicUuid = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
-	const heroic = heroicUuid ? ((await safeFromUuid(heroicUuid))?.name ?? '(unresolved)') : '';
-	// Affinities/resistances (guise trio). Icons/colours are CSS by type + good/bad.
-	const affinities = (d.affinityModifiers ?? []).map((m) => ({ type: m.type, word: affinityWordOf(m.level), level: m.level, ...rsAffFlags(m.level) }));
-	// Attributes — CHARACTER-level, post-effect .current (fallback .base). Bars proportional to d12 cap.
+	const hDoc = heroicUuid ? await safeFromUuid(heroicUuid) : null;
+	const heroicSlots = [0, 1, 2].map((i) => {
+		if (i === 0 && hDoc) {
+			const desc = hDoc.system?.description ?? '';
+			const req = String(hDoc.system?.requirement?.value ?? hDoc.system?.requirements?.value ?? hDoc.system?.class?.value ?? '').trim();
+			return { filled: true, name: hDoc.name ?? '(heroic)', desc, hasDesc: !!String(desc).trim(), req, hasReq: !!req };
+		}
+		return { filled: false };
+	});
+	const heroic = hDoc?.name ?? '';   // kept for back-compat / headless tests
+	// Affinities — ALL NINE elements. Guise trio recorded via affinityModifiers; the rest neutral. IMMUNE
+	// (green) = level ≥ 2, RESISTANT (tan) = 1, VULNERABLE (red) = ≤ −1, neutral (dashed) = 0.
+	const recorded = new Map((d.affinityModifiers ?? []).map((m) => [m.type, Number(m.level) || 0]));
+	const affinities = RS_AFFINITY_TYPES.map((t) => {
+		const lvl = recorded.get(t) ?? 0;
+		const state = lvl >= 2 ? 'immune' : lvl === 1 ? 'resistant' : lvl <= -1 ? 'vulnerable' : 'neutral';
+		return { type: t, level: lvl, word: lvl === 0 ? '—' : affinityWordOf(lvl), state };
+	});
+	const affinityTrioOwed = (d.affinityModifiers ?? []).length === 0;   // unrecorded → all-neutral + red note
+	// Attributes — CHARACTER-level, post-effect .current vs .base. An effect-moved die renders green ▲ and
+	// keeps the base recoverable. Die SHAPES per the spec: d6 square, d8 diamond, d10 kite (else hex).
 	const ABBR = { dex: 'DEX', ins: 'INS', mig: 'MIG', wlp: 'WLP' };
-	const attributes = ['dex', 'ins', 'mig', 'wlp'].map((k) => {
+	const SHAPE = { 6: 'sq', 8: 'dia', 10: 'kite' };
+	const attributes = ['mig', 'dex', 'ins', 'wlp'].map((k) => {
 		const a = actor?.system?.attributes?.[k] ?? {};
 		const die = Number(a.current ?? a.base ?? 6) || 6;
 		const base = Number(a.base ?? die) || die;
-		return { key: k, label: ABBR[k], die, pct: Math.round(Math.min(die, 12) / 12 * 100), buffed: die > base, debuffed: die < base };
+		return { key: k, label: ABBR[k], die, base, shape: SHAPE[die] ?? 'hex', buffed: die > base, debuffed: die < base };
 	});
-	// Equipped gear (native system.equipped record → resolved items). Armor line + a full equipped block.
+	// WHAT THIS GUISE CHANGES — the WORN guise's modifiers, from REAL data only: its lent HP/MP layers +
+	// IP satchel (system.data.lentHp/lentMp/ipSatchel — first-class guise state) and attribute die-bumps
+	// (current > base). Skill-derived ACC/DMG mods are computed by the rules engine, not stored on a guise
+	// → NOT emitted here (flagged to god). Die-bumps reflect ALL live character effects, not only this
+	// guise's (precise per-guise attribution would need the effect's origin flag — a refinement, flagged).
+	const changes = [];
+	const gv = guiseVitals(guise);
+	if (gv.hp.maximum > 0) changes.push({ label: `+${gv.hp.maximum} HP`, note: 'lent layer', kind: 'lent' });
+	if (gv.mp.maximum > 0) changes.push({ label: `+${gv.mp.maximum} MP`, note: 'lent layer', kind: 'lent' });
+	if (gv.ip.capacity > 0) changes.push({ label: `+${gv.ip.capacity} IP`, note: 'satchel', kind: 'ip' });
+	for (const a of attributes) if (a.buffed) changes.push({ label: `▲ ${a.label} d${a.base}→d${a.die}`, note: 'effect', kind: 'die' });
+	// Equipped gear (native system.equipped record → resolved items). Armor line + full equipped block.
 	const eq = actor?.system?.equipped ?? {};
 	const getItem = (id) => (id ? (actor?.items?.get?.(id) ?? null) : null);
 	const armorItem = getItem(eq.armor);
@@ -3461,6 +3515,7 @@ async function buildGuisePlayVM(actor) {
 		name: armorItem.name ?? '',
 		defFormula: `${(rsDotGet(armorItem, 'system.def.attribute') ?? 'dex').toUpperCase()}+${rsDotGet(armorItem, 'system.def.value') ?? 0}`,
 		mdefFormula: `${(rsDotGet(armorItem, 'system.mdef.attribute') ?? 'ins').toUpperCase()}+${rsDotGet(armorItem, 'system.mdef.value') ?? 0}`,
+		martial: !!rsDotGet(armorItem, 'system.isMartial.value'),
 	} : null;
 	const wornDef = Number(actor?.system?.derived?.def?.value ?? 0), wornMdef = Number(actor?.system?.derived?.mdef?.value ?? 0);
 	const equippedSlots = [['mainHand', eq.mainHand], ['offHand', eq.offHand], ['armor', eq.armor], ['accessory', eq.accessory]];
@@ -3474,16 +3529,20 @@ async function buildGuisePlayVM(actor) {
 	const weaponItems = [...(actor?.itemTypes?.weapon ?? []), ...(actor?.itemTypes?.customWeapon ?? [])];
 	const primaryWeapon = getItem(eq.mainHand) && weaponItems.some((w) => w.id === eq.mainHand) ? getItem(eq.mainHand) : weaponItems[0] ?? null;
 	const weapon = primaryWeapon ? { name: primaryWeapon.name ?? '', ...weaponStats(primaryWeapon) } : null;
-	// Guise trait cards (worn guise only — the innate guise carries none of these by rule).
+	// Clot pane: only the empty state is designed — a seated-Clot readout is UNSPECIFIED (spec §9, owed to
+	// Austin). Stub the seated state; render the empty state faithfully. No invented seated readout.
+	const clot = { seated: false };
+	// Torment: character-level; authored on a flag if present, else the ⚠ hole (never invented).
+	const torment = String(actor?.getFlag?.(MODULE_ID, 'torment') ?? '').trim();
 	const bonusDescriptor = d.bonus?.descriptor ?? '';
 	return {
-		active: true, guiseName: guise.name ?? '', innate, tradable: !innate,
-		classes, heroic, affinities, attributes,
-		armor, wornDef, wornMdef, equipment,
-		weapon,
+		active: true, preview, previewName: preview ? (guise.name ?? '') : '', activeName: activeItem?.name ?? '',
+		guiseMenu, guiseName: guise.name ?? '', innate, tradable: !innate, torment,
+		classes, heroic, heroicSlots, affinities, affinityTrioOwed, attributes, changes,
+		armor, wornDef, wornMdef, equipment, weapon, clot,
 		bane: d.bane ?? '', tell: d.tell ?? '', perk: d.perk ?? '',
 		bonus: bonusDescriptor ? { descriptor: bonusDescriptor, value: Number(d.bonus?.value ?? 3) } : null,
-		fieldLimit: guiseFieldLimit(partySize()),   // v0.7.28: flavour line dropped (Austin)
+		fieldLimit: guiseFieldLimit(partySize()),
 	};
 }
 // The six core FU statuses (exact ids, projectfu config.mjs FU.temporaryEffects) + the boons/banes tray.
@@ -4003,7 +4062,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
 	const tab = { play: activeTab === 'play', form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', effects: activeTab === 'effects', spells: activeTab === 'spells', edit: activeTab === 'edit' };
 	if (!tab.play && !tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.effects && !tab.spells && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
-	const play = tab.play ? await buildGuisePlayVM(actor) : null; // v0.7.25: 'The Guise' play surface (active guise)
+	const play = tab.play ? await buildGuisePlayVM(actor, { previewId: ui.previewGuiseId }) : null; // v0.7.25/29: 'The Guise' play surface (active guise + preview)
 	// v0.7.15: full inventory (Kit) + native Active Effects (Effects tab) — built only when their tab is open.
 	const inventory = tab.kit ? buildInventoryVM(actor) : null;
 	const effects = tab.effects ? buildEffectsVM(actor) : null;
@@ -4510,6 +4569,7 @@ function getRippersActorSheetClass() {
 	const { ActorSheetV2 } = foundry.applications.sheets;
 	class RippersActorSheet extends HandlebarsApplicationMixin(ActorSheetV2) {
 		_activeTab = 'play';       // sheet view-state (not persisted): opens on 'The Guise' play surface
+		_previewGuiseId = null;    // v0.7.29: PREVIEW dropdown target (not persisted); null = show the worn guise
 		_statusSelf = true;
 		_showConditions = false;
 		static DEFAULT_OPTIONS = {
@@ -4574,7 +4634,7 @@ function getRippersActorSheetClass() {
 		static PARTS = { body: { template: `modules/${MODULE_ID}/templates/rippers-actor-sheet.hbs` } };
 		async _prepareContext(options) {
 			const ctx = await super._prepareContext(options);
-			const vm = await buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions });
+			const vm = await buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions, previewGuiseId: this._previewGuiseId });
 			return { ...ctx, actor: this.document, vm };
 		}
 		// Forward-compat hedge (SHEET-INJECTION-AUDIT.md): one class-independent post-render hook so a
@@ -4588,6 +4648,7 @@ function getRippersActorSheetClass() {
 			try { this._wireEditableFields(this.element); } catch (err) { console.warn('[rippers-guise] editable-field wiring failed:', err); }
 			try { this._wireItemEdit(this.element); } catch (err) { console.warn('[rippers-guise] item-edit wiring failed:', err); }
 			try { this._wireBondParty(this.element); } catch (err) { console.warn('[rippers-guise] bond party-toggle wiring failed:', err); }
+			try { this._wirePreview(this.element); } catch (err) { console.warn('[rippers-guise] play-surface preview wiring failed:', err); }
 			this._ensureDefaultGuise(); // P4: no active guise → wear the basic guise (fire-and-forget; re-renders)
 		}
 		// P4 (Austin: "Unmasked form doesn't make sense. It should default to his basic Guise."): when the
@@ -4601,6 +4662,14 @@ function getRippersActorSheetClass() {
 			for (const el of root.querySelectorAll('[data-bond-party]')) {
 				el.addEventListener('change', async () => { await sheetBondPartyToggle(self.document, el.dataset.bondParty, !!el.checked); self.render(); });
 			}
+		}
+		// v0.7.29: the play-surface PREVIEW dropdown — re-render the guise readout for another owned guise
+		// WITHOUT binding it (no Swap, no Turn). Empty value clears the preview back to the worn guise.
+		_wirePreview(root) {
+			if (!root?.querySelector) return;
+			const self = this;
+			const sel = root.querySelector('[data-preview-guise]');
+			if (sel) sel.addEventListener('change', () => { self._previewGuiseId = sel.value || null; self.render(); });
 		}
 		async _ensureDefaultGuise() {
 			try {
@@ -4718,8 +4787,8 @@ function getRippersActorSheetClass() {
 		static onStatusMode(event, target) { this._statusSelf = target?.dataset?.mode !== 'target'; this.render(); }
 		static onToggleConditions() { this._showConditions = !this._showConditions; this.render(); }
 		static onOpenConditions() { sheetOpenConditions(statusTargetActor(this.document, this._statusSelf, globalThis.game?.user?.targets) ?? this.document); }
-		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this.render(); } }
-		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (!id) return; try { await sheetGuiseWear(this.document, id); } catch (err) { console.warn('[rippers-guise] guise wear/swap failed:', err); } finally { this.render(); } }
+		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this._previewGuiseId = null; this.render(); } }
+		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (!id) return; this._previewGuiseId = null; try { await sheetGuiseWear(this.document, id); } catch (err) { console.warn('[rippers-guise] guise wear/swap failed:', err); } finally { this.render(); } }
 		static async onPickArcana(event, target) { const id = target?.dataset?.guise; if (!id) return; try { await sheetPickArcana(this.document, id); } catch (err) { console.warn('[rippers-guise] arcana pick failed:', err); } finally { this.render(); } }
 		static async onToggleFace() { await sheetToggleFace(this.document); this.render(); }
 		static async onSetFace(event, target) {

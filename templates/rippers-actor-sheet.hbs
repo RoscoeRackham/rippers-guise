@@ -104,52 +104,111 @@
 			     gaps are marked, never invented. Attributes are CHARACTER-level (post-effect). --}}
 			{{#if vm.tab.play}}
 				{{#if vm.play.active}}
-					<div class="rs-play">
-						<div class="rs-play-title">{{vm.play.guiseName}}</div>
-						{{#if vm.play.heroic}}<div class="rs-play-heroic"><span class="rs-play-heroic-k">{{localize 'RIPPERS.Sheet.Heroic'}}</span> {{vm.play.heroic}}</div>{{/if}}
-						{{!-- classes as columns; each skill is look-closer (native details) --}}
-						<div class="rs-play-classes">
-							{{#each vm.play.classes as |c|}}
-								<div class="rs-play-class">
-									<div class="rs-play-class-name">{{c.name}}</div>
-									{{#each c.skills as |sk|}}
-										<details class="rs-play-skill">
-											<summary><span class="rs-play-skill-name">{{sk.name}}</span><span class="rs-play-skill-sl">SL {{sk.sl}}/{{sk.maxSl}}</span></summary>
-											{{#if sk.hasDesc}}<div class="rs-play-skill-desc">{{{sk.desc}}}</div>{{else}}<div class="rs-play-gap">{{localize 'RIPPERS.Sheet.NoSkillDesc'}}</div>{{/if}}
-										</details>
+						<div class="rs-play">
+							{{!-- 1. title bar --}}
+							<div class="rs-play-titlebar"><span class="rs-play-tb-k">THE GUISE — ACTIVE-GUISE PLAY SURFACE</span></div>
+							{{!-- 2. CHARACTER SUMMARY STRIP — character-level (name, level, torment, vitals, dice). Never
+							     changes with the guise; only live EFFECTS move it (green deltas). Sourced from the root VM. --}}
+							<div class="rs-play-strip">
+								<div class="rs-play-who">
+									<span class="rs-play-cname">{{vm.masthead.name}}</span>
+									<span class="rs-play-meta">LEVEL {{vm.masthead.level}} · TORMENT — {{#if vm.play.torment}}{{vm.play.torment}}{{else}}<span class="rs-warn">⚠</span>{{/if}}</span>
+								</div>
+								<div class="rs-play-vitals">
+									<span class="rs-play-vital"><b class="rs-play-vk">HP</b> <span class="rs-play-vv">{{vm.vitals.hp.bar.value}}{{#if vm.vitals.hp.bar.max}}/{{vm.vitals.hp.bar.max}}{{/if}}{{#if vm.vitals.hp.bar.lent}} <span class="rs-play-lent">(+{{vm.vitals.hp.bar.lent}})</span>{{/if}}</span>{{#if vm.vitals.crisis.score}} <span class="rs-play-vsub">CRISIS {{vm.vitals.crisis.score}}</span>{{/if}}</span>
+									<span class="rs-play-vital"><b class="rs-play-vk">MP</b> <span class="rs-play-vv">{{vm.vitals.mp.bar.value}}{{#if vm.vitals.mp.bar.max}}/{{vm.vitals.mp.bar.max}}{{/if}}{{#if vm.vitals.mp.bar.lent}} <span class="rs-play-lent">(+{{vm.vitals.mp.bar.lent}})</span>{{/if}}</span></span>
+									<span class="rs-play-vital"><b class="rs-play-vk">IP</b> <span class="rs-play-vv">{{vm.vitals.ip.dots.value}}{{#if vm.vitals.ip.dots.lent}} <span class="rs-play-lent">(+{{vm.vitals.ip.dots.lent}})</span>{{/if}}</span></span>
+									<span class="rs-play-vital"><b class="rs-play-vk">FABULA</b> <span class="rs-play-vv">{{vm.vitals.fp}}</span></span>
+								</div>
+								<div class="rs-play-dice">
+									{{#each vm.play.attributes as |a|}}
+										<span class="rs-die rs-die-{{a.shape}}{{#if a.buffed}} rs-die-up{{/if}}{{#if a.debuffed}} rs-die-down{{/if}}"><span class="rs-die-shape"><span class="rs-die-val">{{#if a.buffed}}▲{{/if}}d{{a.die}}</span></span><span class="rs-die-lbl">{{a.label}}</span></span>
 									{{/each}}
 								</div>
-							{{/each}}
+							</div>
+							{{!-- 3. guise title + PREVIEW dropdown (player-visible; previews a readout only, no Swap, no Turn) --}}
+							<div class="rs-play-head">
+								<div class="rs-play-title">{{vm.play.guiseName}}{{#if vm.play.preview}} <span class="rs-play-previewing">PREVIEW</span>{{/if}}</div>
+								<div class="rs-play-preview">
+									<span class="rs-play-preview-k">PREVIEW</span>
+									<select data-preview-guise>
+										<option value="">{{vm.play.activeName}} — BOUND</option>
+										{{#each vm.play.guiseMenu as |g|}}{{#unless g.worn}}<option value="{{g.id}}"{{#if g.previewing}} selected{{/if}}>{{g.name}}</option>{{/unless}}{{/each}}
+									</select>
+								</div>
+							</div>
+							{{!-- 4. classes as cards; each skill row click-to-expand full rule text + source tag --}}
+							<div class="rs-play-classes">
+								{{#each vm.play.classes as |c|}}
+									{{#if c.unauthored}}
+										<div class="rs-play-class rs-dashed"><div class="rs-play-class-name rs-warn">CLASS SLOT — ⚠ UNAUTHORED</div></div>
+									{{else}}
+										<div class="rs-play-class">
+											<div class="rs-play-class-name">{{c.name}}</div>
+											{{#if c.hasSubNote}}<div class="rs-play-subnote">{{c.subNote}}</div>{{/if}}
+											{{#each c.skills as |sk|}}
+												<details class="rs-play-skill">
+													<summary><span class="rs-play-skill-name">{{sk.name}}</span><span class="rs-play-skill-sl">SL {{sk.sl}}/{{sk.maxSl}} <span class="rs-play-caret">▸</span></span></summary>
+													{{#if sk.hasDesc}}<div class="rs-play-skill-desc">{{{sk.desc}}}</div>{{else}}<div class="rs-play-gap">{{localize 'RIPPERS.Sheet.NoSkillDesc'}}</div>{{/if}}
+													{{#if sk.hasSource}}<div class="rs-play-source">{{sk.source}}</div>{{/if}}
+												</details>
+											{{/each}}
+										</div>
+									{{/if}}
+								{{/each}}
+							</div>
+							{{!-- 5. heroic row — three slots; click to expand rules + requirements; empty = dashed --}}
+							<div class="rs-play-heroics">
+								{{#each vm.play.heroicSlots as |h|}}
+									{{#if h.filled}}
+										<details class="rs-play-heroic-slot">
+											<summary class="rs-play-heroic"><span class="rs-play-heroic-k">{{localize 'RIPPERS.Sheet.Heroic'}}</span> {{h.name}}</summary>
+											{{#if h.hasReq}}<div class="rs-play-heroic-req">REQ — {{h.req}}</div>{{/if}}
+											{{#if h.hasDesc}}<div class="rs-play-skill-desc">{{{h.desc}}}</div>{{/if}}
+										</details>
+									{{else}}
+										<div class="rs-play-heroic-empty rs-dashed">HEROIC SLOT — EMPTY</div>
+									{{/if}}
+								{{/each}}
+							</div>
+							{{!-- 6. WHAT THIS GUISE CHANGES + ARMOR (WORN) side by side --}}
+							<div class="rs-play-cols">
+								<div class="rs-play-changes">
+									<div class="rs-play-sec-k">WHAT THIS GUISE CHANGES</div>
+									{{#if vm.play.changes.length}}<div class="rs-play-chips">{{#each vm.play.changes as |m|}}<span class="rs-play-chip rs-chip-{{m.kind}}">{{m.label}}{{#if m.note}} <i>{{m.note}}</i>{{/if}}</span>{{/each}}</div>{{else}}<div class="rs-play-gap">—</div>{{/if}}
+								</div>
+								<div class="rs-play-armorbox">
+									<div class="rs-play-sec-k">ARMOR — WORN</div>
+									{{#if vm.play.armor}}<div class="rs-play-armor"><b>{{vm.play.armor.name}}</b>{{#if vm.play.armor.martial}} <span class="rs-play-martial">MARTIAL</span>{{/if}} · DEF {{vm.play.armor.defFormula}} · M.DEF {{vm.play.armor.mdefFormula}}</div>{{/if}}
+									<div class="rs-play-worn">WORN: DEF {{vm.play.wornDef}} · M.DEF {{vm.play.wornMdef}}</div>
+								</div>
+							</div>
+							{{!-- 7. affinities — all NINE elements, four states --}}
+							<div class="rs-play-affs">{{#each vm.play.affinities as |aff|}}<span class="rs-affchip rs-aff-{{aff.state}}">{{aff.type}} — {{aff.word}}</span>{{/each}}</div>
+							{{#if vm.play.affinityTrioOwed}}<div class="rs-play-owed rs-warn">TRIO — ⚠ NOT IN OUR BOOKS FOR THIS GUISE; FIXED AT DISTILLATION</div>{{/if}}
+							{{!-- 8. bane / tell / perk cards (innate → NONE; unauthored → ⚠ OWED) --}}
+							<div class="rs-play-btp">
+								{{#if vm.play.innate}}
+									<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> NONE — INNATE</div>
+								{{else}}
+									<div class="rs-play-card rs-play-bane"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> {{#if vm.play.bane}}{{vm.play.bane}}{{else}}<span class="rs-warn">⚠ OWED</span>{{/if}}</div>
+									<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Tell'}}</span> {{#if vm.play.tell}}{{vm.play.tell}}{{else}}<span class="rs-warn">⚠ OWED</span>{{/if}}</div>
+									<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Perk'}}</span> {{#if vm.play.perk}}{{vm.play.perk}}{{else}}<span class="rs-warn">⚠ OWED</span>{{/if}}</div>
+								{{/if}}
+								{{#if vm.play.bonus}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bonus'}}</span> +{{vm.play.bonus.value}} to {{vm.play.bonus.descriptor}}</div>{{/if}}
+							</div>
+							{{!-- 9. weapon detail + equipped (fixed at distillation) + clot --}}
+							{{#if vm.play.weapon}}<div class="rs-play-weapon"><b>{{vm.play.weapon.name}}</b> · {{vm.play.weapon.accLabel}} · {{vm.play.weapon.dmgLabel}} {{vm.play.weapon.dmgType}}{{#if vm.play.weapon.traits.length}} · {{#each vm.play.weapon.traits as |t|}}{{t}} {{/each}}{{/if}}</div>{{/if}}
+							<div class="rs-play-equip"><span class="rs-inv-label">{{localize 'RIPPERS.Sheet.Equipped'}} — FIXED AT DISTILLATION</span>{{#if vm.play.equipment.length}}{{#each vm.play.equipment as |e|}}<span class="rs-play-equip-item"><img src="{{e.img}}" alt="">{{e.name}}</span>{{/each}}{{else}}<span class="rs-play-gap">—</span>{{/if}}</div>
+							<div class="rs-play-clot">{{#if vm.play.clot.seated}}CLOT — SEATED{{else}}<span class="rs-play-gap">No Clot seated.</span>{{/if}}</div>
+							{{!-- 10. identity footer — BOUND/TRADABLE, field limit, the Turn --}}
+							<div class="rs-play-footer">
+								{{#if vm.play.tradable}}<span class="rs-tag-trade">THE PHIAL — TRADABLE</span> <span class="rs-play-turn">travels whole; bind resets on hand-off</span>{{else}}<span class="rs-tag-bound">BOUND — UNTRADABLE</span>{{/if}}
+								<span class="rs-play-field">{{localize 'RIPPERS.Sheet.FieldLimit'}}: {{vm.play.fieldLimit}}</span>
+								<span class="rs-play-turn">{{localize 'RIPPERS.Sheet.TheTurnNote'}}</span>
+							</div>
 						</div>
-						{{!-- attributes as stat bars (character-level, post-effect) --}}
-						<div class="rs-play-attrs">
-							{{#each vm.play.attributes as |a|}}
-								{{!-- v0.7.26: FU attributes are DIE SIZES (d6–d12), not a 0–100 bar — show as die chips (Austin). --}}
-								<div class="rs-play-attr{{#if a.buffed}} rs-buffed{{/if}}{{#if a.debuffed}} rs-debuffed{{/if}}"><span class="rs-play-attr-k">{{a.label}}</span><span class="rs-play-die">d{{a.die}}</span></div>
-							{{/each}}
-						</div>
-						{{!-- affinities/resistances --}}
-						{{#if vm.play.affinities.length}}<div class="rs-play-affs">{{#each vm.play.affinities as |aff|}}<span class="rs-affchip {{#if aff.good}}rs-aff-good{{/if}}{{#if aff.bad}}rs-aff-bad{{/if}}">{{aff.type}} — {{aff.word}}</span>{{/each}}</div>{{/if}}
-						{{!-- armor line + worn totals --}}
-						{{#if vm.play.armor}}<div class="rs-play-armor"><b>{{vm.play.armor.name}}</b> · DEF {{vm.play.armor.defFormula}} · M.DEF {{vm.play.armor.mdefFormula}} <span class="rs-play-worn">WORN: DEF {{vm.play.wornDef}} · M.DEF {{vm.play.wornMdef}}</span></div>{{else}}<div class="rs-play-armor">WORN: DEF {{vm.play.wornDef}} · M.DEF {{vm.play.wornMdef}}</div>{{/if}}
-						{{!-- weapon / unarmed --}}
-						{{#if vm.play.weapon}}<div class="rs-play-weapon"><b>{{vm.play.weapon.name}}</b> · {{vm.play.weapon.accLabel}} · {{vm.play.weapon.dmgLabel}} {{vm.play.weapon.dmgType}}{{#if vm.play.weapon.traits.length}} · {{#each vm.play.weapon.traits as |t|}}{{t}} {{/each}}{{/if}}</div>{{/if}}
-						{{!-- current equipment block --}}
-						{{#if vm.play.equipment.length}}<div class="rs-play-equip"><span class="rs-inv-label">{{localize 'RIPPERS.Sheet.Equipped'}}</span>{{#each vm.play.equipment as |e|}}<span class="rs-play-equip-item"><img src="{{e.img}}" alt="">{{e.name}}</span>{{/each}}</div>{{/if}}
-						{{!-- bane / tell / perk cards (worn guise) --}}
-						{{#if vm.play.bane}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> {{vm.play.bane}}</div>{{/if}}
-						{{#if vm.play.tell}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Tell'}}</span> {{vm.play.tell}}</div>{{/if}}
-						{{#if vm.play.perk}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Perk'}}</span> {{vm.play.perk}}</div>{{/if}}
-						{{#if vm.play.bonus}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bonus'}}</span> +{{vm.play.bonus.value}} to {{vm.play.bonus.descriptor}}</div>{{/if}}
-						{{!-- identity footer --}}
-						<div class="rs-play-footer">
-							{{!-- v0.7.28: flavour line dropped (Austin — no flavour field wanted). --}}
-							<span class="rs-tag-bound">{{#if vm.play.tradable}}{{localize 'RIPPERS.Sheet.Tradable'}}{{else}}{{localize 'RIPPERS.Sheet.Untradable'}}{{/if}}</span>
-							<span class="rs-play-field">{{localize 'RIPPERS.Sheet.FieldLimit'}}: {{vm.play.fieldLimit}}</span>
-							<span class="rs-play-turn">{{localize 'RIPPERS.Sheet.TheTurnNote'}}</span>
-						</div>
-					</div>
-				{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoActiveGuise'}}</p>{{/if}}
+					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoActiveGuise'}}</p>{{/if}}
 			{{/if}}
 
 			{{#if vm.tab.form}}

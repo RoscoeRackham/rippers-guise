@@ -1010,13 +1010,75 @@ test('buildGuisePlayVM: assembles the active guise (classes/skills+desc, heroic,
 	assert.equal(vm.classes[0].skills[0].sl, 2);
 	assert.equal(vm.classes[0].skills[0].hasDesc, true);           // look-closer description resolved
 	assert.equal(vm.heroic, 'Greater Theriomorphosis');
+	// v0.7.29: THREE heroic slots; slot 0 = the guise's own heroic, 1 & 2 empty (dashed).
+	assert.equal(vm.heroicSlots.length, 3);
+	assert.equal(vm.heroicSlots[0].filled, true);
+	assert.equal(vm.heroicSlots[0].name, 'Greater Theriomorphosis');
+	assert.equal(vm.heroicSlots[1].filled, false);
 	assert.equal(vm.attributes.find((a) => a.key === 'dex').die, 10); // post-effect .current, buffed over base 8
 	assert.equal(vm.attributes.find((a) => a.key === 'dex').buffed, true);
-	assert.equal(vm.affinities[0].type, 'dark');                   // trio surfaced
+	assert.equal(vm.attributes.find((a) => a.key === 'dex').shape, 'kite'); // d10 → kite
+	assert.equal(vm.attributes.find((a) => a.key === 'mig').shape, 'sq');   // d6 → square
+	// v0.7.29: ALL NINE elements rendered; the recorded dark:2 is IMMUNE (green), the rest neutral.
+	assert.equal(vm.affinities.length, 9);
+	assert.equal(vm.affinities.find((a) => a.type === 'dark').state, 'immune');
+	assert.equal(vm.affinities.find((a) => a.type === 'fire').state, 'neutral');
+	assert.equal(vm.affinityTrioOwed, false);                      // this guise HAS recorded affinities
+	// v0.7.29: WHAT-THIS-GUISE-CHANGES includes the DEX die-bump (d8→d10), from real .current data.
+	assert.ok(vm.changes.some((c) => c.kind === 'die' && /DEX/.test(c.label)));
 	assert.equal(vm.bane, 'Silver'); assert.equal(vm.tell, 'Twitching'); assert.equal(vm.perk, 'Nightsight');
 	assert.equal(vm.wornDef, 11); assert.equal(vm.wornMdef, 7);
 	assert.ok(vm.weapon && vm.weapon.name === 'Service Revolver');
 	assert.ok(vm.fieldLimit >= 1);
+	assert.equal(vm.preview, false);                               // no preview target → worn guise
+	// clot pane stub (empty state only; seated readout unspecified — spec §9).
+	assert.equal(vm.clot.seated, false);
+});
+
+test('buildGuisePlayVM: an unrecorded affinity trio flags affinityTrioOwed (⚠ hole, never filled)', async () => {
+	const { buildGuisePlayVM } = mod;
+	UUIDS.set('clsH', { name: 'Sharpshooter', system: { description: '@UUID[skH]{Ranged Weapon Mastery} <strong>【Max SL 4】</strong>' } });
+	UUIDS.set('skH', { name: 'Ranged Weapon Mastery', system: { description: '<p>+SL ACC ranged.</p>' } });
+	const guise = {
+		id: 'gh', name: 'The Human Form',
+		getFlag: (_m, k) => (k === 'isInnate' ? true : undefined),
+		system: { data: { mode: 'innate', classes: [{ classUuid: 'clsH', skills: [{ skillUuid: 'skH', sl: 3 }] }], innateHeroicUuid: '', affinityModifiers: [] } },
+	};
+	const actor = {
+		getFlag: (_m, k) => (k === 'activeGuise' ? 'gh' : undefined),
+		items: { get: (id) => (id === 'gh' ? guise : null) },
+		itemTypes: { weapon: [], customWeapon: [] },
+		system: { attributes: { dex: { base: 8 }, ins: { base: 6 }, mig: { base: 8 }, wlp: { base: 8 } }, equipped: {}, derived: {} },
+	};
+	const vm = await buildGuisePlayVM(actor);
+	assert.equal(vm.affinityTrioOwed, true);                        // ⚠ not in our books for this guise
+	assert.ok(vm.affinities.every((a) => a.state === 'neutral'));    // all-neutral render
+	assert.equal(vm.innate, true);
+	assert.equal(vm.tradable, false);                               // innate → BOUND, not the Phial variant
+	assert.equal(vm.heroicSlots[0].filled, false);                  // innate heroic unset → dashed empty
+});
+
+test('buildGuisePlayVM: previewId renders another owned guise WITHOUT binding (preview flag set)', async () => {
+	const { buildGuisePlayVM } = mod;
+	UUIDS.set('clsP', { name: 'Physician', system: { description: '@UUID[skP]{Doctorate} <strong>【Single】</strong>' } });
+	UUIDS.set('skP', { name: 'Doctorate', system: { description: '<p>Medical procedures.</p>' } });
+	const worn = { id: 'gw', name: 'The Human Form', type: 'classFeature', getFlag: (_m, k) => (k === 'isInnate' ? true : undefined), system: { featureType: 'rippers-guise.guise', data: { mode: 'innate', classes: [], affinityModifiers: [] } } };
+	const other = { id: 'go', name: 'The Carbolic Coat', type: 'classFeature', getFlag: (_m, k) => (k === 'isInnate' ? false : undefined), system: { featureType: 'rippers-guise.guise', data: { mode: 'worn', classes: [{ classUuid: 'clsP', skills: [{ skillUuid: 'skP', sl: 1 }] }], affinityModifiers: [{ type: 'poison', level: 2 }] } } };
+	const list = [worn, other];
+	const actor = {
+		getFlag: (_m, k) => (k === 'activeGuise' ? 'gw' : undefined),
+		items: { get: (id) => list.find((g) => g.id === id) ?? null, filter: (fn) => list.filter(fn) },
+		itemTypes: { weapon: [], customWeapon: [] },
+		system: { attributes: { dex: { base: 8 }, ins: { base: 8 }, mig: { base: 8 }, wlp: { base: 8 } }, equipped: {}, derived: {} },
+	};
+	const vm = await buildGuisePlayVM(actor, { previewId: 'go' });
+	assert.equal(vm.preview, true);
+	assert.equal(vm.guiseName, 'The Carbolic Coat');               // readout switched to the previewed guise
+	assert.equal(vm.activeName, 'The Human Form');                 // the worn one is still named for the menu
+	assert.equal(vm.tradable, true);                               // Carbolic is non-innate → Phial variant
+	const menu = vm.guiseMenu;
+	assert.equal(menu.find((g) => g.id === 'gw').marker, 'BOUND'); // the worn guise carries the BOUND marker
+	assert.equal(menu.find((g) => g.id === 'go').previewing, true);
 });
 
 // ── v0.7.23 cabinet restore = atomic MOVE (bugfix: was duplicating) ──
