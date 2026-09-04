@@ -143,7 +143,7 @@
 						{{#if vm.play.bonus}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bonus'}}</span> +{{vm.play.bonus.value}} to {{vm.play.bonus.descriptor}}</div>{{/if}}
 						{{!-- identity footer --}}
 						<div class="rs-play-footer">
-							{{#if vm.play.flavor}}<span class="rs-play-flavor">{{vm.play.flavor}}</span>{{/if}}
+							{{!-- v0.7.28: flavour line dropped (Austin — no flavour field wanted). --}}
 							<span class="rs-tag-bound">{{#if vm.play.tradable}}{{localize 'RIPPERS.Sheet.Tradable'}}{{else}}{{localize 'RIPPERS.Sheet.Untradable'}}{{/if}}</span>
 							<span class="rs-play-field">{{localize 'RIPPERS.Sheet.FieldLimit'}}: {{vm.play.fieldLimit}}</span>
 							<span class="rs-play-turn">{{localize 'RIPPERS.Sheet.TheTurnNote'}}</span>

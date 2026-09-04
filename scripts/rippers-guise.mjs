@@ -3483,8 +3483,7 @@ async function buildGuisePlayVM(actor) {
 		weapon,
 		bane: d.bane ?? '', tell: d.tell ?? '', perk: d.perk ?? '',
 		bonus: bonusDescriptor ? { descriptor: bonusDescriptor, value: Number(d.bonus?.value ?? 3) } : null,
-		flavor: (d.nature ?? '').trim(),          // no fixed mock flavour invented; nature if authored, else blank
-		fieldLimit: guiseFieldLimit(partySize()),
+		fieldLimit: guiseFieldLimit(partySize()),   // v0.7.28: flavour line dropped (Austin)
 	};
 }
 // The six core FU statuses (exact ids, projectfu config.mjs FU.temporaryEffects) + the boons/banes tray.
@@ -4453,7 +4452,7 @@ async function sheetBondClockFill(actor, name) {
 async function sheetBondSharedResolve(actor, name) {
 	const api = deeperBondsApi(); if (!api?.sharedResolve || !name) return;
 	const res = await api.sharedResolve(actor, name);
-	if (res && typeof res === 'object') { _bondNote(`${game.i18n?.localize?.('RIPPERS.Sheet.BondSharedResolve') ?? 'Shared Resolve'}: +${res.amount} MP (${res.bond}).`); return; }
+	if (res && typeof res === 'object') { _bondNote(`${game.i18n?.localize?.('RIPPERS.Sheet.BondSharedResolve') ?? 'Shared Resolve'}: +${res.amount} MP — you & ${res.bond}.`); return; }
 	const msg = {
 		'not-party': game.i18n?.localize?.('RIPPERS.Sheet.BondNotParty') ?? 'Only a party-member bond can do that.',
 		'too-weak': game.i18n?.localize?.('RIPPERS.Sheet.BondTooWeak') ?? 'Bond is too weak (needs strength 2).',
