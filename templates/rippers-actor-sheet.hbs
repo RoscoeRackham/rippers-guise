@@ -124,7 +124,8 @@
 						{{!-- attributes as stat bars (character-level, post-effect) --}}
 						<div class="rs-play-attrs">
 							{{#each vm.play.attributes as |a|}}
-								<div class="rs-play-attr"><span class="rs-play-attr-k">{{a.label}}</span><span class="rs-play-bar"><span class="rs-play-bar-fill{{#if a.buffed}} rs-buffed{{/if}}{{#if a.debuffed}} rs-debuffed{{/if}}" style="width:{{a.pct}}%"></span></span><span class="rs-play-attr-v">d{{a.die}}</span></div>
+								{{!-- v0.7.26: FU attributes are DIE SIZES (d6–d12), not a 0–100 bar — show as die chips (Austin). --}}
+								<div class="rs-play-attr{{#if a.buffed}} rs-buffed{{/if}}{{#if a.debuffed}} rs-debuffed{{/if}}"><span class="rs-play-attr-k">{{a.label}}</span><span class="rs-play-die">d{{a.die}}</span></div>
 							{{/each}}
 						</div>
 						{{!-- affinities/resistances --}}

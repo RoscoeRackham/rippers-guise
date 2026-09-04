@@ -332,14 +332,14 @@
 .rippers-sheet .rs-play-skill-desc { font-family: var(--rs-body); font-size: 12px; color: var(--rs-bone-dim); padding: 4px 0 6px 14px; line-height: 1.35; }
 .rippers-sheet .rs-play-skill-desc p { margin: 0 0 4px; }
 .rippers-sheet .rs-play-gap { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-muted); font-style: italic; padding: 4px 0 6px 14px; }
-.rippers-sheet .rs-play-attrs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.rippers-sheet .rs-play-attr { display: flex; align-items: center; gap: 6px; }
-.rippers-sheet .rs-play-attr-k { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--rs-bone-dim); width: 30px; }
-.rippers-sheet .rs-play-bar { flex: 1; height: 8px; background: rgba(0,0,0,.35); border: 1px solid var(--rs-border); }
-.rippers-sheet .rs-play-bar-fill { display: block; height: 100%; background: var(--rs-red); }
-.rippers-sheet .rs-play-bar-fill.rs-buffed { background: var(--rs-gold); }
-.rippers-sheet .rs-play-bar-fill.rs-debuffed { background: var(--rs-muted); }
-.rippers-sheet .rs-play-attr-v { font-family: var(--rs-mono); font-size: 12px; color: var(--rs-bone); width: 28px; text-align: right; }
+.rippers-sheet .rs-play-attrs { display: flex; gap: 10px; flex-wrap: wrap; }
+.rippers-sheet .rs-play-attr { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rs-border); background: var(--rs-card); padding: 4px 10px; }
+.rippers-sheet .rs-play-attr-k { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-play-die { font-family: var(--rs-disp); font-weight: 800; font-size: 18px; color: var(--rs-bone); }
+.rippers-sheet .rs-play-attr.rs-buffed .rs-play-die { color: var(--rs-gold); }
+.rippers-sheet .rs-play-attr.rs-buffed { border-color: var(--rs-gold); }
+.rippers-sheet .rs-play-attr.rs-debuffed .rs-play-die { color: var(--rs-vuln); }
+.rippers-sheet .rs-play-attr.rs-debuffed { border-color: var(--rs-vuln); }
 .rippers-sheet .rs-play-affs { display: flex; gap: 8px; flex-wrap: wrap; }
 .rippers-sheet .rs-play-armor, .rippers-sheet .rs-play-weapon { font-family: var(--rs-mono); font-size: 12px; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-play-armor b, .rippers-sheet .rs-play-weapon b { font-family: var(--rs-body); color: var(--rs-bone); }
