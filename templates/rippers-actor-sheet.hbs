@@ -193,7 +193,8 @@
 									{{#if ../vm.bondsIsGM}}
 										<span class="rs-bond-controls">
 											{{#if b.solidifyShow}}<button type="button" class="rs-btn rdb-btn" data-action="bondSolidify" data-bond="{{b.name}}" {{#if b.solidifyDisabled}}disabled title="{{localize 'RIPPERS.Sheet.BondCapReached'}}"{{/if}}>{{localize 'RIPPERS.Sheet.BondSolidify'}}</button>{{/if}}
-											{{#if b.canEternal}}<button type="button" class="rs-btn rdb-btn" data-action="bondEternal" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondEternal'}}</button>{{/if}}
+											{{!-- v0.7.24 item 2: → Eternal only while MASKED (an active guise is worn). Unmasked hides it. --}}
+											{{#if b.canEternal}}{{#if ../vm.worn}}<button type="button" class="rs-btn rdb-btn" data-action="bondEternal" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondEternal'}}</button>{{/if}}{{/if}}
 											{{#if b.showClock}}<button type="button" class="rs-btn rdb-btn" data-action="bondClockFill" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondClockFill'}}</button>{{/if}}
 											{{#if b.ladder.cleanse}}<button type="button" class="rs-btn rdb-btn" data-action="bondCleanse" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondCleanse'}}</button>{{/if}}
 											{{#if b.ladder.coverRegen}}<button type="button" class="rs-btn rdb-btn" data-action="bondCoverRegen" data-bond="{{b.name}}">{{localize 'RIPPERS.Sheet.BondCoverRegen'}}</button>{{/if}}
@@ -218,6 +219,23 @@
 						</div>
 					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoBonds'}}</p>{{/if}}
 				{{/if}}
+				{{!-- v0.7.24 item 1: edit bonds in-place ON the Bonds tab (reuses editable.bonds + the [data-bond-index]
+				     delegate + bondAddRow/bondRemove actions). A new bond is fleeting by default. --}}
+				<div class="rs-bond-edit-here">
+					<div class="rs-edit-title">{{localize 'RIPPERS.Sheet.EditBonds'}}</div>
+					{{#each vm.editable.bonds as |b|}}
+						<div class="rs-edit-bond">
+							<input type="text" placeholder="{{localize 'RIPPERS.Sheet.BondWith'}}" data-bond-index="{{b.i}}" data-bond-field="name" value="{{b.name}}">
+							<select data-bond-index="{{b.i}}" data-bond-field="admInf">{{#each b.admInfOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.label}}</option>{{/each}}</select>
+							<select data-bond-index="{{b.i}}" data-bond-field="loyMis">{{#each b.loyMisOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.label}}</option>{{/each}}</select>
+							<select data-bond-index="{{b.i}}" data-bond-field="affHat">{{#each b.affHatOpts as |o|}}<option value="{{o.v}}" {{#if o.sel}}selected{{/if}}>{{o.label}}</option>{{/each}}</select>
+							<span class="rs-bond-tier rdb-tier-tag rdb-tier-{{b.tier}}">{{b.tier}}</span>
+							<span class="rs-edit-bond-str">{{localize 'RIPPERS.Sheet.Strength'}} {{b.strength}}</span>
+							<button type="button" class="rs-btn rs-edit-bond-rm" data-action="bondRemove" data-bond-index="{{b.i}}" title="{{localize 'RIPPERS.Sheet.BondRemove'}}">✕</button>
+						</div>
+					{{/each}}
+					<button class="rs-btn" data-action="bondAddRow">＋ {{localize 'RIPPERS.Sheet.BondAdd'}}</button>
+				</div>
 			{{/if}}
 
 			{{#if vm.tab.study}}
