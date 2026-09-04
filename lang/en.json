@@ -24,6 +24,8 @@
 	"RIPPERS.Guise.Dismiss": "Dismiss",
 	"RIPPERS.Guise.Edit": "Edit",
 	"RIPPERS.Guise.FixedLockHint": "This guise's classes, equipment and affinities are fixed at distillation — read-only. A GM can unlock them with the module's edit override.",
+	"RIPPERS.Guise.EditSL": "Edit SL",
+	"RIPPERS.Guise.EditSLHint": "Toggle editing skill levels — SLs rise as the character gains experience (the class roster and affinities stay fixed).",
 	"RIPPERS.Guise.SwapHint": "Click this guise on the character sheet to bind it (dismissing any other). Exactly one guise is active at a time; its skills, equipment and affinities apply only while it is bound.",
 	"RIPPERS.Guise.DormancyHint": "While this guise is bound, your own innate skills sleep — only the mask's allocated skills are live (one 30-level set at a time). Dismiss the guise to wake them.",
 	"RIPPERS.Benefit.PanelTitle": "Benefit Picks",

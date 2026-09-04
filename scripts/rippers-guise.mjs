@@ -2295,6 +2295,11 @@ async function enrichGuiseData(model) {
 		// #4 (v0.7.9): a guise's classes / equipment / affinities are fixed at distillation — read-only
 		// on the sheet unless the module-wide GM edit override is on.
 		canEditFixed: editOverrideOn(),
+		// SL editable-with-toggle (Austin, 4 Sep 2026): SLs advance with XP, so they are NOT fixed at
+		// distillation — a dedicated player-accessible toggle (flag slEditOpen) makes the SL inputs
+		// editable in normal play, independent of the GM override (which still gates the class roster +
+		// affinity trio). Under the GM override everything is already editable, so the toggle is moot.
+		slEditable: !!item?.getFlag?.(MODULE_ID, 'slEditOpen'),
 	};
 }
 
@@ -2441,6 +2446,14 @@ function defineGuiseModel() {
 			// their edit controls unless the GM override is on; this guard is defense-in-depth so a stale
 			// control can't mutate a fixed field. Identity/role/notes stay freely editable (canon-clean).
 			const canEdit = editOverrideOn();
+
+			// --- SL edit toggle (player-accessible, NOT the GM override) -------------
+			// SLs advance with XP, so a player may raise them in normal play behind a dedicated toggle
+			// (Austin, 4 Sep 2026). Ungated on the override; flipping the flag re-renders the sheet.
+			html.querySelectorAll('.guise-sl-toggle').forEach((btn) => btn.addEventListener('click', async (ev) => {
+				ev.preventDefault();
+				await item.setFlag(MODULE_ID, 'slEditOpen', !item.getFlag(MODULE_ID, 'slEditOpen'));
+			}));
 
 			// --- drop targets (class / per-class skill / equipment) -----------------
 			if (canEdit) html.querySelectorAll('[data-guise-drop]').forEach((zone) => {

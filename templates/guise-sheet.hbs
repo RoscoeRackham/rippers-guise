@@ -35,6 +35,11 @@
 			<span class="guise-budget {{#if additionalData.overBudget}}guise-over{{/if}}">
 				{{additionalData.totalSl}} / {{additionalData.budget}} {{localize 'RIPPERS.Guise.SL'}}
 			</span>
+			{{!-- SL editable-with-toggle (Austin): SLs advance with XP — a player toggle, not the GM
+			     override. Hidden under the override, where the full editor is already open. --}}
+			{{#unless additionalData.canEditFixed}}
+				<a class="guise-sl-toggle {{#if additionalData.slEditable}}is-active{{/if}}" title="{{localize 'RIPPERS.Guise.EditSLHint'}}"><i class="fas fa-pen"></i> {{localize 'RIPPERS.Guise.EditSL'}}</a>
+			{{/unless}}
 		</legend>
 
 		{{#each additionalData.classes as |cls|}}
@@ -68,13 +73,31 @@
 						{{localize 'RIPPERS.Guise.DropSkill'}}
 					</div>
 				{{else}}
-					{{#each cls.skills as |sk|}}
-						<div class="guise-skill-row">
-							<img class="guise-icon" src="{{sk.img}}" width="16" height="16" />
-							<span class="guise-name {{#if sk.missing}}guise-missing{{/if}}">{{sk.name}}</span>
-							<span class="guise-maxsl">{{localize 'RIPPERS.Guise.SL'}} {{sk.sl}} / {{sk.maxSl}}</span>
-						</div>
-					{{/each}}
+					{{#if ../additionalData.slEditable}}
+						{{!-- SL editable, roster LOCKED: emit the hidden class/skill uuids so the full array
+						     round-trips on save (no partial-array-submit), an editable SL input per skill,
+						     and NO add/remove/drop controls (the roster stays override-locked). --}}
+						<input type="hidden" name="system.data.classes.{{cls.i}}.classUuid" value="{{cls.uuid}}" />
+						{{#each cls.skills as |sk|}}
+							<div class="guise-skill-row">
+								<img class="guise-icon" src="{{sk.img}}" width="16" height="16" />
+								<span class="guise-name {{#if sk.missing}}guise-missing{{/if}}">{{sk.name}}</span>
+								<input type="hidden" name="system.data.classes.{{cls.i}}.skills.{{sk.j}}.skillUuid" value="{{sk.uuid}}" />
+								<input type="number" class="guise-sl" min="0" max="{{sk.maxSl}}"
+									   data-cls="{{cls.i}}" data-maxsl="{{sk.maxSl}}"
+									   name="system.data.classes.{{cls.i}}.skills.{{sk.j}}.sl" value="{{sk.sl}}" />
+								<span class="guise-maxsl">/ {{sk.maxSl}}</span>
+							</div>
+						{{/each}}
+					{{else}}
+						{{#each cls.skills as |sk|}}
+							<div class="guise-skill-row">
+								<img class="guise-icon" src="{{sk.img}}" width="16" height="16" />
+								<span class="guise-name {{#if sk.missing}}guise-missing{{/if}}">{{sk.name}}</span>
+								<span class="guise-maxsl">{{localize 'RIPPERS.Guise.SL'}} {{sk.sl}} / {{sk.maxSl}}</span>
+							</div>
+						{{/each}}
+					{{/if}}
 				{{/if}}
 			</div>
 		{{/each}}

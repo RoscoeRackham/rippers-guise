@@ -63,6 +63,10 @@
 .rippers-guise-entry .guise-edit:hover { border-color: #7b2d8e; color: #7b2d8e; }
 /* #4: fixed-at-distillation lock note on the guise sheet + override note in the builder. */
 .rippers-guise-sheet .guise-locked-note { opacity: 0.75; font-style: italic; }
+/* SL editable-with-toggle (Austin): a player-accessible SL-edit affordance in the Classes legend. */
+.rippers-guise-sheet .guise-sl-toggle { cursor: pointer; font-size: 0.8rem; font-weight: 500; opacity: 0.7; margin-left: 0.5rem; }
+.rippers-guise-sheet .guise-sl-toggle:hover { opacity: 1; }
+.rippers-guise-sheet .guise-sl-toggle.is-active { opacity: 1; color: #7b2d8e; }
 
 /* ---------------------------------------------------------------------------
    Benefit-Picks panel (Features tab) + the picker dialog (v0.4.3). */
