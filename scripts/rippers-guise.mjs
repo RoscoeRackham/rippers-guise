@@ -3637,6 +3637,21 @@ function actorSpecialties(actor) {
 	const s = g?.system?.data?.specialties;
 	return Array.isArray(s) ? s.filter(Boolean) : [];
 }
+/** T4 — the runtime Talented seam (the one the 1566 comment promised, previously draft-only). Talented
+ *  DOUBLES the two Specialties to four; the armed die-bump already serves those extra Specialties because
+ *  they live in the same innate-guise store — this seam just makes "is this character Talented?" answerable
+ *  at runtime, recognizing EITHER the innate-guise boolean OR a held Talented quirk Item (rippers-automation
+ *  fuid 'talented'), so Talented can later be granted as a quirk with no change to the die-bump path. */
+function isTalented(actor) {
+	if (actorInnateGuise(actor)?.system?.data?.talented) return true;
+	for (const it of actor?.items ?? []) {
+		const f = it.getFlag?.('rippers-automation', 'fuid') ?? it.flags?.['rippers-automation']?.fuid ?? it.system?.fuid;
+		if (f === 'talented') return true;
+	}
+	return false;
+}
+/** The character's runtime Specialty cap: 4 when Talented, else 2 (mirrors the builder's specialtyCapFor). */
+function actorSpecialtyCap(actor) { return specialtyCapFor(isTalented(actor)); }
 /** The character's Hunter Weapon Item (marked isHunterWeapon), or null. ROS-29 invariant: it is a
  *  plain CHARACTER-owned weapon (never a guise-origin `owned` item), so a worn-mask swap can never
  *  delete or rewrite it — it is found by its flag regardless of which guise is active. A mask may
@@ -3771,7 +3786,7 @@ Hooks.once('ready', async () => {
 	// MP-LAYER-ROUTING: spend the lent-MP layer before own MP on every spell/skill/feature MP cost.
 	Hooks.on(globalThis.game?.projectfu?.FUHooks?.CALCULATE_EXPENSE_EVENT ?? 'projectfu.events.calculateExpense', onCalculateExpenseLentMp);
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponBaneKey, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
@@ -3792,6 +3807,7 @@ export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TAL
 export { guiseStepErrors, draftRawSpent, draftClassSpent, SPECIALTY_ATTRIBUTES };
 // v0.7.1 follow-up — Specialty die-bump (excl. magic/accuracy) + Hunter-Weapon-in-Innate authoring.
 export { SPECIALTY_EXCLUDED_CHECKS, specialtyBumpEligible, CHECK_DIE_SIZES, improveDieSize, chooseBumpSlot, HW_MATERIALS, actorInnateGuise, actorSpecialties };
+export { isTalented, actorSpecialtyCap };
 // Phase 2a: the generalized check-bump seam (die + flat).
 export { CHECK_BUMP_KINDS, checkBumpEligible, flatCheckModifier };
 // ROS-29 — character-invariant reads of the Specialty source (innate guise) + the Hunter Weapon.

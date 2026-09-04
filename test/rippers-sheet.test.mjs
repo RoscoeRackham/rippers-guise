@@ -388,3 +388,33 @@ test('buildRippersSheetVM: falls back to the plain grid when no Deeper Bonds API
 	assert.equal(vm.bonds[0].name, 'Dr. Vane');
 	assert.equal(vm.bonds[0].strength, 3);              // simple shape preserved
 });
+
+// ── T4: the runtime Talented seam ─────────────────────────────────────────────
+const { isTalented, actorSpecialtyCap } = mod;
+
+// A minimal actor with an innate guise item (mode 'innate') carrying optional talented + specialties.
+function talentedActor({ talented = false, specialties = [], quirkTalented = false } = {}) {
+	const items = [{
+		type: 'classFeature',
+		system: { featureType: 'rippers-guise.guise', data: { mode: 'innate', talented, specialties } },
+		getFlag: (m, k) => (m === RGID && k === 'isInnate' ? true : undefined), flags: { [RGID]: { isInnate: true } },
+	}];
+	if (quirkTalented) items.push({ type: 'feature', system: { fuid: 'talented' }, getFlag: (m, k) => (m === 'rippers-automation' && k === 'fuid' ? 'talented' : undefined), flags: { 'rippers-automation': { fuid: 'talented' } } });
+	return { items };
+}
+
+test('isTalented: true from the innate-guise boolean, false otherwise', () => {
+	assert.equal(isTalented(talentedActor({ talented: true })), true);
+	assert.equal(isTalented(talentedActor({ talented: false })), false);
+	assert.equal(isTalented({ items: [] }), false);
+});
+
+test('isTalented: also recognizes a held Talented quirk Item (fuid talented) — the generalized source', () => {
+	assert.equal(isTalented(talentedActor({ talented: false, quirkTalented: true })), true);
+});
+
+test('actorSpecialtyCap: 4 when Talented, 2 otherwise (mirrors the builder cap)', () => {
+	assert.equal(actorSpecialtyCap(talentedActor({ talented: true })), 4);
+	assert.equal(actorSpecialtyCap(talentedActor({ talented: false })), 2);
+	assert.equal(actorSpecialtyCap(talentedActor({ quirkTalented: true })), 4);
+});
