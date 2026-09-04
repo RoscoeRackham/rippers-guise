@@ -179,8 +179,9 @@
 								</div>
 								<div class="rs-play-armorbox">
 									<div class="rs-play-sec-k">ARMOR — WORN</div>
-									{{#if vm.play.armor}}<div class="rs-play-armor"><b>{{vm.play.armor.name}}</b>{{#if vm.play.armor.martial}} <span class="rs-play-martial">MARTIAL</span>{{/if}} · DEF {{vm.play.armor.defFormula}} · M.DEF {{vm.play.armor.mdefFormula}}</div>{{/if}}
-									<div class="rs-play-worn">WORN: DEF {{vm.play.wornDef}} · M.DEF {{vm.play.wornMdef}}</div>
+									{{!-- v0.7.31: ONE ROW (Austin) — name + MARTIAL + gold worn totals; no duplicated
+									     formula fragments, no second line. Worn totals are the single readout. --}}
+									<div class="rs-play-armor">{{#if vm.play.armor}}<b>{{vm.play.armor.name}}</b>{{#if vm.play.armor.martial}} <span class="rs-play-martial">MARTIAL</span>{{/if}} · {{/if}}<span class="rs-play-worn">DEF {{vm.play.wornDef}} · M.DEF {{vm.play.wornMdef}}</span></div>
 								</div>
 							</div>
 							{{!-- 7. affinities — all NINE elements, four states --}}
