@@ -237,6 +237,7 @@
   "RIPPERS.Sheet.EditGuise": "Edit",
   "RIPPERS.Sheet.Level": "Level",
   "RIPPERS.Sheet.LevelUp": "Level Up",
+  "RIPPERS.Sheet.XP": "XP",
   "RIPPERS.Sheet.LevelUpMilestone": "Milestone — raise an attribute",
   "RIPPERS.Sheet.LevelUpPickAttr": "Milestone reached — raise one attribute die a size (max d12):",
   "RIPPERS.Sheet.LevelUpRaise": "Raise",

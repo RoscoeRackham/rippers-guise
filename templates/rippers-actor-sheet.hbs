@@ -443,13 +443,15 @@
 				<div class="rs-edit-block">
 					<div class="rs-edit-title">{{localize 'RIPPERS.Sheet.EditCharacter'}}</div>
 					<label class="rs-edit-row"><span>{{localize 'RIPPERS.Sheet.Name'}}</span><input type="text" data-edit="name" value="{{vm.editable.name}}"></label>
-					{{!-- v0.7.20 Level Up (Tier-1 #4): direct level edit + a guided Level Up (milestone attr raise at 20/40). Hoplosphere sockets + skill budget derive from level, so they follow automatically. --}}
-					<div class="rs-edit-row rs-level-row">
-						<span>{{localize 'RIPPERS.Sheet.Level'}}</span>
-						<input type="number" data-edit="system.level.value" data-dtype="number" min="1" value="{{vm.editable.level}}">
-						<button type="button" class="rs-btn" data-action="levelUp">{{localize 'RIPPERS.Sheet.LevelUp'}}</button>
+					{{!-- v0.7.22: ADVANCEMENT cluster — Level + Level Up + XP together, OFF the attributes row so the
+					     four attributes render on one clean line. XP uses the native FU path system.resources.exp.value.
+					     Level Up is manual (milestone attr raise at L20/40); XP auto-spend is NOT wired (⚠ owed ruling). --}}
+					<div class="rs-advance">
+						<label class="rs-edit-row rs-advance-cell"><span>{{localize 'RIPPERS.Sheet.Level'}}</span><input type="number" data-edit="system.level.value" data-dtype="number" min="1" value="{{vm.editable.level}}"></label>
+						<button type="button" class="rs-btn rs-advance-btn" data-action="levelUp">{{localize 'RIPPERS.Sheet.LevelUp'}}</button>
+						<label class="rs-edit-row rs-advance-cell"><span>{{localize 'RIPPERS.Sheet.XP'}}</span><input type="number" data-edit="system.resources.exp.value" data-dtype="number" min="0" value="{{vm.editable.exp}}"></label>
 					</div>
-					<div class="rs-edit-grid">
+					<div class="rs-attr-grid">
 						{{#each vm.editable.attributes as |a|}}
 							<label class="rs-edit-row"><span>{{a.label}}</span>
 								<select data-edit="system.attributes.{{a.key}}.base" data-dtype="number">
@@ -466,7 +468,6 @@
 						<label class="rs-edit-row"><span>IP</span><input type="number" data-edit="system.resources.ip.value" data-dtype="number" value="{{vm.editable.ip.value}}"></label>
 						<label class="rs-edit-row"><span>IP max</span><input type="number" data-edit="system.resources.ip.max" data-dtype="number" value="{{vm.editable.ip.max}}"></label>
 						<label class="rs-edit-row"><span>FP</span><input type="number" data-edit="system.resources.fp.value" data-dtype="number" value="{{vm.editable.fp}}"></label>
-						<label class="rs-edit-row"><span>EXP</span><input type="number" data-edit="system.resources.exp.value" data-dtype="number" value="{{vm.editable.exp}}"></label>
 						<label class="rs-edit-row"><span>Zenit</span><input type="number" data-edit="system.resources.zenit.value" data-dtype="number" value="{{vm.editable.zenit}}"></label>
 					</div>
 					<div class="rs-edit-title">{{localize 'RIPPERS.Sheet.EditBonds'}}</div>
