@@ -46,7 +46,10 @@
 
 /* skewed stat boxes */
 .rippers-sheet .rs-stats { display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
-.rippers-sheet .rs-stat { border: 1px solid var(--rs-border); background: var(--rs-panel); padding: 10px 18px; transform: skewX(-10deg); display: inline-flex; flex-direction: column; gap: 2px; white-space: nowrap; justify-content: center; }
+/* Header alignment: a UNIFORM card min-height means the skewX offset is identical on every card, so the
+   HP/MP row and the DEF/Fabula/IP row read as one aligned grid (shared baselines, consistent skew) rather
+   than scattered tiles. The look (skew, borders) is unchanged — only the box heights are made consistent. */
+.rippers-sheet .rs-stat { border: 1px solid var(--rs-border); background: var(--rs-panel); padding: 10px 18px; transform: skewX(-10deg); display: inline-flex; flex-direction: column; gap: 2px; white-space: nowrap; justify-content: center; min-height: 90px; box-sizing: border-box; }
 .rippers-sheet .rs-stat-hp, .rippers-sheet .rs-stat-mp { border: 2px solid var(--rs-red); padding: 10px 20px; }
 .rippers-sheet .rs-stat > * { transform: skewX(10deg); }
 .rippers-sheet .rs-stat-label { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .14em; color: var(--rs-bone-dim); }
@@ -59,12 +62,16 @@
 .rippers-sheet .rs-stat-dual .rs-stat-num { font-size: 24px; color: var(--rs-bone); }
 
 /* vitals steppers (P2a wiring) */
-.rippers-sheet .rs-step { display: inline-flex; gap: 4px; margin-top: 4px; }
+.rippers-sheet .rs-step { display: inline-flex; gap: 4px; margin-top: auto; } /* bottom-align steppers across cards (consistent control baseline) */
 .rippers-sheet .rs-step button { font-family: var(--rs-mono); font-size: 13px; font-weight: 600; width: 22px; height: 22px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); line-height: 1; }
 .rippers-sheet .rs-step button:hover { border-color: var(--rs-red); color: #fff; }
 
-.rippers-sheet .rs-attrline { font-family: var(--rs-mono); font-size: 12px; letter-spacing: .06em; color: var(--rs-bone-dim); }
+/* Attributes row: ONE line, never wraps. Abbreviated labels (DEX/INS/MIG/WLP) + nowrap + a small nudge
+   down keep Level + all four attributes on a single line at header width. Die value stays bold. */
+.rippers-sheet .rs-attrline { font-family: var(--rs-mono); font-size: 11.5px; letter-spacing: .04em; color: var(--rs-bone-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rippers-sheet .rs-attrline b { font-weight: 600; color: var(--rs-bone); }
+.rippers-sheet .rs-attr-item { margin-left: 8px; }
+.rippers-sheet .rs-attr-sep { color: var(--rs-muted); margin-right: 4px; }
 .rippers-sheet .rs-torment { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .14em; color: var(--rs-bone-dim); border: 1px solid var(--rs-border); background: var(--rs-panel); padding: 4px 10px; display: inline-block; }
 
 /* swap column */

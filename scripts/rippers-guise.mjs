@@ -4174,7 +4174,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		init: Number(sys.derived?.init?.value ?? 0),
 	};
 	const attributes = ['dex', 'ins', 'mig', 'wlp'].map((k) => ({
-		key: k, label: RS_ATTR_LABELS[k],
+		key: k, label: RS_ATTR_LABELS[k], short: k.toUpperCase(), // short = DEX/INS/MIG/WLP for the tight masthead row
 		die: `d${Number(sys.attributes?.[k]?.current ?? sys.attributes?.[k]?.base ?? 8)}`,
 	}));
 	const affinities = RS_AFFINITY_TYPES.map((t) => {

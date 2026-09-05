@@ -58,8 +58,8 @@
 				</div>
 
 				<div class="rs-attrline">
-					{{localize 'RIPPERS.Sheet.Level'}} <b>{{vm.masthead.level}}</b>
-					{{#each vm.attributes as |a|}} &nbsp;·&nbsp; {{a.label}} <b>{{a.die}}</b>{{/each}}
+					<span class="rs-attr-lvl">{{localize 'RIPPERS.Sheet.Level'}} <b>{{vm.masthead.level}}</b></span>
+					{{#each vm.attributes as |a|}}<span class="rs-attr-item"><span class="rs-attr-sep">·</span> {{a.short}} <b>{{a.die}}</b></span>{{/each}}
 				</div>
 				{{#if vm.masthead.classes.length}}<div><span class="rs-torment">{{#each vm.masthead.classes as |c|}}{{c}} {{/each}}</span></div>{{/if}}
 				<div class="rs-floor-row">
