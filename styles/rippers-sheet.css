@@ -37,34 +37,38 @@
 .rippers-sheet .rs-titlebar .rs-tb-name { font-family: var(--rs-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .16em; color: var(--rs-bone-dim); }
 
 /* ── Masthead ─────────────────────────────────────────── */
-.rippers-sheet .rs-head { display: flex; gap: 22px; padding: 20px 22px 0; align-items: flex-start; }
-.rippers-sheet .rs-portrait { flex: none; width: 236px; background: var(--rs-bone); padding: 5px; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); transform: rotate(-2deg); }
-.rippers-sheet .rs-portrait-inner { height: 240px; overflow: hidden; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); background: #1a0e12; }
+/* Phase 2A: masthead compacted toward <=160px (god (A)-lite). Every control kept; sizes reduced. */
+.rippers-sheet .rs-head { display: flex; gap: 14px; padding: 6px 16px; align-items: flex-start; }
+.rippers-sheet .rs-portrait { flex: none; width: 102px; background: var(--rs-bone); padding: 3px; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); transform: rotate(-2deg); }
+.rippers-sheet .rs-portrait-inner { height: 116px; overflow: hidden; clip-path: polygon(6% 0,100% 3%,95% 100%,0 94%); background: #1a0e12; }
 .rippers-sheet .rs-portrait-inner img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.rippers-sheet .rs-idcol { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.rippers-sheet .rs-name { font-family: var(--rs-disp); font-weight: 900; font-size: 52px; line-height: 1.05; color: #fff; text-shadow: 3px 3px 0 rgba(7,4,5,.9); margin: 0; }
+.rippers-sheet .rs-idcol { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rippers-sheet .rs-name { font-family: var(--rs-disp); font-weight: 900; font-size: 24px; line-height: 1.0; color: #fff; text-shadow: 2px 2px 0 rgba(7,4,5,.9); margin: 0; }
 .rippers-sheet .rs-role { font-family: var(--rs-mono); font-size: 11px; font-weight: 600; letter-spacing: .12em; color: #fff; background: var(--rs-bg); display: inline-block; padding: 3px 10px; transform: rotate(-1deg); }
 
 /* skewed stat boxes */
-.rippers-sheet .rs-stats { display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
+.rippers-sheet .rs-stats { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
 /* Header alignment: a UNIFORM card min-height means the skewX offset is identical on every card, so the
    HP/MP row and the DEF/Fabula/IP row read as one aligned grid (shared baselines, consistent skew) rather
    than scattered tiles. The look (skew, borders) is unchanged — only the box heights are made consistent. */
-.rippers-sheet .rs-stat { border: 1px solid var(--rs-border); background: var(--rs-panel); padding: 10px 18px; transform: skewX(-10deg); display: inline-flex; flex-direction: column; gap: 2px; white-space: nowrap; justify-content: center; min-height: 90px; box-sizing: border-box; }
-.rippers-sheet .rs-stat-hp, .rippers-sheet .rs-stat-mp { border: 2px solid var(--rs-red); padding: 10px 20px; }
+/* Phase 2A: lay each stat as label-over-(number + stepper inline) so the ± controls no longer add a
+   whole row of height — this is the key saving that brings the masthead under 160px. */
+.rippers-sheet .rs-stat { border: 1px solid var(--rs-border); background: var(--rs-panel); padding: 4px 12px; transform: skewX(-10deg); display: inline-flex; flex-flow: row wrap; align-items: baseline; column-gap: 6px; row-gap: 1px; white-space: nowrap; min-height: 0; box-sizing: border-box; }
+.rippers-sheet .rs-stat .rs-stat-label { flex: 1 0 100%; }
+.rippers-sheet .rs-stat-hp, .rippers-sheet .rs-stat-mp { border: 2px solid var(--rs-red); padding: 4px 12px; }
 .rippers-sheet .rs-stat > * { transform: skewX(10deg); }
-.rippers-sheet .rs-stat-label { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .14em; color: var(--rs-bone-dim); }
-.rippers-sheet .rs-stat-num { font-family: var(--rs-mono); font-weight: 600; font-size: 32px; line-height: 1; color: #fff; }
-.rippers-sheet .rs-stat-small .rs-stat-num { font-size: 24px; color: var(--rs-bone); }
+.rippers-sheet .rs-stat-label { font-family: var(--rs-mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-stat-num { font-family: var(--rs-mono); font-weight: 600; font-size: 19px; line-height: 1; color: #fff; }
+.rippers-sheet .rs-stat-small .rs-stat-num { font-size: 15px; color: var(--rs-bone); }
 .rippers-sheet .rs-stat-sub { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-stat-crisis-on .rs-stat-sub { color: var(--rs-vuln); font-weight: 600; }
 .rippers-sheet .rs-stat-dual { display: inline-flex !important; align-items: baseline; gap: 12px; }
 .rippers-sheet .rs-stat-dual .rs-dv { display: inline-flex; align-items: baseline; gap: 8px; }
-.rippers-sheet .rs-stat-dual .rs-stat-num { font-size: 24px; color: var(--rs-bone); }
+.rippers-sheet .rs-stat-dual .rs-stat-num { font-size: 15px; color: var(--rs-bone); }
 
 /* vitals steppers (P2a wiring) */
-.rippers-sheet .rs-step { display: inline-flex; gap: 4px; margin-top: auto; } /* bottom-align steppers across cards (consistent control baseline) */
-.rippers-sheet .rs-step button { font-family: var(--rs-mono); font-size: 13px; font-weight: 600; width: 22px; height: 22px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); line-height: 1; }
+.rippers-sheet .rs-step { display: inline-flex; gap: 3px; margin-top: 0; } /* compact masthead: stepper sits inline, right of the number */
+.rippers-sheet .rs-step button { font-family: var(--rs-mono); font-size: 11px; font-weight: 600; width: 16px; height: 16px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); line-height: 1; }
 .rippers-sheet .rs-step button:hover { border-color: var(--rs-red); color: #fff; }
 
 /* Attributes row: ONE line, never wraps. Abbreviated labels (DEX/INS/MIG/WLP) + nowrap + a small nudge
@@ -73,7 +77,7 @@
 .rippers-sheet .rs-attrline b { font-weight: 600; color: var(--rs-bone); }
 .rippers-sheet .rs-attr-item { margin-left: 8px; }
 .rippers-sheet .rs-attr-sep { color: var(--rs-muted); margin-right: 4px; }
-.rippers-sheet .rs-torment { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .14em; color: var(--rs-bone-dim); border: 1px solid var(--rs-border); background: var(--rs-panel); padding: 4px 10px; display: inline-block; }
+.rippers-sheet .rs-torment { font-family: var(--rs-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .12em; color: var(--rs-bone-dim); border: 1px solid var(--rs-border); background: var(--rs-panel); padding: 2px 8px; display: inline-block; }
 
 /* swap column */
 .rippers-sheet .rs-swapcol { flex: none; width: 210px; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
@@ -81,16 +85,21 @@
    as a TITLE, not a control — the single most important homebrew action looked non-interactive. Give it
    the primary-verb treatment (red fill, white, flat black drop) so it is unmistakably a button. Behaviour
    unchanged: Swap = quick toggle (unmask / re-wear); the labelled picker below is the precise choice. */
-.rippers-sheet .rs-swap-btn { font-family: var(--rs-verb); font-size: 34px; line-height: 1; padding: 16px 12px; cursor: pointer; border: none; background: var(--rs-red); color: #fff; transform: rotate(-3deg); box-shadow: 4px 4px 0 rgba(7,4,5,.9); white-space: nowrap; }
+.rippers-sheet .rs-swap-btn { font-family: var(--rs-verb); font-size: 20px; line-height: 1; padding: 7px 10px; cursor: pointer; border: none; background: var(--rs-red); color: #fff; transform: rotate(-3deg); box-shadow: 3px 3px 0 rgba(7,4,5,.9); white-space: nowrap; }
 .rippers-sheet .rs-swap-btn:hover { background: #e11430; filter: brightness(1.05); }
 /* label the picker so it reads as 'click a guise to wear it', distinct from the quick Swap button */
 .rippers-sheet .rs-guise-picker-k { font-family: var(--rs-mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rs-bone-dim); padding: 2px 2px 4px; }
-.rippers-sheet .rs-guise-picker { display: flex; flex-direction: column; gap: 3px; background: var(--rs-bg); padding: 4px; border: 1px solid var(--rs-border); }
-.rippers-sheet .rs-guise-pick { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-family: var(--rs-mono); font-size: 11px; padding: 6px 10px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-panel); color: var(--rs-bone-dim); text-align: left; }
+/* compact masthead: cap the picker height and scroll — keeps every guise reachable without blowing 160px */
+.rippers-sheet .rs-guise-picker { display: flex; flex-direction: column; gap: 3px; background: var(--rs-bg); padding: 4px; border: 1px solid var(--rs-border); max-height: 62px; overflow-y: auto; }
+.rippers-sheet .rs-guise-pick { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-family: var(--rs-mono); font-size: 11px; padding: 3px 8px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-panel); color: var(--rs-bone-dim); text-align: left; }
 .rippers-sheet .rs-guise-pick:hover { border-color: var(--rs-red); color: var(--rs-bone); }
 .rippers-sheet .rs-guise-pick.rs-worn { border-color: var(--rs-red); color: #fff; background: #12080a; }
 .rippers-sheet .rs-guise-pick .rs-gp-marker { font-size: 9px; letter-spacing: .12em; color: var(--rs-muted); }
-.rippers-sheet .rs-worn-tag { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; color: #fff; background: var(--rs-bg); padding: 4px 8px; text-align: center; transform: rotate(-3deg); }
+.rippers-sheet .rs-worn-tag { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; color: #fff; background: var(--rs-bg); padding: 3px 8px; text-align: center; transform: rotate(-3deg); }
+/* Phase 2A: compact the masthead floor-row chips (Roll/Rest/Heal) — scoped to the masthead so the
+   status-floor chips are untouched. Keeps them legible (13px Pirata). */
+.rippers-sheet .rs-idcol .rs-floor-row { gap: 6px; }
+.rippers-sheet .rs-idcol .rs-chip { font-size: 13px; padding: 2px 10px; }
 
 /* ── Work area: side-tab rail (Option 3) + tab body ───────── */
 /* Wireframe A: the tabs move to a vertical rail on the left, the tab body to the
