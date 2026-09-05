@@ -6,6 +6,7 @@
 	"description": "Rippers Unmasked — Guise: a first-class 'guise' classFeature (mask/identity swap) registered on Project FU, Arcanum pattern. Personal-table module.",
 	"scripts": {
 		"pack": "node ./tools/pack.mjs",
+		"release-zip": "node ./tools/release-zip.mjs",
 		"unpack": "node ./tools/unpack.mjs",
 		"test": "node --test test/*.test.mjs"
 	},
