@@ -388,9 +388,11 @@
 				</div>
 			{{/if}}
 
-			{{#if vm.tab.quirk}}
-				{{!-- Item 3: manage the character's quirks (FU 'effect' Items) — add / edit / remove. --}}
+			{{#if vm.tab.study}}
+				{{!-- Phase 2B: quirks folded UNDER Identity (was its own tab). vm.quirks is built
+				     unconditionally in the VM, so it renders alongside the identity fields above. --}}
 				<div class="rs-quirks">
+					<div class="rs-edit-title">Quirks</div>
 					{{#if vm.quirks.length}}
 						{{#each vm.quirks as |q|}}
 							<div class="rs-classcard rs-quirk-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">

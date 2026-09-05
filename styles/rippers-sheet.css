@@ -54,7 +54,7 @@
 /* Phase 2A: lay each stat as label-over-(number + stepper inline) so the ± controls no longer add a
    whole row of height — this is the key saving that brings the masthead under 160px. */
 .rippers-sheet .rs-stat { border: 1px solid var(--rs-border); background: var(--rs-panel); padding: 4px 12px; transform: skewX(-10deg); display: inline-flex; flex-flow: row wrap; align-items: baseline; column-gap: 6px; row-gap: 1px; white-space: nowrap; min-height: 0; box-sizing: border-box; }
-.rippers-sheet .rs-stat .rs-stat-label { flex: 1 0 100%; }
+.rippers-sheet .rs-stat > .rs-stat-label { flex: 1 0 100%; }   /* only the stat's OWN label goes full-width; NOT the DEF/M.DEF labels nested in .rs-dv */
 .rippers-sheet .rs-stat-hp, .rippers-sheet .rs-stat-mp { border: 2px solid var(--rs-red); padding: 4px 12px; }
 .rippers-sheet .rs-stat > * { transform: skewX(10deg); }
 .rippers-sheet .rs-stat-label { font-family: var(--rs-mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; color: var(--rs-bone-dim); }
@@ -62,8 +62,9 @@
 .rippers-sheet .rs-stat-small .rs-stat-num { font-size: 15px; color: var(--rs-bone); }
 .rippers-sheet .rs-stat-sub { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-stat-crisis-on .rs-stat-sub { color: var(--rs-vuln); font-weight: 600; }
-.rippers-sheet .rs-stat-dual { display: inline-flex !important; align-items: baseline; gap: 12px; }
-.rippers-sheet .rs-stat-dual .rs-dv { display: inline-flex; align-items: baseline; gap: 8px; }
+/* DEF / M.DEF: two clear label+value cells side by side (Phase 2B dual-box fix — no overlap). */
+.rippers-sheet .rs-stat-dual { display: inline-flex !important; flex-wrap: nowrap !important; align-items: baseline; gap: 14px; }
+.rippers-sheet .rs-stat-dual .rs-dv { display: inline-flex; align-items: baseline; gap: 5px; flex: none; }
 .rippers-sheet .rs-stat-dual .rs-stat-num { font-size: 15px; color: var(--rs-bone); }
 
 /* vitals steppers (P2a wiring) */

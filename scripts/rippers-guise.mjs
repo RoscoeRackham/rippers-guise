@@ -4113,17 +4113,16 @@ const RS_COND_GROUPS = [
 	{ label: 'ATTR DOWN', ids: ['dex-down', 'ins-down', 'mig-down', 'wlp-down'] },
 	{ label: 'BOONS/BANES', ids: ['guard', 'cover', 'aura', 'barrier', 'flying', 'provoked', 'focus', 'pressure', 'stagger'] },
 ];
+// Phase 2B (Austin ruling 2): FINAL 10-tab set, this order. Keys unchanged; 'kit'→Inventory and
+// 'edit'→Level Up relabelled; 'clots' + 'quirk' dropped (clot readout lives in The Guise play surface,
+// quirk folds under Identity/study).
 const RS_TABS = [
 	{ key: 'play', label: 'The Guise' },
-	{ key: 'form', label: 'Guises' }, { key: 'bonds', label: 'Bonds' }, { key: 'study', label: 'Identity' },
-	{ key: 'resources', label: 'Resources' }, { key: 'vault', label: 'Cabinet' },
-	{ key: 'spells', label: 'Spells' }, { key: 'kit', label: 'Kit' }, { key: 'effects', label: 'Effects' },
-	{ key: 'clots', label: 'Clots' }, { key: 'quirk', label: 'Quirk' }, { key: 'edit', label: 'Edit' },
+	{ key: 'form', label: 'Guises' }, { key: 'bonds', label: 'Bonds' }, { key: 'spells', label: 'Spells' },
+	{ key: 'kit', label: 'Inventory' }, { key: 'effects', label: 'Effects' }, { key: 'edit', label: 'Level Up' },
+	{ key: 'study', label: 'Identity' }, { key: 'vault', label: 'Cabinet' }, { key: 'resources', label: 'Resources' },
 ];
-const RS_TAB_STUBS = {
-	clots: 'No Clot is seated. A seated Clot rides its gear, not the character.',
-	quirk: 'The character\'s Quirk and Specialties are shown here.',
-};
+const RS_TAB_STUBS = {};   // no stub tabs remain (clots/quirk removed)
 const rsAffFlags = (lvl) => ({ good: lvl >= 1, bad: lvl === -1 });
 
 // ── Lent-vital DISPLAY (X1/G4/H5, Austin 4 Sep: OPTION A + parens) ────────────────────────────────
