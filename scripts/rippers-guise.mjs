@@ -4628,6 +4628,10 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const tab = { play: activeTab === 'play', form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', effects: activeTab === 'effects', spells: activeTab === 'spells', edit: activeTab === 'edit' };
 	if (!tab.play && !tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.effects && !tab.spells && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
 	const play = tab.play ? await buildGuisePlayVM(actor, { previewId: ui.previewGuiseId, deferHeavy }) : null; // v0.7.25/29: 'The Guise' play surface (active guise + preview)
+	// v0.7.52: the Guises-tab READ-ONLY preview reuses the SAME play readout (guise-readout.hbs, readonly=true).
+	// Built only when the Guises tab is open AND a non-worn guise is picked; display-only — no equip/swap/trade.
+	const guisePreview = (tab.form && ui.previewGuiseId) ? await buildGuisePlayVM(actor, { previewId: ui.previewGuiseId, deferHeavy }) : null;
+	if (tab.form && ui.previewGuiseId) { for (const g of guises) g.previewing = (g.id === ui.previewGuiseId); }
 	// v0.7.15: full inventory (Kit) + native Active Effects (Effects tab) — built only when their tab is open.
 	const inventory = tab.kit ? buildInventoryVM(actor) : null;
 	const effects = tab.effects ? buildEffectsVM(actor) : null;
@@ -4646,7 +4650,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		statuses, statusChips, condGroups,
 		weapons, quirks, editable, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
 		resolving: deferHeavy, // true on the fast first-paint pass; the sheet re-renders with resolved content
-		inventory, effects, spells, play,
+		inventory, effects, spells, play, guisePreview,
 	};
 }
 
@@ -5681,7 +5685,7 @@ Hooks.once('setup', () => {
 	// init had not populated the registry when our 'init' handler ran. Idempotent — no-op if already done.
 	registerGuiseClassFeature();
 	const loader = foundry.applications?.handlebars?.loadTemplates ?? loadTemplates;
-	loader([`modules/${MODULE_ID}/templates/guise-sheet.hbs`, `modules/${MODULE_ID}/templates/benefit-picker.hbs`, `modules/${MODULE_ID}/templates/guise-builder.hbs`]);
+	loader([`modules/${MODULE_ID}/templates/guise-sheet.hbs`, `modules/${MODULE_ID}/templates/benefit-picker.hbs`, `modules/${MODULE_ID}/templates/guise-builder.hbs`, `modules/${MODULE_ID}/templates/guise-readout.hbs`]);
 });
 
 // ---------------------------------------------------------------------------
