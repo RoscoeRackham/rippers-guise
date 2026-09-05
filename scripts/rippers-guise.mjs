@@ -3520,15 +3520,19 @@ function danglingActiveGuiseId(actor) {
 	if (!id) return null;
 	return actor?.items?.get?.(id) ? null : id;
 }
-/** Repair a dangling activeGuise flag: WARN loudly (so a transient miss is never SILENT) and clear the
- *  flag so the sheet's _ensureDefaultGuise rebinds a present guise instead of holding a broken reference.
- *  Cannot resurrect a dropped item (that needs a backup) — it makes the loss visible + the state sane. */
-async function repairDanglingActiveGuise(actor) {
+/** Surface a dangling activeGuise flag: WARN loudly (so a guise miss is never SILENT). WARN-ONLY BY
+ *  DESIGN — it deliberately does NOT write to the actor. When a guise is excluded on load by the
+ *  featureType-choices validation failure, its raw data still lives in actor._source (Foundry excludes
+ *  the invalid embedded doc via _handleInvalidDocument, it does not delete the source), so it is
+ *  RECOVERABLE the moment registration is early (the init fix). Writing to the actor here (e.g.
+ *  unsetFlag) risks persisting the actor WITHOUT the excluded item and purging that recoverable source —
+ *  so we never write. With the init-registration fix a present guise makes this a no-op; only a genuine
+ *  loss leaves a dangle, and then a loud warning (not a silent drop, not a risky auto-write) is correct. */
+function repairDanglingActiveGuise(actor) {
 	const id = danglingActiveGuiseId(actor);
 	if (!id) return false;
-	console.warn(`[rippers-guise] ${actor?.name}: activeGuise flag references a MISSING item (${id}) — a guise may have been dropped. Clearing the dangling flag.`);
-	try { ui.notifications?.warn(`Rippers: "${actor?.name}" had a missing active-guise reference — cleared it. If guises are missing, restore from a backup.`); } catch { /* headless */ }
-	try { await actor.unsetFlag(MODULE_ID, FLAG); } catch (err) { console.warn('[rippers-guise] could not clear the dangling activeGuise flag:', err); }
+	console.warn(`[rippers-guise] ${actor?.name}: activeGuise flag references a MISSING item (${id}) — a guise was not loaded. Its data may still be in the actor source; do NOT edit/save this character until the guise loads. (No auto-repair write is made, to avoid purging recoverable source data.)`);
+	try { ui.notifications?.warn(`Rippers: "${actor?.name}" has a guise that did not load. Do not edit this character; ask your GM to check the guise module registration / restore if needed.`); } catch { /* headless */ }
 	return true;
 }
 
