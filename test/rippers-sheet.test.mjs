@@ -1173,6 +1173,22 @@ test('armor-picker: the picked armor flows through guiseDraftToData → data.equ
 	assert.equal(armor.itemUuid, 'Compendium.x.Item.toughskin');  // exactly what materialiseEquipment binds
 });
 
+// ── v0.7.36 innate guise gains attachable effects ──
+test('innate-effects: guiseDraftToData(innate) carries attachedEffects (was silently dropped)', () => {
+	const { guiseDraftToData } = mod;
+	const draft = { mode: 'innate', name: 'Vin', specialties: [], attachedEffects: [{ itemUuid: 'Compendium.x.Item.eff1', name: 'Toughened Hide' }, { itemUuid: '' }] };
+	const data = guiseDraftToData(draft, {}, 30);
+	assert.equal(data.mode, 'innate');
+	assert.deepEqual(data.attachedEffects, [{ itemUuid: 'Compendium.x.Item.eff1' }]); // empty entry filtered, name stripped to the stored shape
+});
+
+test('innate-effects: a worn guise still carries attachedEffects (no regression)', () => {
+	const { guiseDraftToData } = mod;
+	const draft = { mode: 'worn', name: 'Mask', classUuids: [], sl: {}, equipment: [], attachedEffects: [{ itemUuid: 'e1' }], affinityImmunity: '', affinityVulnerability: '', affinityResistance: '' };
+	const data = guiseDraftToData(draft, {}, 30);
+	assert.deepEqual(data.attachedEffects, [{ itemUuid: 'e1' }]);
+});
+
 // ── v0.7.35 sheet-save regression: the data-edit writer round-trips VALID data ──
 test('save-regression: editFieldUpdate coerces attribute base to an integer, name to a defined string, skips invalid', () => {
 	const { editFieldUpdate } = mod;

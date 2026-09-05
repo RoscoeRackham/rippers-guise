@@ -2218,6 +2218,11 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 			affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
 			perk: '', bonus: null, tell: '', bane: '', flaw: '',
 			specialties, talented, innateHeroicUuid: draft.innateHeroicUuid ?? '',
+			// v0.7.36: the INNATE guise may carry attachable effects too (Austin). Same field + same
+			// bind-time machinery as a worn guise — the innate guise is the active guise while unmasked, so
+			// materialiseAttachedEffects rides them on at bind and _dismissCore strips them when a mask is
+			// worn (displaced-while-masked / restored-on-unmask, consistent with innate gear + skills).
+			attachedEffects: (draft.attachedEffects ?? []).filter((e) => e?.itemUuid).map((e) => ({ itemUuid: e.itemUuid })),
 			// Hunter Weapon (v0.7.1): the weapon is materialised + marked in createGuiseFromDraft.
 			hunterWeaponUuid: draft.hunterWeaponUuid ?? '', hunterMaterial, hunterOrigin: draft.hunterOrigin ?? '', hunterIsBane: !!draft.hunterIsBane,
 			// #2 (v0.7.9): innate armor + accessory refs, materialised + equipped in createGuiseFromDraft.

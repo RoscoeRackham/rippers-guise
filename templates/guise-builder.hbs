@@ -136,6 +136,20 @@
 					{{/if}}
 					<div class="guise-drop gb-drop" data-guise-drop="accessory">{{localize "RIPPERS.Builder.DropAccessory"}}</div>
 				</fieldset>
+				{{!-- v0.7.36: the INNATE guise can carry attachable effects too (Austin) — same drop zone + machinery
+				     as a worn guise; live while unmasked (innate guise active), displaced while a mask is worn and
+				     restored on unmask (same lifecycle as innate gear/skills). --}}
+				<fieldset class="gb-attached-effects">
+					<legend>{{localize "RIPPERS.Builder.AttachedEffects"}}</legend>
+					<p class="gb-hint">{{localize "RIPPERS.Builder.AttachedEffectsHint"}}</p>
+					{{#each loadout.attachedEffects}}
+						<div class="gb-equip-row">
+							<span class="gb-equip-name">{{name}}</span>
+							<a data-action="removeAttachedEffect" data-i="{{i}}" title="{{localize "RIPPERS.Builder.RemoveAttachedEffect"}}"><i class="fas fa-times"></i></a>
+						</div>
+					{{/each}}
+					<div class="guise-drop gb-drop" data-guise-drop="attachedEffect">{{localize "RIPPERS.Builder.DropAttachedEffect"}}</div>
+				</fieldset>
 			{{else}}
 				<fieldset class="gb-equipment" data-gb-fixed {{#if isEditing}}title="{{localize 'RIPPERS.Builder.FixedHint'}}"{{/if}}>
 					<legend>{{localize "RIPPERS.Builder.Equipment"}}</legend>
