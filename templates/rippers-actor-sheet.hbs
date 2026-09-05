@@ -92,12 +92,14 @@
 			</div>
 		</div>
 
-		{{!-- ── Tab slash row ────────────────────────────────────── --}}
-		<div class="rs-tabs">
+		{{!-- ── Work area: Option-3 side rail + tab body (side-tab layout, wireframe A) ── --}}
+		<div class="rs-workarea">
+		<nav class="rs-rail">
 			{{#each vm.tabs as |t|}}
 				<button type="button" class="rs-tab {{#if t.active}}rs-tab-active{{/if}}" data-action="selectTab" data-tab="{{t.key}}"><span>{{t.label}}</span></button>
 			{{/each}}
-		</div>
+			<div class="rs-rail-gutter"></div>
+		</nav>
 
 		{{!-- ── Tab body ─────────────────────────────────────────── --}}
 		<div class="rs-tbody">
@@ -111,16 +113,11 @@
 							<div class="rs-play-titlebar"><span class="rs-play-tb-k">THE GUISE — ACTIVE-GUISE PLAY SURFACE</span></div>
 							{{!-- 2. CHARACTER SUMMARY STRIP — character-level (name, level, torment, vitals, dice). Never
 							     changes with the guise; only live EFFECTS move it (green deltas). Sourced from the root VM. --}}
+							{{!-- Phase 2A de-dup: name + HP/MP/IP/FABULA dropped here — the compact masthead owns them.
+							     The strip keeps only guise-specific state: LEVEL·TORMENT meta + the dice (▲/▼ = guise mods). --}}
 							<div class="rs-play-strip">
 								<div class="rs-play-who">
-									<span class="rs-play-cname">{{vm.masthead.name}}</span>
 									<span class="rs-play-meta">LEVEL {{vm.masthead.level}} · TORMENT — {{#if vm.play.torment}}{{vm.play.torment}}{{else}}<span class="rs-warn">⚠</span>{{/if}}</span>
-								</div>
-								<div class="rs-play-vitals">
-									<span class="rs-play-vital"><b class="rs-play-vk">HP</b> <span class="rs-play-vv">{{vm.vitals.hp.bar.value}}{{#if vm.vitals.hp.bar.max}}/{{vm.vitals.hp.bar.max}}{{/if}}{{#if vm.vitals.hp.bar.lent}} <span class="rs-play-lent">(+{{vm.vitals.hp.bar.lent}})</span>{{/if}}</span>{{#if vm.vitals.crisis.score}} <span class="rs-play-vsub">CRISIS {{vm.vitals.crisis.score}}</span>{{/if}}</span>
-									<span class="rs-play-vital"><b class="rs-play-vk">MP</b> <span class="rs-play-vv">{{vm.vitals.mp.bar.value}}{{#if vm.vitals.mp.bar.max}}/{{vm.vitals.mp.bar.max}}{{/if}}{{#if vm.vitals.mp.bar.lent}} <span class="rs-play-lent">(+{{vm.vitals.mp.bar.lent}})</span>{{/if}}</span></span>
-									<span class="rs-play-vital"><b class="rs-play-vk">IP</b> <span class="rs-play-vv">{{vm.vitals.ip.dots.value}}{{#if vm.vitals.ip.dots.lent}} <span class="rs-play-lent">(+{{vm.vitals.ip.dots.lent}})</span>{{/if}}</span></span>
-									<span class="rs-play-vital"><b class="rs-play-vk">FABULA</b> <span class="rs-play-vv">{{vm.vitals.fp}}</span></span>
 								</div>
 								<div class="rs-play-dice">
 									{{#each vm.play.attributes as |a|}}
@@ -307,6 +304,9 @@
 			{{/if}}
 
 			{{#if vm.tab.bonds}}
+				{{!-- Phase 2D: native Evidence Board launcher (rippers-deeper-bonds injects its own button only on
+				     FU's standard sheet, not this one). Ungated — any viewer may open it (rdb seals/gates inside). --}}
+				{{#if vm.evidenceBoard}}<div class="rs-bond-board"><button type="button" class="rs-btn" data-action="openEvidenceBoard">{{localize 'RIPPERS.Sheet.EvidenceBoard'}}</button></div>{{/if}}
 				{{#if vm.bondsNative}}
 					{{#if vm.bondsIsGM}}
 						<div class="rs-bond-section-controls">
@@ -391,9 +391,11 @@
 				</div>
 			{{/if}}
 
-			{{#if vm.tab.quirk}}
-				{{!-- Item 3: manage the character's quirks (FU 'effect' Items) — add / edit / remove. --}}
+			{{#if vm.tab.study}}
+				{{!-- Phase 2B: quirks folded UNDER Identity (was its own tab). vm.quirks is built
+				     unconditionally in the VM, so it renders alongside the identity fields above. --}}
 				<div class="rs-quirks">
+					<div class="rs-edit-title">Quirks</div>
 					{{#if vm.quirks.length}}
 						{{#each vm.quirks as |q|}}
 							<div class="rs-classcard rs-quirk-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -689,6 +691,7 @@
 				<p class="rs-empty">{{vm.tab.otherNote}}</p>
 			{{/if}}
 		</div>
+		</div>{{!-- /.rs-workarea --}}
 
 		{{!-- ── Status floor ─────────────────────────────────────── --}}
 		<div class="rs-floor">

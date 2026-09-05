@@ -153,17 +153,21 @@ test('buildRippersSheetVM adds derived def/mdef/init + worn state', async () => 
 	assert.equal(vm.wornName, 'Guise w1');
 });
 
-test('buildRippersSheetVM: tabs reflect the active tab; unimplemented tabs get a stub note', async () => {
+test('buildRippersSheetVM: tabs reflect the active tab; dropped/unknown keys fall back to form', async () => {
 	const form = await buildRippersSheetVM(actorStub(), { activeTab: 'form' });
 	assert.equal(form.tabs.find((t) => t.key === 'form').active, true);
 	assert.equal(form.tab.form, true);
 	assert.equal(RS_TABS[0].key, 'play');                            // v0.7.25: 'The Guise' play surface is first
 	const playVM = await buildRippersSheetVM(actorStub(), { activeTab: 'play' });
 	assert.equal(playVM.tab.play, true);                             // play tab resolves
+	// Phase 2B: the final 10-tab set; clots + quirk are no longer tabs (clot lives in The Guise,
+	// quirk folds under Identity). No stub tabs remain, so a dropped key falls back to form.
+	assert.equal(RS_TABS.length, 10);
+	assert.ok(!RS_TABS.some((t) => t.key === 'clots' || t.key === 'quirk'));
 	const clots = await buildRippersSheetVM(actorStub(), { activeTab: 'clots' });
-	assert.equal(clots.tab.other, true);
-	assert.match(clots.tab.otherNote, /Clot/i);
-	// a bad tab falls back to form
+	assert.equal(clots.tab.form, true);
+	assert.equal(clots.tab.other, undefined);
+	// a bad tab also falls back to form
 	const bad = await buildRippersSheetVM(actorStub(), { activeTab: 'nope' });
 	assert.equal(bad.tab.form, true);
 });

@@ -228,6 +228,7 @@
   "RIPPERS.Sheet.Unmask": "Unmask",
   "RIPPERS.Sheet.Strength": "Strength",
   "RIPPERS.Sheet.Identity": "Identity",
+  "RIPPERS.Sheet.EvidenceBoard": "Evidence board",
   "RIPPERS.Sheet.SlUnlock": "Edit SL",
   "RIPPERS.Sheet.SlUnlockHint": "Unlock skill-level editing for this guise (SLs advance with XP; the class roster + affinities stay fixed at distillation).",
   "RIPPERS.Sheet.SlLocked": "Unlock SL editing on this guise first (Edit SL).",

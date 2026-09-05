@@ -4113,17 +4113,16 @@ const RS_COND_GROUPS = [
 	{ label: 'ATTR DOWN', ids: ['dex-down', 'ins-down', 'mig-down', 'wlp-down'] },
 	{ label: 'BOONS/BANES', ids: ['guard', 'cover', 'aura', 'barrier', 'flying', 'provoked', 'focus', 'pressure', 'stagger'] },
 ];
+// Phase 2B (Austin ruling 2): FINAL 10-tab set, this order. Keys unchanged; 'kit'→Inventory and
+// 'edit'→Level Up relabelled; 'clots' + 'quirk' dropped (clot readout lives in The Guise play surface,
+// quirk folds under Identity/study).
 const RS_TABS = [
 	{ key: 'play', label: 'The Guise' },
-	{ key: 'form', label: 'Guises' }, { key: 'bonds', label: 'Bonds' }, { key: 'study', label: 'Identity' },
-	{ key: 'resources', label: 'Resources' }, { key: 'vault', label: 'Cabinet' },
-	{ key: 'spells', label: 'Spells' }, { key: 'kit', label: 'Kit' }, { key: 'effects', label: 'Effects' },
-	{ key: 'clots', label: 'Clots' }, { key: 'quirk', label: 'Quirk' }, { key: 'edit', label: 'Edit' },
+	{ key: 'form', label: 'Guises' }, { key: 'bonds', label: 'Bonds' }, { key: 'spells', label: 'Spells' },
+	{ key: 'kit', label: 'Inventory' }, { key: 'effects', label: 'Effects' }, { key: 'edit', label: 'Level Up' },
+	{ key: 'study', label: 'Identity' }, { key: 'vault', label: 'Cabinet' }, { key: 'resources', label: 'Resources' },
 ];
-const RS_TAB_STUBS = {
-	clots: 'No Clot is seated. A seated Clot rides its gear, not the character.',
-	quirk: 'The character\'s Quirk and Specialties are shown here.',
-};
+const RS_TAB_STUBS = {};   // no stub tabs remain (clots/quirk removed)
 const rsAffFlags = (lvl) => ({ good: lvl >= 1, bad: lvl === -1 });
 
 // ── Lent-vital DISPLAY (X1/G4/H5, Austin 4 Sep: OPTION A + parens) ────────────────────────────────
@@ -4637,6 +4636,9 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const vault = (tab.vault && !deferHeavy) ? await buildVaultVM(actor) : null; // vault is a party-wide fetch — deferred on the fast pass
 	return {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, bondsNative, bondsIsGM,
+		// Evidence Board (rippers-deeper-bonds) availability — the Bonds tab shows a native launch
+		// button only when the module's api actually exposes openEvidenceBoard (else hidden).
+		evidenceBoard: !!globalThis.game?.modules?.get?.('rippers-deeper-bonds')?.api?.openEvidenceBoard,
 		theTurn: { available: !turnRefundUsed }, // H3: is The Turn's swap-refund still available this scene?
 		rivalWaiver: rivalWaiverVM(actor),       // R1: the Rival cost-waiver roller toggle (hidden unless the actor has it)
 		faces: { ...guiseFacesVM(actor) },       // H2: the two-portrait config + toggle availability
@@ -5188,6 +5190,7 @@ function getRippersActorSheetClass() {
 				toggleConditions: RippersActorSheet.onToggleConditions,
 				openConditions: RippersActorSheet.onOpenConditions,
 				selectTab: RippersActorSheet.onSelectTab,
+				openEvidenceBoard: RippersActorSheet.onOpenEvidenceBoard,
 				guiseWear: RippersActorSheet.onGuiseWear,
 				pickArcana: RippersActorSheet.onPickArcana,
 				toggleFace: RippersActorSheet.onToggleFace,
@@ -5446,6 +5449,11 @@ function getRippersActorSheetClass() {
 		static onToggleConditions() { this._showConditions = !this._showConditions; this.render(); }
 		static onOpenConditions() { sheetOpenConditions(statusTargetActor(this.document, this._statusSelf, globalThis.game?.user?.targets) ?? this.document); }
 		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this._previewGuiseId = null; this.render(); } }
+		// Bridge to rippers-deeper-bonds' Evidence Board (rdb injects its own button only on FU's
+		// renderFUStandardActorSheet, which this sheet doesn't fire — so we open it natively). Not
+		// GM-gated (Austin: players may focus-hop; rdb seals cards + gates verbs internally). Safe no-op
+		// if the module/api is absent (the button is also hidden then via the vm.evidenceBoard guard).
+		static onOpenEvidenceBoard() { globalThis.game?.modules?.get?.('rippers-deeper-bonds')?.api?.openEvidenceBoard?.(this.actor); }
 		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (!id) return; this._previewGuiseId = null; try { await sheetGuiseWear(this.document, id); } catch (err) { console.warn('[rippers-guise] guise wear/swap failed:', err); } finally { this.render(); } }
 		static async onPickArcana(event, target) { const id = target?.dataset?.guise; if (!id) return; try { await sheetPickArcana(this.document, id); } catch (err) { console.warn('[rippers-guise] arcana pick failed:', err); } finally { this.render(); } }
 		static async onToggleFace() { await sheetToggleFace(this.document); this.render(); }
