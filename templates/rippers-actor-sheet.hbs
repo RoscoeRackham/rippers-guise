@@ -92,12 +92,14 @@
 			</div>
 		</div>
 
-		{{!-- ── Tab slash row ────────────────────────────────────── --}}
-		<div class="rs-tabs">
+		{{!-- ── Work area: Option-3 side rail + tab body (side-tab layout, wireframe A) ── --}}
+		<div class="rs-workarea">
+		<nav class="rs-rail">
 			{{#each vm.tabs as |t|}}
 				<button type="button" class="rs-tab {{#if t.active}}rs-tab-active{{/if}}" data-action="selectTab" data-tab="{{t.key}}"><span>{{t.label}}</span></button>
 			{{/each}}
-		</div>
+			<div class="rs-rail-gutter"></div>
+		</nav>
 
 		{{!-- ── Tab body ─────────────────────────────────────────── --}}
 		<div class="rs-tbody">
@@ -689,6 +691,7 @@
 				<p class="rs-empty">{{vm.tab.otherNote}}</p>
 			{{/if}}
 		</div>
+		</div>{{!-- /.rs-workarea --}}
 
 		{{!-- ── Status floor ─────────────────────────────────────── --}}
 		<div class="rs-floor">

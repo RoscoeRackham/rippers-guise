@@ -92,12 +92,24 @@
 .rippers-sheet .rs-guise-pick .rs-gp-marker { font-size: 9px; letter-spacing: .12em; color: var(--rs-muted); }
 .rippers-sheet .rs-worn-tag { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; color: #fff; background: var(--rs-bg); padding: 4px 8px; text-align: center; transform: rotate(-3deg); }
 
-/* ── Tab slash row ────────────────────────────────────── */
-.rippers-sheet .rs-tabs { display: flex; gap: 8px; padding: 18px 22px 4px; flex-wrap: wrap; }
-.rippers-sheet .rs-tab { font-family: var(--rs-mono); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; padding: 7px 16px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-panel); color: var(--rs-bone-dim); transform: skewX(-12deg); }
-.rippers-sheet .rs-tab > span { display: inline-block; transform: skewX(12deg); }
-.rippers-sheet .rs-tab:hover { color: var(--rs-bone); }
-.rippers-sheet .rs-tab.rs-tab-active { background: var(--rs-red); color: #fff; border-color: var(--rs-red); }
+/* ── Work area: side-tab rail (Option 3) + tab body ───────── */
+/* Wireframe A: the tabs move to a vertical rail on the left, the tab body to the
+   right, in one 2-column grid. The masthead + status floor stay full-width above/
+   below (they carry cross-tab controls). */
+.rippers-sheet .rs-workarea { display: grid; grid-template-columns: 172px 1fr; align-items: start; }
+.rippers-sheet .rs-rail { position: relative; padding: 14px 0 20px; background: var(--rs-bg); border-right: 1px solid var(--rs-border); overflow: hidden; }
+/* halftone lives ONLY in the right gutter of the rail, never under a label (legibility law) */
+.rippers-sheet .rs-rail-gutter { position: absolute; top: 0; bottom: 0; right: 0; width: 22px; background-image: radial-gradient(circle, rgba(232,220,203,.09) 1px, transparent 1px); background-size: 8px 8px; pointer-events: none; }
+/* Option 3 — BOLD staggered skewed pills; label counter-skewed FLAT; active = a Pirata
+   red slash. Legibility law: labels never net-skewed, never below 10.5px/600, ≥4.5:1,
+   Pirata never all-caps (rail-options.html §.o3, owner pick). */
+.rippers-sheet .rs-tab { position: relative; display: block; width: auto; padding: 0; cursor: pointer; border: 1px solid var(--rs-border-red); background: var(--rs-card); transform: skewX(-10deg); box-shadow: 3px 3px 0 rgba(0,0,0,.5); text-align: left; }
+.rippers-sheet .rs-tab:nth-child(odd) { margin: 7px 10px 7px 22px; }
+.rippers-sheet .rs-tab:nth-child(even) { margin: 7px 20px 7px 12px; }
+.rippers-sheet .rs-tab > span { display: block; transform: skewX(10deg); padding: 9px 14px; font-family: var(--rs-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rs-bone-dim); }
+.rippers-sheet .rs-tab:hover { border-color: var(--rs-red); }
+.rippers-sheet .rs-tab.rs-tab-active { background: var(--rs-red); border-color: var(--rs-red); margin: 7px 4px 7px 8px; box-shadow: 5px 5px 0 rgba(0,0,0,.55); }
+.rippers-sheet .rs-tab.rs-tab-active > span { font-family: var(--rs-verb); font-size: 15px; font-weight: 400; letter-spacing: .05em; text-transform: none; color: #fff; text-shadow: 1px 1px 0 rgba(7,4,5,.7); }
 
 /* ── Tab body ─────────────────────────────────────────── */
 .rippers-sheet .rs-tbody { padding: 12px 16px 14px; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -313,7 +325,8 @@
 
 /* Inline skill-level editing (guise cards) + inline weapon editing (Kit tab). */
 .rippers-sheet .rs-skilledit { margin-top: 8px; border-left: 2px solid var(--rs-border-red); padding-left: 8px; }
-.rippers-sheet .rs-skilledit-class { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--rs-bone-dim); }
+/* the class NAME is a proper name → authored case, not caps (register name law, Austin) */
+.rippers-sheet .rs-skilledit-class { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: none; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-skilledit-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2px 0; }
 .rippers-sheet .rs-skilledit-name { font-family: var(--rs-body); font-size: 14px; color: var(--rs-bone); }
 .rippers-sheet .rs-skilledit-sl { font-family: var(--rs-mono); font-size: 14px; color: #fff; min-width: 34px; text-align: center; }
@@ -333,7 +346,7 @@
 .rippers-sheet .rs-play-heroic { align-self: flex-start; background: var(--rs-red); color: #fff; padding: 5px 16px; font-family: var(--rs-disp); font-weight: 800; font-size: 17px; transform: skewX(-10deg); }
 .rippers-sheet .rs-play-heroic > * { display: inline-block; transform: skewX(10deg); }
 .rippers-sheet .rs-play-heroic-k { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .16em; opacity: .85; margin-right: 6px; }
-.rippers-sheet .rs-play-classes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.rippers-sheet .rs-play-classes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items: start; }
 .rippers-sheet .rs-play-class { background: var(--rs-card); border: 1px solid var(--rs-border); padding: 8px 10px; }
 .rippers-sheet .rs-play-class-name { font-family: var(--rs-disp); font-weight: 800; font-size: 16px; color: var(--rs-red); border-bottom: 1px solid var(--rs-border); padding-bottom: 4px; margin-bottom: 5px; }
 .rippers-sheet .rs-play-skill { border-bottom: 1px solid rgba(74,26,34,.4); }
@@ -342,7 +355,9 @@
 .rippers-sheet .rs-play-skill > summary::before { content: '▸'; color: var(--rs-red); margin-right: 5px; font-size: 10px; }
 .rippers-sheet .rs-play-skill[open] > summary::before { content: '▾'; }
 .rippers-sheet .rs-play-skill-name { font-family: var(--rs-body); font-size: 13px; color: var(--rs-bone); flex: 1; }
-.rippers-sheet .rs-play-skill-sl { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-gold); white-space: nowrap; }
+.rippers-sheet .rs-play-skill-sl { font-family: var(--rs-mono); font-size: 11px; color: var(--rs-gold); white-space: nowrap; }
+/* one caret per skill row: the summary::before already draws it; hide the inline duplicate */
+.rippers-sheet .rs-play-caret { display: none; }
 .rippers-sheet .rs-play-skill-desc { font-family: var(--rs-body); font-size: 12px; color: var(--rs-bone-dim); padding: 4px 0 6px 14px; line-height: 1.35; }
 .rippers-sheet .rs-play-skill-desc p { margin: 0 0 4px; }
 .rippers-sheet .rs-play-gap { font-family: var(--rs-mono); font-size: 10px; color: var(--rs-bone-dim); font-style: italic; padding: 4px 0 6px 14px; }
@@ -383,7 +398,8 @@
 .rippers-sheet .rs-play-vk { font-size: 9px; letter-spacing: .14em; color: var(--rs-bone-dim); margin-right: 4px; }
 .rippers-sheet .rs-play-vv { color: var(--rs-bone); font-weight: 600; }
 .rippers-sheet .rs-play-vsub { font-size: 9px; letter-spacing: .1em; color: var(--rs-vuln); margin-left: 4px; }
-.rippers-sheet .rs-play-lent { color: var(--rs-green); font-weight: 600; }
+/* lent readout is GOLD everywhere (X1/H5 canon + masthead .rs-lent-num); was green here — unify */
+.rippers-sheet .rs-play-lent { color: var(--rs-gold); font-weight: 600; }
 /* 2b. die-shape attributes */
 .rippers-sheet .rs-play-dice { display: flex; gap: 14px; flex-wrap: wrap; }
 .rippers-sheet .rs-die { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -413,7 +429,7 @@
 /* 4b. class sub-note + source tag + caret */
 .rippers-sheet .rs-play-subnote { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .12em; color: var(--rs-bone-dim); margin: -2px 0 4px; }
 .rippers-sheet .rs-play-caret { color: var(--rs-red); font-size: 9px; }
-.rippers-sheet .rs-play-skill[open] .rs-play-caret { transform: rotate(90deg); display: inline-block; }
+.rippers-sheet .rs-play-skill[open] .rs-play-caret { display: none; }   /* deduped: the summary::before is the single caret */
 .rippers-sheet .rs-play-source { font-family: var(--rs-mono); font-size: 9px; color: var(--rs-bone-dim); margin-top: 3px; }
 /* 5. heroic row */
 .rippers-sheet .rs-play-heroics { display: flex; gap: 10px; flex-wrap: wrap; }
