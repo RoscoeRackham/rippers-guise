@@ -1006,10 +1006,14 @@ async function ensureVaultActor() {
 }
 
 /** PURE. The object a traded guise travels as. toObject() carries the heroic ref, lent HP/MP CURRENT
- *  values and the IP satchel (all in system.data — R2, no refill). Adds the consignment address (for
- *  a vault leg) and the Q3 informational marker: whether the guise was in the SOURCE's per-scene
- *  used-list at trade time. Strips _id. */
-function tradePayload(item, sourceActor, recipientActor, usedList = []) {
+ *  values and the IP satchel (all in system.data — R2, no refill). Adds the consignment address for
+ *  a vault leg. Strips _id.
+ *  Q1/Q2/Q3 (ADDENDUM 2, ruled): a mid-conflict trade is legal AS PART OF THE GUISE SWAP ACTION —
+ *  one action covers unequip + equip + trade + The Turn, with NO separate cost. So the hand-off
+ *  itself charges nothing (the dismiss rides the action), and the RECEIVER binding the received
+ *  guise runs the NORMAL swap/Turn economics (its new id is fresh in their used-list by design, not
+ *  by accident). The former informational usedThisSceneAtTrade carry is retired with that ruling. */
+function tradePayload(item, sourceActor, recipientActor) {
 	const obj = typeof item?.toObject === 'function' ? item.toObject() : { ...(item ?? {}) };
 	delete obj._id;
 	obj.flags = obj.flags ?? {};
@@ -1017,9 +1021,40 @@ function tradePayload(item, sourceActor, recipientActor, usedList = []) {
 		...(obj.flags[MODULE_ID] ?? {}),
 		consignedTo: recipientActor?.id ?? '', consignedToName: recipientActor?.name ?? '',
 		consignedBy: sourceActor?.id ?? '', consignedByName: sourceActor?.name ?? '',
-		usedThisSceneAtTrade: Array.isArray(usedList) && usedList.includes(item?.id),
 	};
+	delete obj.flags[MODULE_ID].usedThisSceneAtTrade;
 	return obj;
+}
+
+/** PURE (Q8, ruled): giver and receiver must SHARE A SCENE. Token-scene id arrays in, decision out.
+ *  Edge (stated in the trade report): when NEITHER actor has a token anywhere there is no scene
+ *  context at all (downtime) — the trade is allowed; if only one side is deployed, refused. */
+function sameSceneDecision(giverSceneIds, receiverSceneIds) {
+	const g = Array.isArray(giverSceneIds) ? giverSceneIds : [];
+	const r = Array.isArray(receiverSceneIds) ? receiverSceneIds : [];
+	if (g.length === 0 && r.length === 0) return { ok: true, reason: 'no-scene-context' };
+	const set = new Set(g);
+	return r.some((id) => set.has(id)) ? { ok: true, reason: 'shared-scene' } : { ok: false, reason: 'not-same-scene' };
+}
+/** Scene ids where the actor currently has a token (v13 TokenDocuments). Empty when undeployed. */
+function actorSceneIds(actor) {
+	try { return (actor?.getActiveTokens?.(true, true) ?? []).map((t) => t?.parent?.id ?? t?.scene?.id).filter(Boolean); }
+	catch { return []; }
+}
+
+/** PURE (Q9, ruled): NO duplicates in circulation. Identity = the NORMALIZED GUISE NAME — trades
+ *  recreate items so an id cannot carry lineage, and a user-authored guise has no other stable
+ *  cross-actor key. Case-insensitive, trimmed. */
+const guiseIdentity = (name) => String(name ?? '').trim().toLowerCase();
+function duplicateGuiseDecision(existingNames, guiseName) {
+	const id = guiseIdentity(guiseName);
+	if (!id) return { ok: true, reason: 'unnamed' };
+	return (existingNames ?? []).some((n) => guiseIdentity(n) === id)
+		? { ok: false, reason: 'duplicate-guise' } : { ok: true, reason: 'unique' };
+}
+/** The recipient-side names to test a trade against (their guises; innate included — same name = copy). */
+function actorGuiseNames(actor) {
+	return (actor?.items?.filter?.(isGuiseItem) ?? []).map((g) => g?.name ?? '');
 }
 /** PURE. May this user draw a consigned vault guise onto `actor`? Addressed guises draw only to the
  *  addressee's actor (GM may always redirect); the drawer must be able to write the target actor. */
@@ -1041,9 +1076,15 @@ async function vaultConsign(actor, guiseId, recipientActor) {
 	if (!vault) { ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Vault.NoVault') ?? 'The Vault is not set up yet — ask your GM to open the Party Vault once.'); return { ok: false, reason: 'no-vault' }; }
 	const d = handOffDecision(actor, item, recipientActor, true); // validation only; the write goes to the vault
 	if (!d.ok) { ui.notifications?.warn(handOffRefusalText(d.reason)); return d; }
-	if (getActiveGuise(actor) === guiseId) await dismissGuise(actor, guiseId); // unwear first (bind resets)
-	const used = actor.getFlag?.(MODULE_ID, USED_GUISES_FLAG) ?? [];
-	const obj = tradePayload(item, actor, recipientActor, used);
+	// Q8 (ruled): same scene between giver and receiver at initiation.
+	const scene = sameSceneDecision(actorSceneIds(actor), actorSceneIds(recipientActor));
+	if (!scene.ok) { ui.notifications?.warn(handOffRefusalText('not-same-scene')); return { ok: false, reason: 'not-same-scene' }; }
+	// Q9 (ruled): no duplicates — neither on the recipient nor already riding the vault.
+	const dupRecipient = duplicateGuiseDecision(actorGuiseNames(recipientActor), item.name);
+	const dupVault = duplicateGuiseDecision(actorGuiseNames(vault), item.name);
+	if (!dupRecipient.ok || !dupVault.ok) { ui.notifications?.warn(handOffRefusalText('duplicate-guise')); return { ok: false, reason: 'duplicate-guise' }; }
+	if (getActiveGuise(actor) === guiseId) await dismissGuise(actor, guiseId); // unwear first (bind resets; part of the one swap action, no separate cost — Q1/Q2)
+	const obj = tradePayload(item, actor, recipientActor);
 	let created;
 	try { created = await vault.createEmbeddedDocuments('Item', [obj]); }
 	catch (err) { console.warn('[rippers-guise] consign-to-vault failed:', err); ui.notifications?.warn('Could not consign to the Vault.'); return { ok: false, reason: 'vault-write-failed' }; }
@@ -1068,6 +1109,9 @@ async function vaultDraw(actor, vaultItemId) {
 		}[d.reason] ?? 'Draw refused.';
 		ui.notifications?.warn(msg); return d;
 	}
+	// Q9 (ruled): the draw must not create a second copy on the destination.
+	const dup = duplicateGuiseDecision(actorGuiseNames(actor), item.name);
+	if (!dup.ok) { ui.notifications?.warn(handOffRefusalText('duplicate-guise')); return { ok: false, reason: 'duplicate-guise' }; }
 	const obj = item.toObject(); delete obj._id;
 	obj.flags = obj.flags ?? {}; obj.flags[MODULE_ID] = { ...(obj.flags[MODULE_ID] ?? {}) };
 	delete obj.flags[MODULE_ID].consignedTo; delete obj.flags[MODULE_ID].consignedToName;
@@ -4946,6 +4990,8 @@ function handOffRefusalText(reason) {
 		'no-guise': 'That is not a guise.', 'innate-untradable': 'The innate guise cannot be handed off.',
 		'no-recipient': 'Target a recipient token first.', 'same-actor': 'Cannot hand a guise to its own bearer.',
 		'no-vault': 'The Vault is not set up yet — ask your GM to open the Party Vault once.',
+		'not-same-scene': 'Giver and receiver must share a scene. A phial passes hand to hand.',
+		'duplicate-guise': 'A copy of that guise is already in their hands. Two copies may not circulate.',
 	}[reason] ?? 'Hand-off refused.';
 }
 /** Hand a TRADABLE guise Item whole to a recipient actor: its attached heroic ref, lent HP/MP layer and
@@ -4959,10 +5005,14 @@ async function sheetHandOffGuise(actor, guiseId, recipient) {
 	const vaultAvailable = !!vault && (globalThis.game?.user?.isGM || !!vault.isOwner); // default-OWNER vault
 	const d = handOffDecision(actor, item, recipient, canWrite, vaultAvailable);
 	if (!d.ok) { ui.notifications?.warn(handOffRefusalText(d.reason)); return d; }
-	if (d.reason === 'via-vault') return vaultConsign(actor, guiseId, recipient); // cross-owner: consign, receiver draws
-	if (getActiveGuise(actor) === guiseId) await dismissGuise(actor, guiseId); // unwear first (bind resets)
-	const used = actor.getFlag?.(MODULE_ID, USED_GUISES_FLAG) ?? [];
-	const obj = tradePayload(item, actor, null, used);                        // heroic ref + lent layer + satchel ride in system.data; Q3 marker carried
+	if (d.reason === 'via-vault') return vaultConsign(actor, guiseId, recipient); // cross-owner: consign, receiver draws (its own Q8/Q9 gates)
+	// direct path — Q8 same-scene + Q9 no-duplicates (ruled, ADDENDUM 2)
+	const scene = sameSceneDecision(actorSceneIds(actor), actorSceneIds(recipient));
+	if (!scene.ok) { ui.notifications?.warn(handOffRefusalText('not-same-scene')); return { ok: false, reason: 'not-same-scene' }; }
+	const dup = duplicateGuiseDecision(actorGuiseNames(recipient), item.name);
+	if (!dup.ok) { ui.notifications?.warn(handOffRefusalText('duplicate-guise')); return { ok: false, reason: 'duplicate-guise' }; }
+	if (getActiveGuise(actor) === guiseId) await dismissGuise(actor, guiseId); // unwear first (bind resets; rides the one swap action — Q1/Q2)
+	const obj = tradePayload(item, actor, null);                              // heroic ref + lent layer + satchel ride in system.data
 	await recipient.createEmbeddedDocuments('Item', [obj]);
 	await item.delete();
 	ui.notifications?.info(`${game.i18n?.localize?.('RIPPERS.Sheet.HandedOff') ?? 'Handed off'} "${item.name}".`);
@@ -5868,6 +5918,10 @@ Hooks.once('ready', async () => {
 	Hooks.on(globalThis.game?.projectfu?.FUHooks?.REST_EVENT ?? 'projectfu.events.rest', (event) => {
 		const actor = event?.actor; if (!actor) return;
 		restRefillActorGuises(actor).catch((err) => console.warn('[rippers-guise] rest refill failed:', err));
+		// Q6 (ADDENDUM 2, ruled): phials held in THE VAULT refill at rest too — "worn or in hand"
+		// reaches vault-held. Any rest tops the vault up (idempotent; default-OWNER lets any player write).
+		const vault = findVaultActor();
+		if (vault) restRefillActorGuises(vault).catch((err) => console.warn('[rippers-guise] vault rest refill failed:', err));
 	});
 	// P3: lent-vitals auto-intercept — the worn guise's lent-HP layer absorbs damage before own HP.
 	// POST_CALCULATE (result is final/post-affinity; amount-modifier quirks ran at PRE). HP only.
@@ -5930,7 +5984,7 @@ export { faceForGuise, resolveFaceImg, nextManualFace, getFaces, setFace, applyG
 export { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, clearGuiseSceneState, USED_GUISES_FLAG, TURN_REFUND_FLAG };
 // Unit 3 Party Vault: field limit + slots (V1/V5), roster/cabinet VM (V2/V3/V4), cross-owner hand-off (X4).
 export { partySize, guiseFieldLimit, fieldSlots, partyActors, vaultGuiseCard, buildCabinetEntries, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, ensureCabinetPack, PARTY_SIZE_SETTING, CABINET_PACK, CABINET_WORLD_PACK };
-export { findVaultActor, ensureVaultActor, tradePayload, drawDecision, vaultConsign, vaultDraw, handOffRefusalText, VAULT_ACTOR_FLAG, VAULT_ACTOR_NAME };
+export { findVaultActor, ensureVaultActor, tradePayload, drawDecision, vaultConsign, vaultDraw, handOffRefusalText, sameSceneDecision, actorSceneIds, duplicateGuiseDecision, guiseIdentity, actorGuiseNames, VAULT_ACTOR_FLAG, VAULT_ACTOR_NAME };
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };
 export { sheetOpenEditor, sheetStashGuise, handOffDecision, sheetHandOffGuise };
 export { deeperBondsApi, bondClockPips, bondPanelRow, buildBondPanelRows, SOLID_BOND_CAP, DEEPER_BONDS_ID };

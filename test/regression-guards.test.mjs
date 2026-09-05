@@ -79,6 +79,26 @@ test('GUARD v0.7.49 (vault trade): both trade legs create BEFORE they delete —
 	assert.doesNotMatch(fnBody('vaultConsign'), /USED_GUISES_FLAG.*setFlag|setFlag.*USED_GUISES_FLAG/);
 });
 
+test('GUARD v0.7.50 (Full-Rest reload bug): no untyped <button> in the form-rooted sheet templates', () => {
+	// The sheet root is a <form>; a <button> without type="button" defaults to type=submit, and a
+	// native submit navigates — clicking Full Rest RELOADED Foundry (Austin, live). Every button in
+	// these templates must carry an explicit type. (benefit-picker's save-submit is the one deliberate
+	// exception, filtered by its type="submit".)
+	for (const tpl of ['rippers-actor-sheet.hbs', 'guise-sheet.hbs', 'guise-builder.hbs', 'benefit-picker.hbs']) {
+		const html = readFileSync(fileURLToPath(new URL(`../templates/${tpl}`, import.meta.url)), 'utf8');
+		const untyped = (html.match(/<button(?![^>]*\btype=)/g) ?? []).length;
+		assert.equal(untyped, 0, `${tpl}: ${untyped} <button> without an explicit type`);
+	}
+});
+
+test('GUARD v0.7.50 (ADDENDUM 2): the trade path carries the ruled gates', () => {
+	const srcFile = src; // whole-module source
+	assert.match(srcFile, /sameSceneDecision\(actorSceneIds\(actor\), actorSceneIds\(recipient/); // Q8 wired
+	assert.match(srcFile, /duplicateGuiseDecision\(actorGuiseNames\(/);                            // Q9 wired
+	assert.doesNotMatch(srcFile, /usedThisSceneAtTrade:/);                                         // Q3 carry retired
+	assert.match(srcFile, /vault rest refill/);                                                    // Q6 wired
+});
+
 test('GUARD packaging (v0.7.48): module declares the guises pack and the release tool hard-verifies it', () => {
 	const mod = JSON.parse(readFileSync(fileURLToPath(new URL('../module.json', import.meta.url)), 'utf8'));
 	assert.ok(mod.packs?.some((p) => p.path === 'packs/guises'), 'packs/guises declared');

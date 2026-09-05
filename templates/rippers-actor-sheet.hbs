@@ -28,14 +28,14 @@
 						<span class="rs-stat-num">{{vm.vitals.hp.bar.value}}{{#if vm.vitals.hp.bar.lent}} <span class="rs-lent-num">(+{{vm.vitals.hp.bar.lent}})</span>{{/if}} / {{vm.vitals.hp.max}}</span>
 						<span class="rs-bar rs-bar-hp"><span class="rs-bar-fill" style="width:{{vm.vitals.hp.bar.basePct}}%"></span>{{#if vm.vitals.hp.bar.lent}}<span class="rs-bar-lent" style="width:{{vm.vitals.hp.bar.lentPct}}%"></span>{{/if}}</span>
 						<span class="rs-stat-sub">{{localize 'RIPPERS.Sheet.Crisis'}} {{vm.vitals.crisis.score}}</span>
-						<span class="rs-step"><button data-action="resAdjust" data-res="hp" data-dir="-1" title="{{localize 'RIPPERS.Sheet.Damage'}}">&minus;</button><button data-action="resAdjust" data-res="hp" data-dir="1" title="{{localize 'RIPPERS.Sheet.Heal'}}">+</button></span>
+						<span class="rs-step"><button type="button" data-action="resAdjust" data-res="hp" data-dir="-1" title="{{localize 'RIPPERS.Sheet.Damage'}}">&minus;</button><button type="button" data-action="resAdjust" data-res="hp" data-dir="1" title="{{localize 'RIPPERS.Sheet.Heal'}}">+</button></span>
 					</span>
 					{{!-- MP (bar + temporary lent overlay) --}}
 					<span class="rs-stat rs-stat-mp">
 						<span class="rs-stat-label">MP</span>
 						<span class="rs-stat-num">{{vm.vitals.mp.bar.value}}{{#if vm.vitals.mp.bar.lent}} <span class="rs-lent-num">(+{{vm.vitals.mp.bar.lent}})</span>{{/if}} / {{vm.vitals.mp.max}}</span>
 						<span class="rs-bar rs-bar-mp"><span class="rs-bar-fill" style="width:{{vm.vitals.mp.bar.basePct}}%"></span>{{#if vm.vitals.mp.bar.lent}}<span class="rs-bar-lent" style="width:{{vm.vitals.mp.bar.lentPct}}%"></span>{{/if}}</span>
-						<span class="rs-step"><button data-action="resAdjust" data-res="mp" data-dir="-1">&minus;</button><button data-action="resAdjust" data-res="mp" data-dir="1">+</button></span>
+						<span class="rs-step"><button type="button" data-action="resAdjust" data-res="mp" data-dir="-1">&minus;</button><button type="button" data-action="resAdjust" data-res="mp" data-dir="1">+</button></span>
 					</span>
 					{{!-- DEF / MDEF --}}
 					<span class="rs-stat rs-stat-small rs-stat-dual">
@@ -46,14 +46,14 @@
 					<span class="rs-stat rs-stat-small">
 						<span class="rs-stat-label">{{localize 'RIPPERS.Sheet.Fabula'}}</span>
 						<span class="rs-stat-num">{{vm.vitals.fp}}</span>
-						<span class="rs-step"><button data-action="spendFabula" title="{{localize 'RIPPERS.Sheet.SpendFabula'}}">{{localize 'RIPPERS.Sheet.Spend'}}</button></span>
+						<span class="rs-step"><button type="button" data-action="spendFabula" title="{{localize 'RIPPERS.Sheet.SpendFabula'}}">{{localize 'RIPPERS.Sheet.Spend'}}</button></span>
 					</span>
 					{{!-- IP (dots per H5; temporary lent dots + parens number) --}}
 					<span class="rs-stat rs-stat-small">
 						<span class="rs-stat-label">IP</span>
 						<span class="rs-stat-num">{{vm.vitals.ip.dots.value}}{{#if vm.vitals.ip.dots.lent}} <span class="rs-lent-num">(+{{vm.vitals.ip.dots.lent}})</span>{{/if}} / {{vm.vitals.ip.max}}</span>
 						<span class="rs-ipdots">{{#each vm.vitals.ip.dots.dots as |d|}}<span class="rs-ipdot{{#if d.filled}} filled{{/if}}"></span>{{/each}}{{#each vm.vitals.ip.dots.lentDots as |d|}}<span class="rs-ipdot temp"></span>{{/each}}</span>
-						<span class="rs-step"><button data-action="resAdjust" data-res="ip" data-dir="-1">&minus;</button><button data-action="resAdjust" data-res="ip" data-dir="1">+</button></span>
+						<span class="rs-step"><button type="button" data-action="resAdjust" data-res="ip" data-dir="-1">&minus;</button><button type="button" data-action="resAdjust" data-res="ip" data-dir="1">+</button></span>
 					</span>
 				</div>
 
@@ -63,24 +63,24 @@
 				</div>
 				{{#if vm.masthead.classes.length}}<div><span class="rs-torment">{{#each vm.masthead.classes as |c|}}{{c}} {{/each}}</span></div>{{/if}}
 				<div class="rs-floor-row">
-					<button class="rs-chip" data-action="rollCheck">{{localize 'RIPPERS.Sheet.RollCheck'}}</button>
-					<button class="rs-chip" data-action="rest">{{localize 'RIPPERS.Sheet.Rest'}}</button>
-					<button class="rs-chip" data-action="healToCrisis" title="{{localize 'RIPPERS.Sheet.HealToCrisisHint'}}">{{localize 'RIPPERS.Sheet.HealToCrisis'}}</button>
+					<button type="button" class="rs-chip" data-action="rollCheck">{{localize 'RIPPERS.Sheet.RollCheck'}}</button>
+					<button type="button" class="rs-chip" data-action="rest">{{localize 'RIPPERS.Sheet.Rest'}}</button>
+					<button type="button" class="rs-chip" data-action="healToCrisis" title="{{localize 'RIPPERS.Sheet.HealToCrisisHint'}}">{{localize 'RIPPERS.Sheet.HealToCrisis'}}</button>
 					{{!-- R1: the Rival cost-waiver roller toggle — shown only if the actor has the Rival quirk. --}}
-					{{#if vm.rivalWaiver.has}}<button class="rs-chip{{#if vm.rivalWaiver.armed}} rs-chip-on{{/if}}" data-action="toggleRivalWaiver" title="{{localize 'RIPPERS.Sheet.RivalWaiverHint'}}">{{localize 'RIPPERS.Sheet.RivalWaiver'}}</button>{{/if}}
+					{{#if vm.rivalWaiver.has}}<button type="button" class="rs-chip{{#if vm.rivalWaiver.armed}} rs-chip-on{{/if}}" data-action="toggleRivalWaiver" title="{{localize 'RIPPERS.Sheet.RivalWaiverHint'}}">{{localize 'RIPPERS.Sheet.RivalWaiver'}}</button>{{/if}}
 					{{!-- H2: manual face toggle (normal ↔ other-shape) — shown only when a face is configured. --}}
-					{{#if vm.faces.canToggle}}<button class="rs-chip{{#if vm.faces.onOther}} rs-chip-on{{/if}}" data-action="toggleFace" title="{{localize 'RIPPERS.Sheet.ToggleFaceHint'}}">{{localize 'RIPPERS.Sheet.OtherShape'}}</button>{{/if}}
+					{{#if vm.faces.canToggle}}<button type="button" class="rs-chip{{#if vm.faces.onOther}} rs-chip-on{{/if}}" data-action="toggleFace" title="{{localize 'RIPPERS.Sheet.ToggleFaceHint'}}">{{localize 'RIPPERS.Sheet.OtherShape'}}</button>{{/if}}
 				</div>
 			</div>
 
 			{{!-- Swap column --}}
 			<div class="rs-swapcol">
-				<button class="rs-swap-btn" data-action="guiseSwap" title="{{localize 'RIPPERS.Sheet.SwapHint'}}"><span>{{localize 'RIPPERS.Sheet.Swap'}}</span></button>
+				<button type="button" class="rs-swap-btn" data-action="guiseSwap" title="{{localize 'RIPPERS.Sheet.SwapHint'}}"><span>{{localize 'RIPPERS.Sheet.Swap'}}</span></button>
 				{{#if vm.guises.length}}
 					<div class="rs-guise-picker">
 						<div class="rs-guise-picker-k">{{localize 'RIPPERS.Sheet.WearAGuise'}}</div>
 						{{#each vm.guises as |g|}}
-							<button class="rs-guise-pick {{#if g.worn}}rs-worn{{/if}}" data-action="guiseWear" data-guise="{{g.id}}">
+							<button type="button" class="rs-guise-pick {{#if g.worn}}rs-worn{{/if}}" data-action="guiseWear" data-guise="{{g.id}}">
 								<span>{{g.name}}</span>
 								<span class="rs-gp-marker">{{#if g.worn}}{{localize 'RIPPERS.Sheet.Worn'}}{{else if g.innate}}{{localize 'RIPPERS.Sheet.Innate'}}{{else}}{{localize 'RIPPERS.Sheet.Tradable'}}{{/if}}</span>
 							</button>
@@ -95,7 +95,7 @@
 		{{!-- ── Tab slash row ────────────────────────────────────── --}}
 		<div class="rs-tabs">
 			{{#each vm.tabs as |t|}}
-				<button class="rs-tab {{#if t.active}}rs-tab-active{{/if}}" data-action="selectTab" data-tab="{{t.key}}"><span>{{t.label}}</span></button>
+				<button type="button" class="rs-tab {{#if t.active}}rs-tab-active{{/if}}" data-action="selectTab" data-tab="{{t.key}}"><span>{{t.label}}</span></button>
 			{{/each}}
 		</div>
 
@@ -240,8 +240,8 @@
 				{{!-- H2: the two configurable faces (NORMAL + OTHER-SHAPE). A worn guise assigns one below. --}}
 				<div class="rs-faces">
 					<span class="rs-faces-label">{{localize 'RIPPERS.Sheet.Faces'}}</span>
-					<button class="rs-chip" data-action="setFace" data-face="normal">{{localize 'RIPPERS.Sheet.FaceNormal'}}{{#if vm.faces.normal}} ✓{{/if}}</button>
-					<button class="rs-chip" data-action="setFace" data-face="other">{{localize 'RIPPERS.Sheet.FaceOther'}}{{#if vm.faces.other}} ✓{{/if}}</button>
+					<button type="button" class="rs-chip" data-action="setFace" data-face="normal">{{localize 'RIPPERS.Sheet.FaceNormal'}}{{#if vm.faces.normal}} ✓{{/if}}</button>
+					<button type="button" class="rs-chip" data-action="setFace" data-face="other">{{localize 'RIPPERS.Sheet.FaceOther'}}{{#if vm.faces.other}} ✓{{/if}}</button>
 				</div>
 				{{#if vm.guises.length}}
 					{{#each vm.guises as |g|}}
@@ -249,14 +249,14 @@
 							<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
 								<span style="display:flex;align-items:center;gap:10px;">
 									{{!-- 2a: the guise-identity tarot tile — click to pick from the 22 major arcana. --}}
-									<button class="rs-arcana-tile{{#if g.arcana}} has-art{{/if}}" data-action="pickArcana" data-guise="{{g.id}}" title="{{#if g.arcana}}{{g.arcana.name}}{{else}}{{localize 'RIPPERS.Sheet.PickArcana'}}{{/if}}">{{#if g.arcana}}<img src="{{g.arcana.img}}" alt="{{g.arcana.name}}">{{else}}<span class="rs-arcana-empty">★</span>{{/if}}</button>
+									<button type="button" class="rs-arcana-tile{{#if g.arcana}} has-art{{/if}}" data-action="pickArcana" data-guise="{{g.id}}" title="{{#if g.arcana}}{{g.arcana.name}}{{else}}{{localize 'RIPPERS.Sheet.PickArcana'}}{{/if}}">{{#if g.arcana}}<img src="{{g.arcana.img}}" alt="{{g.arcana.name}}">{{else}}<span class="rs-arcana-empty">★</span>{{/if}}</button>
 									<span class="rs-classcard-name">{{g.name}}</span>
 								</span>
 								<span class="rs-bond-strength">{{#if g.worn}}{{localize 'RIPPERS.Sheet.Worn'}}{{else if g.innate}}{{localize 'RIPPERS.Sheet.Innate'}}{{else}}{{localize 'RIPPERS.Sheet.Tradable'}}{{/if}}</span>
 							</div>
 							{{#if g.trio.length}}<div class="rs-affchips" style="margin-top:8px;">{{#each g.trio as |t|}}<span class="rs-affchip {{#if t.good}}rs-aff-good{{/if}}{{#if t.bad}}rs-aff-bad{{/if}}">{{t.word}} {{t.type}}</span>{{/each}}</div>{{/if}}
 							<div class="rs-skillrow"><span>{{localize 'RIPPERS.Sheet.Skills'}}</span><b>{{g.skillCount}} · {{g.slTotal}}/{{g.budget}} SL</b>
-								<button class="rs-chip{{#if g.slEditable}} rs-chip-on{{/if}}" data-action="toggleSlLock" data-guise="{{g.id}}" title="{{localize 'RIPPERS.Sheet.SlUnlockHint'}}">{{localize 'RIPPERS.Sheet.SlUnlock'}}</button>
+								<button type="button" class="rs-chip{{#if g.slEditable}} rs-chip-on{{/if}}" data-action="toggleSlLock" data-guise="{{g.id}}" title="{{localize 'RIPPERS.Sheet.SlUnlockHint'}}">{{localize 'RIPPERS.Sheet.SlUnlock'}}</button>
 							</div>
 							{{#if g.slEditable}}
 								{{#each g.skillGroups as |grp|}}
@@ -266,9 +266,9 @@
 											<div class="rs-skilledit-row">
 												<span class="rs-skilledit-name">{{s.name}}</span>
 												<span class="rs-step">
-													<button data-action="skillSlAdjust" data-guise="{{g.id}}" data-class="{{s.classUuid}}" data-skill="{{s.skillUuid}}" data-dir="-1">&minus;</button>
+													<button type="button" data-action="skillSlAdjust" data-guise="{{g.id}}" data-class="{{s.classUuid}}" data-skill="{{s.skillUuid}}" data-dir="-1">&minus;</button>
 													<b class="rs-skilledit-sl">{{s.sl}}<span class="rs-skilledit-max">/{{s.maxSl}}</span></b>
-													<button data-action="skillSlAdjust" data-guise="{{g.id}}" data-class="{{s.classUuid}}" data-skill="{{s.skillUuid}}" data-dir="1">+</button>
+													<button type="button" data-action="skillSlAdjust" data-guise="{{g.id}}" data-class="{{s.classUuid}}" data-skill="{{s.skillUuid}}" data-dir="1">+</button>
 												</span>
 											</div>
 										{{/each}}
@@ -278,9 +278,9 @@
 							{{#if g.heroicName}}<div class="rs-heroic" style="margin-top:8px;"><span class="rs-heroic-label">{{localize 'RIPPERS.Sheet.Heroic'}}</span><span class="rs-heroic-name">{{g.heroicName}}</span></div>{{/if}}
 							{{!-- H2: which face this guise shows when worn (normal / other-shape / no-portrait well). --}}
 							<div class="rs-faceassign"><span>{{localize 'RIPPERS.Sheet.ShowsFace'}}</span>
-								<button class="rs-chip{{#if g.faceNormal}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="normal">{{localize 'RIPPERS.Sheet.FaceNormal'}}</button>
-								<button class="rs-chip{{#if g.faceOther}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="other">{{localize 'RIPPERS.Sheet.FaceOther'}}</button>
-								<button class="rs-chip{{#if g.faceNone}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="none">{{localize 'RIPPERS.Sheet.FaceNone'}}</button>
+								<button type="button" class="rs-chip{{#if g.faceNormal}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="normal">{{localize 'RIPPERS.Sheet.FaceNormal'}}</button>
+								<button type="button" class="rs-chip{{#if g.faceOther}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="other">{{localize 'RIPPERS.Sheet.FaceOther'}}</button>
+								<button type="button" class="rs-chip{{#if g.faceNone}} rs-chip-on{{/if}}" data-action="setGuiseFace" data-guise="{{g.id}}" data-value="none">{{localize 'RIPPERS.Sheet.FaceNone'}}</button>
 							</div>
 							<div class="rs-skillrow">
 								<span>
@@ -289,11 +289,11 @@
 									{{#if g.lent.ip.capacity}}{{localize 'RIPPERS.Sheet.Satchel'}} {{g.lent.ip.stock}}/{{g.lent.ip.capacity}}{{/if}}
 								</span>
 								<span>
-									{{#if g.worn}}<button class="rs-chip" data-action="guiseWear" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Unmask'}}</button>{{else}}<button class="rs-chip" data-action="guiseWear" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Wear'}}</button>{{/if}}
+									{{#if g.worn}}<button type="button" class="rs-chip" data-action="guiseWear" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Unmask'}}</button>{{else}}<button type="button" class="rs-chip" data-action="guiseWear" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Wear'}}</button>{{/if}}
 									{{!-- v0.7.18 P5: edit this guise IN-CONTEXT (opens the themed GuiseBuilderApp, not a raw item window) --}}
-									<button class="rs-chip" data-action="openEditor" data-guise="{{g.id}}" title="{{localize 'RIPPERS.Sheet.EditGuise'}}">{{localize 'RIPPERS.Sheet.EditGuise'}}</button>
-									{{#if g.worn}}<button class="rs-chip" data-action="stashGuise" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Stash'}}</button>{{/if}}
-									{{#if g.tradable}}<button class="rs-chip" data-action="handOffGuise" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.HandOff'}}</button>{{else}}<span class="rs-tag-bound">{{localize 'RIPPERS.Sheet.Untradable'}}</span>{{/if}}
+									<button type="button" class="rs-chip" data-action="openEditor" data-guise="{{g.id}}" title="{{localize 'RIPPERS.Sheet.EditGuise'}}">{{localize 'RIPPERS.Sheet.EditGuise'}}</button>
+									{{#if g.worn}}<button type="button" class="rs-chip" data-action="stashGuise" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.Stash'}}</button>{{/if}}
+									{{#if g.tradable}}<button type="button" class="rs-chip" data-action="handOffGuise" data-guise="{{g.id}}">{{localize 'RIPPERS.Sheet.HandOff'}}</button>{{else}}<span class="rs-tag-bound">{{localize 'RIPPERS.Sheet.Untradable'}}</span>{{/if}}
 								</span>
 							</div>
 						</div>
@@ -375,7 +375,7 @@
 							<button type="button" class="rs-btn rs-edit-bond-rm" data-action="bondRemove" data-bond-index="{{b.i}}" title="{{localize 'RIPPERS.Sheet.BondRemove'}}">✕</button>
 						</div>
 					{{/each}}
-					<button class="rs-btn" data-action="bondAddRow">＋ {{localize 'RIPPERS.Sheet.BondAdd'}}</button>
+					<button type="button" class="rs-btn" data-action="bondAddRow">＋ {{localize 'RIPPERS.Sheet.BondAdd'}}</button>
 				</div>
 			{{/if}}
 
@@ -399,13 +399,13 @@
 							<div class="rs-classcard rs-quirk-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
 								<span class="rs-classcard-name">{{q.name}}</span>
 								<span class="rs-quirk-ctl">
-									<button class="rs-chip" data-action="quirkEdit" data-item="{{q.id}}">{{localize 'RIPPERS.Sheet.QuirkEdit'}}</button>
-									<button class="rs-chip" data-action="quirkRemove" data-item="{{q.id}}" title="{{localize 'RIPPERS.Sheet.QuirkRemove'}}">✕</button>
+									<button type="button" class="rs-chip" data-action="quirkEdit" data-item="{{q.id}}">{{localize 'RIPPERS.Sheet.QuirkEdit'}}</button>
+									<button type="button" class="rs-chip" data-action="quirkRemove" data-item="{{q.id}}" title="{{localize 'RIPPERS.Sheet.QuirkRemove'}}">✕</button>
 								</span>
 							</div>
 						{{/each}}
 					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoQuirks'}}</p>{{/if}}
-					<div class="rs-res-controls"><button class="rs-btn" data-action="quirkAdd">＋ {{localize 'RIPPERS.Sheet.QuirkAdd'}}</button></div>
+					<div class="rs-res-controls"><button type="button" class="rs-btn" data-action="quirkAdd">＋ {{localize 'RIPPERS.Sheet.QuirkAdd'}}</button></div>
 				</div>
 			{{/if}}
 
@@ -420,15 +420,15 @@
 									<span class="rs-res-name">{{r.label}}</span>
 									<span class="rs-res-num">{{r.value}}{{#if r.max}} / {{r.max}}{{/if}}</span>
 									<span class="rs-step">
-										<button data-action="resTrackAdjust" data-key="{{r.key}}" data-dir="-1">&minus;</button>
-										<button data-action="resTrackAdjust" data-key="{{r.key}}" data-dir="1">+</button>
-										<button data-action="resTrackRemove" data-key="{{r.key}}" title="{{localize 'RIPPERS.Sheet.ResRemove'}}">✕</button>
+										<button type="button" data-action="resTrackAdjust" data-key="{{r.key}}" data-dir="-1">&minus;</button>
+										<button type="button" data-action="resTrackAdjust" data-key="{{r.key}}" data-dir="1">+</button>
+										<button type="button" data-action="resTrackRemove" data-key="{{r.key}}" title="{{localize 'RIPPERS.Sheet.ResRemove'}}">✕</button>
 									</span>
 								</div>
 							{{/each}}
 						</div>
 					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.ResEmpty'}}</p>{{/if}}
-					<div class="rs-res-controls"><button class="rs-btn" data-action="resTrackAdd">＋ {{localize 'RIPPERS.Sheet.ResAdd'}}</button></div>
+					<div class="rs-res-controls"><button type="button" class="rs-btn" data-action="resTrackAdd">＋ {{localize 'RIPPERS.Sheet.ResAdd'}}</button></div>
 				</div>
 			{{/if}}
 
@@ -458,8 +458,8 @@
 											<span class="rs-vault-cname">{{s.guise.name}}</span>
 											{{#if s.guise.lent.hp.current}}<span class="rs-vault-lent">HP (+{{s.guise.lent.hp.current}})</span>{{/if}}
 											{{#if s.guise.lent.mp.current}}<span class="rs-vault-lent">MP (+{{s.guise.lent.mp.current}})</span>{{/if}}
-											{{#if m.canWrite}}<button class="rs-vault-x" data-action="vaultStash" data-guise="{{s.guise.id}}" data-actor="{{m.actorId}}" title="{{localize 'RIPPERS.Vault.Cabinet'}}">▾</button>{{/if}}
-											{{#if s.guise.tradable}}{{#if m.canWrite}}<button class="rs-vault-x" data-action="vaultHandOffDialog" data-guise="{{s.guise.id}}" data-actor="{{m.actorId}}" title="{{localize 'RIPPERS.Vault.HandOff'}}">⇄</button>{{/if}}{{/if}}
+											{{#if m.canWrite}}<button type="button" class="rs-vault-x" data-action="vaultStash" data-guise="{{s.guise.id}}" data-actor="{{m.actorId}}" title="{{localize 'RIPPERS.Vault.Cabinet'}}">▾</button>{{/if}}
+											{{#if s.guise.tradable}}{{#if m.canWrite}}<button type="button" class="rs-vault-x" data-action="vaultHandOffDialog" data-guise="{{s.guise.id}}" data-actor="{{m.actorId}}" title="{{localize 'RIPPERS.Vault.HandOff'}}">⇄</button>{{/if}}{{/if}}
 										</div>
 									{{else}}
 										<div class="rs-vault-slot" title="{{localize 'RIPPERS.Vault.Empty'}}"></div>
@@ -481,7 +481,7 @@
 											<img src="{{t.img}}" alt="">
 											<span class="rs-vault-cname">{{t.name}}</span>
 											<span class="rs-vault-lent">{{#if t.toName}}→ {{t.toName}}{{/if}}{{#if t.fromName}} · {{localize 'RIPPERS.Vault.TransitFrom'}} {{t.fromName}}{{/if}}</span>
-											{{#if t.canDraw}}<button class="rs-vault-x" data-action="vaultDraw" data-guise="{{t.id}}" data-to="{{t.toId}}" title="{{localize 'RIPPERS.Vault.Draw'}}">▴</button>{{/if}}
+											{{#if t.canDraw}}<button type="button" class="rs-vault-x" data-action="vaultDraw" data-guise="{{t.id}}" data-to="{{t.toId}}" title="{{localize 'RIPPERS.Vault.Draw'}}">▴</button>{{/if}}
 										</div>
 									{{/each}}
 								</div>
@@ -539,8 +539,8 @@
 							<div class="rs-weapon-head">
 								<input class="rs-weapon-name" type="text" data-item="{{w.id}}" data-item-edit="name" value="{{w.name}}">
 								<span>
-									<button class="rs-chip" data-action="rollWeapon" data-item="{{w.id}}">{{localize 'RIPPERS.Sheet.Attack'}}</button>
-									<button class="rs-chip" data-action="itemSheet" data-item="{{w.id}}" title="{{localize 'RIPPERS.Sheet.OpenItem'}}">⚙</button>
+									<button type="button" class="rs-chip" data-action="rollWeapon" data-item="{{w.id}}">{{localize 'RIPPERS.Sheet.Attack'}}</button>
+									<button type="button" class="rs-chip" data-action="itemSheet" data-item="{{w.id}}" title="{{localize 'RIPPERS.Sheet.OpenItem'}}">⚙</button>
 								</span>
 							</div>
 							{{!-- Inline-editable common fields; the ⚙ opens the full item sheet for the rest. --}}
@@ -663,7 +663,7 @@
 							<button type="button" class="rs-btn rs-edit-bond-rm" data-action="bondRemove" data-bond-index="{{b.i}}" title="{{localize 'RIPPERS.Sheet.BondRemove'}}">✕</button>
 						</div>
 					{{/each}}
-					<button class="rs-btn" data-action="bondAddRow">＋ {{localize 'RIPPERS.Sheet.BondAdd'}}</button>
+					<button type="button" class="rs-btn" data-action="bondAddRow">＋ {{localize 'RIPPERS.Sheet.BondAdd'}}</button>
 				</div>
 
 				{{#if vm.editor.has}}
@@ -671,7 +671,7 @@
 						<div class="rs-mini-label">{{localize 'RIPPERS.Sheet.Editing'}}</div>
 						<div class="rs-mini-body" style="color:var(--rs-bone);">{{vm.editor.guiseName}}{{#if vm.editor.bound}} — {{localize 'RIPPERS.Sheet.BoundLockNote'}}{{/if}}</div>
 					</div>
-					<button class="rs-heroic" data-action="openEditor" data-guise="{{vm.editor.guiseId}}" style="border:none;cursor:pointer;">
+					<button type="button" class="rs-heroic" data-action="openEditor" data-guise="{{vm.editor.guiseId}}" style="border:none;cursor:pointer;">
 						<span class="rs-heroic-label">{{localize 'RIPPERS.Sheet.Editor'}}</span>
 						<span class="rs-heroic-name">{{localize 'RIPPERS.Sheet.OpenBuilder'}}</span>
 					</button>
@@ -695,13 +695,13 @@
 			<div class="rs-floor-row">
 				<span class="rs-floor-label">{{localize 'RIPPERS.Sheet.Status'}}</span>
 				{{#each vm.statusChips as |s|}}
-					<button class="rs-chip {{#if s.active}}rs-chip-on{{/if}}" data-action="toggleStatus" data-status="{{s.id}}">{{s.label}}</button>
+					<button type="button" class="rs-chip {{#if s.active}}rs-chip-on{{/if}}" data-action="toggleStatus" data-status="{{s.id}}">{{s.label}}</button>
 				{{/each}}
-				<button class="rs-chip rs-chip-more {{#if vm.showConditions}}rs-chip-on{{/if}}" data-action="toggleConditions">{{localize 'RIPPERS.Sheet.AllConditions'}}</button>
-				<button class="rs-chip rs-chip-more" data-action="openConditions" title="{{localize 'RIPPERS.Sheet.AfflictHint'}}">{{localize 'RIPPERS.Sheet.Afflict'}}</button>
+				<button type="button" class="rs-chip rs-chip-more {{#if vm.showConditions}}rs-chip-on{{/if}}" data-action="toggleConditions">{{localize 'RIPPERS.Sheet.AllConditions'}}</button>
+				<button type="button" class="rs-chip rs-chip-more" data-action="openConditions" title="{{localize 'RIPPERS.Sheet.AfflictHint'}}">{{localize 'RIPPERS.Sheet.Afflict'}}</button>
 				<span class="rs-mode">
-					<button class="{{#if vm.statusSelf}}rs-mode-on{{/if}}" data-action="statusMode" data-mode="self">{{localize 'RIPPERS.Sheet.Self'}}</button>
-					<button class="{{#unless vm.statusSelf}}rs-mode-on{{/unless}}" data-action="statusMode" data-mode="target">{{localize 'RIPPERS.Sheet.Target'}}</button>
+					<button type="button" class="{{#if vm.statusSelf}}rs-mode-on{{/if}}" data-action="statusMode" data-mode="self">{{localize 'RIPPERS.Sheet.Self'}}</button>
+					<button type="button" class="{{#unless vm.statusSelf}}rs-mode-on{{/unless}}" data-action="statusMode" data-mode="target">{{localize 'RIPPERS.Sheet.Target'}}</button>
 				</span>
 			</div>
 			{{#if vm.showConditions}}
@@ -709,7 +709,7 @@
 					{{#each vm.condGroups as |grp|}}
 						<div class="rs-cond-group">
 							<span class="rs-cond-glabel">{{grp.label}}</span>
-							<span class="rs-cond-items">{{#each grp.items as |c|}}<button class="rs-chip {{#if c.active}}rs-chip-on{{/if}}" data-action="toggleStatus" data-status="{{c.id}}">{{c.label}}</button>{{/each}}</span>
+							<span class="rs-cond-items">{{#each grp.items as |c|}}<button type="button" class="rs-chip {{#if c.active}}rs-chip-on{{/if}}" data-action="toggleStatus" data-status="{{c.id}}">{{c.label}}</button>{{/each}}</span>
 						</div>
 					{{/each}}
 				</div>

@@ -166,7 +166,7 @@
   "RIPPERS.Vault.Draw": "Draw",
   "RIPPERS.Vault.NoVault": "The Vault is not set up yet — ask your GM to open the Party Vault once.",
   "RIPPERS.Vault.NoRecipients": "No recipient characters found.",
-  "RIPPERS.Vault.Cabinet": "Cabinet",
+  "RIPPERS.Vault.Cabinet": "Stash to Cabinet",
   "RIPPERS.Vault.Field": "Field",
   "RIPPERS.Vault.Empty": "Empty slot",
   "RIPPERS.Vault.OverLimit": "Over the field guideline ({count}/{limit}).",

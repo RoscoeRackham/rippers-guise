@@ -10,7 +10,7 @@ globalThis.foundry = { utils: { hasProperty: () => false, escapeHTML: (s) => Str
 globalThis.ui = { notifications: { warn() {}, info() {} } };
 globalThis.fromUuid = async () => null;
 const mod = await import('../scripts/rippers-guise.mjs');
-const { tradePayload, drawDecision, vaultDraw, handOffDecision, handOffRefusalText, sheetHandOffGuise } = mod;
+const { tradePayload, drawDecision, vaultDraw, handOffDecision, handOffRefusalText, sheetHandOffGuise, sameSceneDecision, duplicateGuiseDecision } = mod;
 
 const MOD = 'rippers-guise';
 const FEATURE_TYPE = 'rippers-guise.guise';
@@ -31,17 +31,16 @@ test('tradePayload: strips _id, addresses the recipient, carries the Q3 used mar
 	const item = guiseItem('g1');
 	item.toObject = () => ({ _id: 'g1', type: 'classFeature', system: { data: { lent: { hp: 7 } } }, flags: {} });
 	const src = { id: 'A', name: 'Vin' }; const rec = { id: 'B', name: 'Morrax' };
-	const p = tradePayload(item, src, rec, ['g1', 'other']);
+	const p = tradePayload(item, src, rec);
 	assert.equal(p._id, undefined);
 	assert.equal(p.flags[MOD].consignedTo, 'B');
 	assert.equal(p.flags[MOD].consignedToName, 'Morrax');
 	assert.equal(p.flags[MOD].consignedBy, 'A');
-	assert.equal(p.flags[MOD].usedThisSceneAtTrade, true);         // was in the source used-list
 	assert.equal(p.system.data.lent.hp, 7);                        // lent CURRENT values ride, no refill
-	// not used this scene → marker false; no recipient (direct leg) → unaddressed
-	const p2 = tradePayload(item, src, null, []);
-	assert.equal(p2.flags[MOD].usedThisSceneAtTrade, false);
+	// no recipient (direct leg) → unaddressed; the retired Q3 marker never travels (ADDENDUM 2)
+	const p2 = tradePayload(item, src, null);
 	assert.equal(p2.flags[MOD].consignedTo, '');
+	assert.equal('usedThisSceneAtTrade' in p2.flags[MOD], false);
 });
 
 test('drawDecision: addressee-only for players, GM may always, target must be writable', () => {
@@ -75,7 +74,7 @@ function vaultStub(items) {
 }
 
 test('vaultDraw: create-then-delete move, address stripped on arrival, rollback when the vault delete fails', async () => {
-	const vItem = guiseItem('v1', { flags: { consignedTo: 'B', consignedToName: 'Morrax', consignedBy: 'A', usedThisSceneAtTrade: true } });
+	const vItem = guiseItem('v1', { flags: { consignedTo: 'B', consignedToName: 'Morrax', consignedBy: 'A' } });
 	const vault = vaultStub([vItem]);
 	globalThis.game = { user: { isGM: false }, actors: { find: (fn) => [vault].find(fn), get: () => null, filter: () => [] } };
 	const created = []; const removed = [];
@@ -86,7 +85,6 @@ test('vaultDraw: create-then-delete move, address stripped on arrival, rollback 
 	assert.equal(r.ok, true); assert.equal(r.reason, 'drawn');
 	assert.equal(created.length, 1);
 	assert.equal(created[0].flags[MOD].consignedTo, undefined);          // address stripped
-	assert.equal(created[0].flags[MOD].usedThisSceneAtTrade, true);      // Q3 marker kept (informational)
 	assert.equal(vItem._deleted, true);
 	// delete failure → rollback: the created copy is removed and the draw refused
 	const vItem2 = guiseItem('v2', { flags: { consignedTo: 'B' } });
@@ -119,4 +117,51 @@ test('sheetHandOffGuise: cross-owner with a vault CONSIGNS (item moves to the va
 	assert.equal(r2.ok, false); assert.equal(r2.reason, 'vault-write-failed');
 	assert.equal(item2._deleted, false);
 	globalThis.game = { modules: { get: () => null }, user: { isGM: false } };
+});
+
+// ── ADDENDUM 2 rulings (Q8 same-scene, Q9 no-duplicates) ──────────────────────
+test('sameSceneDecision: shared scene passes, disjoint refuses, no scene context at all allows (downtime)', () => {
+	assert.equal(sameSceneDecision(['s1'], ['s1', 's2']).ok, true);
+	assert.deepEqual(sameSceneDecision(['s1'], ['s2']), { ok: false, reason: 'not-same-scene' });
+	assert.equal(sameSceneDecision([], []).ok, true);           // neither deployed — downtime
+	assert.equal(sameSceneDecision(['s1'], []).ok, false);      // one deployed, the other absent
+});
+
+test('duplicateGuiseDecision: identity = normalized name; case/space-insensitive; unnamed passes', () => {
+	assert.equal(duplicateGuiseDecision(['The Pale Hound'], 'the pale hound ').ok, false);
+	assert.equal(duplicateGuiseDecision(['The Pale Hound'], 'The Brackish Worm').ok, true);
+	assert.equal(duplicateGuiseDecision([], 'X').ok, true);
+	assert.equal(duplicateGuiseDecision(['X'], '').ok, true);
+});
+
+test('vaultDraw refuses a duplicate on the destination (Q9)', async () => {
+	const vItem = guiseItem('v9', { flags: { consignedTo: 'B' } });
+	const vault = vaultStub([vItem]);
+	globalThis.game = { user: { isGM: false }, actors: { find: (fn) => [vault].find(fn), get: () => null, filter: () => [] } };
+	const dupe = guiseItem('own1'); dupe.name = vItem.name; // same normalized name already held
+	const dest = { id: 'B', isOwner: true, items: { filter: (fn) => [dupe].filter(fn), get: () => null },
+		createEmbeddedDocuments: async () => { throw new Error('must not create'); } };
+	const r = await mod.vaultDraw(dest, 'v9');
+	assert.deepEqual({ ok: r.ok, reason: r.reason }, { ok: false, reason: 'duplicate-guise' });
+	assert.equal(vItem._deleted, false);
+	globalThis.game = { modules: { get: () => null }, user: { isGM: false } };
+});
+
+test('sheetHandOffGuise refuses when only one side is deployed in a scene (Q8) — nothing moves', async () => {
+	const item = guiseItem('g8');
+	const src = { id: 'A', name: 'Vin', getFlag: () => null, items: { get: (id) => (id === 'g8' ? item : null) },
+		getActiveTokens: () => [{ parent: { id: 'scene-1' } }] };
+	globalThis.game = { user: { isGM: true }, actors: { find: () => null, get: () => null, filter: () => [] } };
+	const rec = { id: 'B', name: 'Morrax', isOwner: true, items: { filter: () => [] },
+		getActiveTokens: () => [],
+		createEmbeddedDocuments: async () => { throw new Error('must not create'); } };
+	const r = await sheetHandOffGuise(src, 'g8', rec);
+	assert.deepEqual({ ok: r.ok, reason: r.reason }, { ok: false, reason: 'not-same-scene' });
+	assert.equal(item._deleted, false);
+	globalThis.game = { modules: { get: () => null }, user: { isGM: false } };
+});
+
+test('refusal wording exists for the two new codes', () => {
+	assert.match(handOffRefusalText('not-same-scene'), /share a scene/);
+	assert.match(handOffRefusalText('duplicate-guise'), /Two copies/);
 });
