@@ -4730,6 +4730,24 @@ async function sheetBondSolidifyRest(actor) {
 	if (!ok) _bondWarn(game.i18n?.localize?.('RIPPERS.Sheet.BondRefused') ?? 'Bond change refused (GM only).');
 }
 
+/** v0.7.35 PURE: the sheet's data-edit change-writer coercion, extracted so it is testable. Given a
+ *  document path, a raw control value and an optional dtype, returns the { [path]: value } update — or
+ *  NULL to skip (an invalid/blank number is dropped, never written as a non-integer or ''). This is the
+ *  guarantee that the sheet's save path round-trips valid data: a 'number' dtype yields a finite number
+ *  (the attribute-base <select> options are die sizes → integers), and a string field is always a defined
+ *  string (name is never undefined). Native form submission is disabled (DEFAULT_OPTIONS.form) so this is
+ *  the ONLY writer. */
+function editFieldUpdate(path, rawValue, dtype) {
+	if (!path) return null;
+	let val = rawValue;
+	if (dtype === 'number') {
+		if (String(rawValue ?? '').trim() === '') return null;   // blank numeric field → skip (never write 0/'' )
+		val = Number(val);
+		if (!Number.isFinite(val)) return null;
+	} else val = String(val ?? '');
+	return { [path]: val };
+}
+
 let _RippersActorSheet = null;
 function getRippersActorSheetClass() {
 	if (_RippersActorSheet) return _RippersActorSheet;
@@ -4744,6 +4762,14 @@ function getRippersActorSheetClass() {
 			classes: ['rippers-guise', 'rippers-actor-sheet'],
 			position: { width: 1000, height: 780 },
 			window: { resizable: true, title: 'RIPPERS.Sheet.Title', icon: 'fas fa-mask' },
+			// v0.7.35 SAVE-REGRESSION FIX: this sheet saves EXCLUSIVELY through its own data-edit /
+			// data-idfield / data-bond-* change writers (each does document.update({[path]: coerced})).
+			// Its editable controls carry NO name= attribute, so DocumentSheetV2's inherited native form
+			// submission would serialise garbage — name:undefined (no name= field) and attributes.*.base
+			// as a non-integer '' — and throw a DataModelValidationError. Turn native auto-submit OFF; the
+			// custom writers are the sole save path. _onSubmitForm is also overridden to a no-op below so an
+			// explicit submit (Enter in a text input) can never fire the default serialiser either.
+			form: { submitOnChange: false, closeOnSubmit: false },
 			actions: {
 				resAdjust: RippersActorSheet.onResAdjust,
 				toggleStatus: RippersActorSheet.onToggleStatus,
@@ -4804,6 +4830,12 @@ function getRippersActorSheetClass() {
 			const vm = await buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions, previewGuiseId: this._previewGuiseId });
 			return { ...ctx, actor: this.document, vm };
 		}
+		// v0.7.35 SAVE-REGRESSION FIX: the sheet never saves through the native document-form path — all
+		// edits go through the data-edit/data-idfield/data-bond change writers (see _wireEditableFields /
+		// _wireIdentityFields). The editable controls have no name= attribute, so the default serialiser
+		// would produce invalid data (name:undefined, attributes.*.base non-integer) and throw. Neutralise
+		// the native submit entirely: an accidental submit (Enter key, a stray submit event) is a no-op.
+		async _onSubmitForm() { /* intentionally does nothing — custom change writers are the sole save path */ }
 		// Forward-compat hedge (SHEET-INJECTION-AUDIT.md): one class-independent post-render hook so a
 		// FUTURE sheet-injecting module has a clean mount point. Deeper Bonds is NOT routed through it —
 		// it renders natively in the Bonds tab. One line of insurance, nothing depends on it today.
@@ -4876,10 +4908,9 @@ function getRippersActorSheetClass() {
 			const self = this;
 			for (const el of root.querySelectorAll('[data-edit]')) {
 				el.addEventListener('change', async () => {
-					const path = el.dataset.edit; if (!path) return;
-					let val = el.value;
-					if (el.dataset.dtype === 'number') { val = Number(val); if (!Number.isFinite(val)) return; }
-					try { await self.document.update({ [path]: val }); } catch (err) { console.warn(`[rippers-guise] edit ${path} failed:`, err); }
+					const update = editFieldUpdate(el.dataset.edit, el.value, el.dataset.dtype);
+					if (!update) return;   // invalid/blank number → skip (never write a non-integer base)
+					try { await self.document.update(update); } catch (err) { console.warn(`[rippers-guise] edit ${el.dataset.edit} failed:`, err); }
 				});
 			}
 			for (const el of root.querySelectorAll('[data-bond-index]')) {
@@ -5400,7 +5431,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, EQUIP_SLOT_TYPES };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, EQUIP_SLOT_TYPES, editFieldUpdate };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };

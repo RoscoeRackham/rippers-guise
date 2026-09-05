@@ -1173,6 +1173,24 @@ test('armor-picker: the picked armor flows through guiseDraftToData → data.equ
 	assert.equal(armor.itemUuid, 'Compendium.x.Item.toughskin');  // exactly what materialiseEquipment binds
 });
 
+// ── v0.7.35 sheet-save regression: the data-edit writer round-trips VALID data ──
+test('save-regression: editFieldUpdate coerces attribute base to an integer, name to a defined string, skips invalid', () => {
+	const { editFieldUpdate } = mod;
+	// the attribute-base <select data-dtype="number"> — a die-size string becomes an integer.
+	for (const k of ['mig', 'dex', 'ins', 'wlp']) {
+		const u = editFieldUpdate(`system.attributes.${k}.base`, '8', 'number');
+		assert.deepEqual(u, { [`system.attributes.${k}.base`]: 8 });
+		assert.equal(Number.isInteger(u[`system.attributes.${k}.base`]), true);   // never a non-integer
+	}
+	// a blank/invalid number is SKIPPED (null) — never written as '' (the crash the native submit caused).
+	assert.equal(editFieldUpdate('system.attributes.dex.base', '', 'number'), null);
+	assert.equal(editFieldUpdate('system.resources.hp.value', 'abc', 'number'), null);
+	// name is a defined string, never undefined.
+	assert.deepEqual(editFieldUpdate('name', 'Vin', undefined), { name: 'Vin' });
+	assert.deepEqual(editFieldUpdate('name', undefined, undefined), { name: '' }); // coerced, never undefined
+	assert.equal(editFieldUpdate('', 'x', 'number'), null);   // no path → no update
+});
+
 // ── v0.7.34 all-equipment-slots picker ──
 test('equip-picker: setDraftEquip replaces per-slot atomically; each slot independent (no dup)', () => {
 	const { setDraftEquip } = mod;
