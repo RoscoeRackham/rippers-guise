@@ -4510,18 +4510,29 @@ async function buildCharacterExport(actor) {
 	return assembleExport(parts, { now: new Date(), moduleVersion });
 }
 
-/** Runtime: build both artifacts and hand the browser two downloads (JSON + printable HTML). */
-async function downloadCharacterExport(actor) {
+/** Build the exact file pair the export hands off — {name, type, data}. The observable seam the
+ *  download path saves and the e2e gate asserts (no dependency on the browser download machinery). */
+async function exportCharacterFiles(actor) {
 	const payload = await buildCharacterExport(actor);
 	const html = renderExportHTML(payload);
 	const base = exportBaseName(payload);
+	return [
+		{ name: `${base}.rippers.json`, type: 'application/json', data: JSON.stringify(payload, null, 2) },
+		{ name: `${base}.sheet.html`, type: 'text/html', data: html },
+	];
+}
+
+/** Runtime: build both artifacts and hand the browser two downloads (JSON + printable HTML). */
+async function downloadCharacterExport(actor) {
+	const files = await exportCharacterFiles(actor);
+	// v13: the bare global saveDataToFile is deprecated → foundry.utils.saveDataToFile (a read-only
+	// module namespace member; never reassign it — spy the returned files, not this).
 	const save = globalThis.foundry?.utils?.saveDataToFile ?? globalThis.saveDataToFile;
-	if (typeof save === 'function') {
-		save(JSON.stringify(payload, null, 2), 'application/json', `${base}.rippers.json`);
-		save(html, 'text/html', `${base}.sheet.html`);
-	}
-	globalThis.ui?.notifications?.info?.(`Exported ${payload.character.name || 'character'} — JSON + printable sheet.`);
-	return { payload, html, base };
+	if (typeof save === 'function') for (const f of files) save(f.data, f.type, f.name);
+	globalThis.ui?.notifications?.info?.(`Exported ${actor?.name || 'character'} — JSON + printable sheet.`);
+	// return the payload/html too for callers/tests that want the content directly
+	const payload = JSON.parse(files[0].data);
+	return { files, payload, html: files[1].data, base: files[0].name.replace(/\.rippers\.json$/, '') };
 }
 
 /** Build the read-only view-model for the Rippers character sheet from a live FU actor. Async (resolves
@@ -6078,7 +6089,7 @@ Hooks.once('ready', async () => {
 	Hooks.on('deleteCombat', _resetTurns);
 	Hooks.on('canvasReady', () => { if (!game.combat?.started) _resetTurns(); });
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, actorInActiveCombat, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, applyGuiseFace, restoreBaseFace, sheetToggleFace, setFace, getFaces, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST, collectExportParts, buildCharacterExport, downloadCharacterExport };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, actorInActiveCombat, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, applyGuiseFace, restoreBaseFace, sheetToggleFace, setFace, getFaces, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST, collectExportParts, buildCharacterExport, exportCharacterFiles, downloadCharacterExport };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {
