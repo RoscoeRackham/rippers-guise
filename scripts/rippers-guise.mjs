@@ -3658,7 +3658,12 @@ async function buildGuisePlayVM(actor, opts = {}) {
 		const state = lvl >= 2 ? 'immune' : lvl === 1 ? 'resistant' : lvl <= -1 ? 'vulnerable' : 'neutral';
 		return { type: t, level: lvl, word: lvl === 0 ? '—' : affinityWordOf(lvl), state };
 	});
-	const affinityTrioOwed = (d.affinityModifiers ?? []).length === 0;   // unrecorded → all-neutral + red note
+	// v0.7.37 (Austin ruling): the INNATE / Human form has NO affinity trio BY DESIGN (it isn't distilled
+	// from a monster), so its empty affinities are a legitimate state — NOT a ⚠-owed hole. Only a DISTILLED
+	// (worn) guise with a genuinely unrecorded trio is owed. innateNoTrio drives a neutral label, not a warn.
+	const noTrio = (d.affinityModifiers ?? []).length === 0;
+	const affinityTrioOwed = !innate && noTrio;   // distilled + unrecorded → red ⚠-owed note
+	const innateNoTrio = innate && noTrio;         // innate form → neutral "no trio" note, never ⚠
 	// Attributes — CHARACTER-level, post-effect .current vs .base. An effect-moved die renders green ▲ and
 	// keeps the base recoverable. Die SHAPES per the spec: d6 square, d8 diamond, d10 kite (else hex).
 	const ABBR = { dex: 'DEX', ins: 'INS', mig: 'MIG', wlp: 'WLP' };
@@ -3711,7 +3716,7 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	return {
 		active: true, preview, previewName: preview ? (guise.name ?? '') : '', activeName: activeItem?.name ?? '',
 		guiseMenu, guiseName: guise.name ?? '', innate, tradable: !innate, torment,
-		classes, heroic, heroicSlots, affinities, affinityTrioOwed, attributes, changes,
+		classes, heroic, heroicSlots, affinities, affinityTrioOwed, innateNoTrio, attributes, changes,
 		armor, wornDef, wornMdef, equipment, weapon, clot,
 		bane: d.bane ?? '', tell: d.tell ?? '', perk: d.perk ?? '',
 		bonus: bonusDescriptor ? { descriptor: bonusDescriptor, value: Number(d.bonus?.value ?? 3) } : null,

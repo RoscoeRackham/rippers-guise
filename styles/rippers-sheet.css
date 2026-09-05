@@ -419,6 +419,7 @@
 .rippers-sheet .rs-play-chip.rs-chip-lent { color: var(--rs-green); }
 .rippers-sheet .rs-play-martial { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-gold); border: 1px solid var(--rs-gold); padding: 1px 4px; }
 .rippers-sheet .rs-play-owed { font-family: var(--rs-mono); font-size: 10px; letter-spacing: .06em; margin-top: 4px; }
+.rippers-sheet .rs-play-note { color: var(--rs-muted); }   /* v0.7.37: innate "no trio" — a neutral note, not a ⚠ warning */
 /* 7. affinity states */
 .rippers-sheet .rs-affchip.rs-aff-immune { color: var(--rs-green); border-color: rgba(75,191,154,.45); }
 .rippers-sheet .rs-affchip.rs-aff-resistant { color: var(--rs-bone-dim); border-color: var(--rs-border); }

@@ -186,7 +186,7 @@
 							</div>
 							{{!-- 7. affinities — all NINE elements, four states --}}
 							<div class="rs-play-affs">{{#each vm.play.affinities as |aff|}}<span class="rs-affchip rs-aff-{{aff.state}}">{{aff.type}} — {{aff.word}}</span>{{/each}}</div>
-							{{#if vm.play.affinityTrioOwed}}<div class="rs-play-owed rs-warn">TRIO — ⚠ NOT IN OUR BOOKS FOR THIS GUISE; FIXED AT DISTILLATION</div>{{/if}}
+							{{#if vm.play.affinityTrioOwed}}<div class="rs-play-owed rs-warn">TRIO — ⚠ NOT IN OUR BOOKS FOR THIS GUISE; FIXED AT DISTILLATION</div>{{else if vm.play.innateNoTrio}}<div class="rs-play-owed rs-play-note">{{localize 'RIPPERS.Sheet.InnateNoTrio'}}</div>{{/if}}
 							{{!-- 8. bane / tell / perk cards (innate → NONE; unauthored → ⚠ OWED) --}}
 							<div class="rs-play-btp">
 								{{#if vm.play.innate}}

@@ -1035,27 +1035,33 @@ test('buildGuisePlayVM: assembles the active guise (classes/skills+desc, heroic,
 	assert.equal(vm.clot.seated, false);
 });
 
-test('buildGuisePlayVM: an unrecorded affinity trio flags affinityTrioOwed (⚠ hole, never filled)', async () => {
+test('buildGuisePlayVM: a DISTILLED guise with an unrecorded trio flags affinityTrioOwed (⚠); the INNATE form does NOT (v0.7.37 ruling)', async () => {
 	const { buildGuisePlayVM } = mod;
 	UUIDS.set('clsH', { name: 'Sharpshooter', system: { description: '@UUID[skH]{Ranged Weapon Mastery} <strong>【Max SL 4】</strong>' } });
 	UUIDS.set('skH', { name: 'Ranged Weapon Mastery', system: { description: '<p>+SL ACC ranged.</p>' } });
-	const guise = {
-		id: 'gh', name: 'The Human Form',
-		getFlag: (_m, k) => (k === 'isInnate' ? true : undefined),
-		system: { data: { mode: 'innate', classes: [{ classUuid: 'clsH', skills: [{ skillUuid: 'skH', sl: 3 }] }], innateHeroicUuid: '', affinityModifiers: [] } },
-	};
-	const actor = {
-		getFlag: (_m, k) => (k === 'activeGuise' ? 'gh' : undefined),
-		items: { get: (id) => (id === 'gh' ? guise : null) },
+	const mk = (id, name, innate) => ({
+		id, name, getFlag: (_m, k) => (k === 'isInnate' ? innate : undefined),
+		system: { data: { mode: innate ? 'innate' : 'worn', classes: [{ classUuid: 'clsH', skills: [{ skillUuid: 'skH', sl: 3 }] }], innateHeroicUuid: '', affinityModifiers: [] } },
+	});
+	const mkActor = (guise) => ({
+		getFlag: (_m, k) => (k === 'activeGuise' ? guise.id : undefined),
+		items: { get: (id) => (id === guise.id ? guise : null) },
 		itemTypes: { weapon: [], customWeapon: [] },
 		system: { attributes: { dex: { base: 8 }, ins: { base: 6 }, mig: { base: 8 }, wlp: { base: 8 } }, equipped: {}, derived: {} },
-	};
-	const vm = await buildGuisePlayVM(actor);
-	assert.equal(vm.affinityTrioOwed, true);                        // ⚠ not in our books for this guise
-	assert.ok(vm.affinities.every((a) => a.state === 'neutral'));    // all-neutral render
-	assert.equal(vm.innate, true);
-	assert.equal(vm.tradable, false);                               // innate → BOUND, not the Phial variant
-	assert.equal(vm.heroicSlots[0].filled, false);                  // innate heroic unset → dashed empty
+	});
+	// DISTILLED (worn) guise, no recorded affinities → genuinely unrecorded → ⚠-owed.
+	const worn = await buildGuisePlayVM(mkActor(mk('gw', 'The Vampire Form', false)));
+	assert.equal(worn.affinityTrioOwed, true);
+	assert.equal(worn.innateNoTrio, false);
+	assert.ok(worn.affinities.every((a) => a.state === 'neutral'));
+	// INNATE / Human form, no affinities → BY DESIGN → NOT owed; a neutral note instead.
+	const innate = await buildGuisePlayVM(mkActor(mk('gh', 'The Human Form', true)));
+	assert.equal(innate.affinityTrioOwed, false);                   // never ⚠ for the innate form
+	assert.equal(innate.innateNoTrio, true);                        // neutral "no trio" note
+	assert.ok(innate.affinities.every((a) => a.state === 'neutral'));
+	assert.equal(innate.innate, true);
+	assert.equal(innate.tradable, false);
+	assert.equal(innate.heroicSlots[0].filled, false);
 });
 
 test('buildGuisePlayVM: previewId renders another owned guise WITHOUT binding (preview flag set)', async () => {

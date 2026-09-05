@@ -345,5 +345,6 @@
   "RIPPERS.Sheet.ResCap": "Cap (optional)",
   "RIPPERS.Sheet.ResCapPrompt": "Maximum (leave blank for no cap).",
   "RIPPERS.Sheet.ResRemove": "Remove",
-  "RIPPERS.Sheet.ResEmpty": "No tracked resources. Add Reputation or a class resource (e.g. Combo Points)."
+  "RIPPERS.Sheet.ResEmpty": "No tracked resources. Add Reputation or a class resource (e.g. Combo Points).",
+  "RIPPERS.Sheet.InnateNoTrio": "Innate form — no affinity trio"
 }
