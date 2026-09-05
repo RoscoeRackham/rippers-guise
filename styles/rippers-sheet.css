@@ -433,5 +433,9 @@
 /* 8. bane/tell/perk + 9. clot */
 .rippers-sheet .rs-play-btp { display: flex; flex-direction: column; gap: 5px; }
 .rippers-sheet .rs-play-clot { font-family: var(--rs-mono); font-size: 11px; color: var(--rs-bone-dim); border: 1px solid var(--rs-border); padding: 5px 10px; }
+.rippers-sheet .rs-play-clot-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.rippers-sheet .rs-play-clot-row + .rs-play-clot-row { border-top: 1px dotted var(--rs-border); }
+.rippers-sheet .rs-play-clot-name { color: var(--rs-bone); font-weight: 700; white-space: nowrap; }
+.rippers-sheet .rs-play-clot-fx { color: var(--rs-bone-dim); }
 /* 10. footer trade tag */
 .rippers-sheet .rs-tag-trade { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .12em; color: var(--rs-violet); border: 1px solid var(--rs-violet); padding: 2px 8px; }

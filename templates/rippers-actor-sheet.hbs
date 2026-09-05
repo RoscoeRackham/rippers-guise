@@ -166,6 +166,8 @@
 											{{#if h.hasReq}}<div class="rs-play-heroic-req">REQ — {{h.req}}</div>{{/if}}
 											{{#if h.hasDesc}}<div class="rs-play-skill-desc">{{{h.desc}}}</div>{{/if}}
 										</details>
+									{{else if h.locked}}
+										<div class="rs-play-heroic-empty rs-locked">HEROIC SLOT — LOCKED · MASTER {{h.needMastered}} CLASSES</div>
 									{{else}}
 										<div class="rs-play-heroic-empty rs-dashed">HEROIC SLOT — EMPTY</div>
 									{{/if}}
@@ -219,7 +221,7 @@
 							{{!-- 9. weapon detail + equipped (fixed at distillation) + clot --}}
 							{{#if vm.play.weapon}}<div class="rs-play-weapon"><b>{{vm.play.weapon.name}}</b> · {{vm.play.weapon.accLabel}} · {{vm.play.weapon.dmgLabel}} {{vm.play.weapon.dmgType}}{{#if vm.play.weapon.traits.length}} · {{#each vm.play.weapon.traits as |t|}}{{t}} {{/each}}{{/if}}</div>{{/if}}
 							<div class="rs-play-equip"><span class="rs-inv-label">{{localize 'RIPPERS.Sheet.Equipped'}} — FIXED AT DISTILLATION</span>{{#if vm.play.equipment.length}}{{#each vm.play.equipment as |e|}}<span class="rs-play-equip-item"><img src="{{e.img}}" alt="">{{e.name}}</span>{{/each}}{{else}}<span class="rs-play-gap">—</span>{{/if}}</div>
-							<div class="rs-play-clot">{{#if vm.play.clot.seated}}CLOT — SEATED{{else}}<span class="rs-play-gap">No Clot seated.</span>{{/if}}</div>
+							<div class="rs-play-clot">{{#if vm.play.clot.seated}}{{#each vm.play.clot.clots as |cl|}}<div class="rs-play-clot-row"><span class="rs-play-clot-name">{{cl.name}}</span>{{#if cl.hasEffect}}<span class="rs-play-clot-fx">{{{cl.effect}}}</span>{{else}}<span class="rs-play-clot-fx rs-play-gap">—</span>{{/if}}</div>{{/each}}{{else}}<span class="rs-play-gap">No Clot seated.</span>{{/if}}</div>
 							{{!-- 10. identity footer — BOUND/TRADABLE, field limit, the Turn --}}
 							<div class="rs-play-footer">
 								{{#if vm.play.tradable}}<span class="rs-tag-trade">THE PHIAL — TRADABLE</span> <span class="rs-play-turn">travels whole; bind resets on hand-off</span>{{else}}<span class="rs-tag-bound">BOUND — UNTRADABLE</span>{{/if}}

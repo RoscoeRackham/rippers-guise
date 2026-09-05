@@ -1064,25 +1064,58 @@ test('buildGuisePlayVM: a DISTILLED guise with an unrecorded trio flags affinity
 	assert.equal(innate.heroicSlots[0].filled, false);
 });
 
-test('buildGuisePlayVM: a worn guise fills up to THREE heroic slots from attachedHeroicUuids (ruling)', async () => {
+// Ruling refinement: the guise's 3 heroic slots UNLOCK by class mastery (slot 1 always; slot 2 at two
+// mastered classes; slot 3 at all three). Three render states: filled / unlocked-empty / locked.
+function masteredGuise(id, { heroics = [], mastered = 3 } = {}) {
+	// three classes; the first `mastered` of them reach PER_CLASS_CAP (Σ SL ≥ 10) → mastery:true.
+	UUIDS.set('mc1', { name: 'One', system: { description: '@UUID[ms1]{S1} <strong>【Max SL 10】</strong>' } });
+	UUIDS.set('mc2', { name: 'Two', system: { description: '@UUID[ms2]{S2} <strong>【Max SL 10】</strong>' } });
+	UUIDS.set('mc3', { name: 'Three', system: { description: '@UUID[ms3]{S3} <strong>【Max SL 10】</strong>' } });
+	const classes = [['mc1', 'ms1'], ['mc2', 'ms2'], ['mc3', 'ms3']].map(([c, s], i) => ({ classUuid: c, skills: [{ skillUuid: s, sl: i < mastered ? 10 : 3 }] }));
+	return { id, name: 'Mastered', getFlag: (_m, k) => (k === 'isInnate' ? false : undefined), system: { data: { mode: 'worn', classes, affinityModifiers: [{ type: 'dark', level: 2 }], attachedHeroicUuids: heroics } } };
+}
+const mkPlayActor = (guise, id = guise.id) => ({
+	getFlag: (_m, k) => (k === 'activeGuise' ? id : undefined),
+	items: { get: (gid) => (gid === guise.id ? guise : null) },
+	itemTypes: { weapon: [], customWeapon: [] },
+	system: { attributes: { dex: { base: 8 }, ins: { base: 8 }, mig: { base: 8 }, wlp: { base: 8 } }, equipped: {}, derived: {} },
+});
+
+test('buildGuisePlayVM: with all three classes MASTERED, a worn guise fills up to THREE heroic slots from attachedHeroicUuids (ruling)', async () => {
 	const { buildGuisePlayVM } = mod;
 	UUIDS.set('H.one', { name: 'Riposte', system: { description: '<p>Counter.</p>' } });
 	UUIDS.set('H.two', { name: 'Second Wind', system: {} });
-	const guise = {
-		id: 'g3', name: 'The Twin-Classed', getFlag: (_m, k) => (k === 'isInnate' ? false : undefined),
-		system: { data: { mode: 'worn', classes: [], affinityModifiers: [{ type: 'dark', level: 2 }], attachedHeroicUuids: ['H.one', 'H.two'] } },
-	};
-	const actor = {
-		getFlag: (_m, k) => (k === 'activeGuise' ? 'g3' : undefined),
-		items: { get: (id) => (id === 'g3' ? guise : null) },
-		itemTypes: { weapon: [], customWeapon: [] },
-		system: { attributes: { dex: { base: 8 }, ins: { base: 8 }, mig: { base: 8 }, wlp: { base: 8 } }, equipped: {}, derived: {} },
-	};
-	const vm = await buildGuisePlayVM(actor);
+	const vm = await buildGuisePlayVM(mkPlayActor(masteredGuise('g3', { heroics: ['H.one', 'H.two'], mastered: 3 })));
+	assert.equal(vm.classesMastered, 3);
+	assert.equal(vm.availableHeroicSlots, 3);
 	assert.equal(vm.heroicSlots.length, 3);
 	assert.equal(vm.heroicSlots[0].filled, true); assert.equal(vm.heroicSlots[0].name, 'Riposte');
 	assert.equal(vm.heroicSlots[1].filled, true); assert.equal(vm.heroicSlots[1].name, 'Second Wind');
-	assert.equal(vm.heroicSlots[2].filled, false);   // third slot empty (dashed)
+	assert.equal(vm.heroicSlots[2].filled, false); assert.equal(vm.heroicSlots[2].locked, false); // unlocked but empty (dashed)
+});
+
+test('buildGuisePlayVM: guise heroic slots gate by class mastery — 0-1 mastered → 1 slot; 2 → 2; 3 → 3; slot 1 always; locked ≠ empty', async () => {
+	const { buildGuisePlayVM } = mod;
+	UUIDS.set('H.one', { name: 'Riposte', system: { description: '<p>Counter.</p>' } });
+	// 0 mastered → only slot 1 available; slots 2 & 3 LOCKED (distinct from empty), slot 1 always present.
+	let vm = await buildGuisePlayVM(mkPlayActor(masteredGuise('g0', { heroics: ['H.one'], mastered: 0 })));
+	assert.equal(vm.classesMastered, 0); assert.equal(vm.availableHeroicSlots, 1);
+	assert.equal(vm.heroicSlots[0].unlocked, true); assert.equal(vm.heroicSlots[0].filled, true);
+	assert.equal(vm.heroicSlots[1].locked, true); assert.equal(vm.heroicSlots[1].filled, false); assert.equal(vm.heroicSlots[1].needMastered, 2);
+	assert.equal(vm.heroicSlots[2].locked, true); assert.equal(vm.heroicSlots[2].needMastered, 3);
+	// 1 mastered → still 1 slot.
+	vm = await buildGuisePlayVM(mkPlayActor(masteredGuise('g1', { mastered: 1 })));
+	assert.equal(vm.availableHeroicSlots, 1);
+	assert.equal(vm.heroicSlots[1].locked, true);
+	// 2 mastered → 2 slots; slot 2 unlocked, slot 3 still locked.
+	vm = await buildGuisePlayVM(mkPlayActor(masteredGuise('g2', { mastered: 2 })));
+	assert.equal(vm.classesMastered, 2); assert.equal(vm.availableHeroicSlots, 2);
+	assert.equal(vm.heroicSlots[1].locked, false); assert.equal(vm.heroicSlots[1].unlocked, true);
+	assert.equal(vm.heroicSlots[2].locked, true); assert.equal(vm.heroicSlots[2].needMastered, 3);
+	// 3 mastered → all 3 unlocked.
+	vm = await buildGuisePlayVM(mkPlayActor(masteredGuise('g3b', { mastered: 3 })));
+	assert.equal(vm.availableHeroicSlots, 3);
+	assert.ok(vm.heroicSlots.every((h) => h.unlocked && !h.locked));
 });
 
 test('buildGuisePlayVM: the two CHARACTER-BOUND heroics are gated to L40/L50 and are cross-guise (ruling)', async () => {
@@ -1116,6 +1149,30 @@ test('buildGuisePlayVM: the two CHARACTER-BOUND heroics are gated to L40/L50 and
 	const high = await buildGuisePlayVM(mkActor(50, {}));
 	assert.equal(high.characterHeroics[0].unlocked, true);
 	assert.equal(high.characterHeroics[1].unlocked, true);
+});
+
+test('buildGuisePlayVM: seated Clots render NAME + EFFECT (one row each); no seats → empty state (ruling)', async () => {
+	const { buildGuisePlayVM } = mod;
+	const guise = { id: 'gk', name: 'The Aetherist', getFlag: (_m, k) => (k === 'isInnate' ? false : undefined), system: { data: { mode: 'worn', classes: [], affinityModifiers: [{ type: 'dark', level: 2 }], attachedHeroicUuid: '' } } };
+	const clotWeapon = { id: 'cw', name: 'Aether Blade', type: 'customWeapon', system: { slotted: [{ type: 'hoplosphere', name: 'Ember Clot', system: { description: '<p>+5 fire damage.</p>' } }, { type: 'hoplosphere', name: 'Bare Clot', system: {} }] } };
+	const mkActor = (extra) => {
+		const items = [guise, ...extra];
+		items.get = (id) => items.find((i) => i.id === id) ?? null;
+		return { getFlag: (_m, k) => (k === 'activeGuise' ? 'gk' : undefined), items, itemTypes: { weapon: [], customWeapon: extra.filter((i) => i.type === 'customWeapon') }, system: { attributes: { dex: { base: 8 }, ins: { base: 8 }, mig: { base: 8 }, wlp: { base: 8 } }, equipped: {}, derived: {} } };
+	};
+	// seated: two rows — one with effect prose, one bare (em-dash, no invented text).
+	const seated = await buildGuisePlayVM(mkActor([clotWeapon]));
+	assert.equal(seated.clot.seated, true);
+	assert.equal(seated.clot.clots.length, 2);
+	assert.equal(seated.clot.clots[0].name, 'Ember Clot');
+	assert.equal(seated.clot.clots[0].hasEffect, true);
+	assert.match(seated.clot.clots[0].effect, /\+5 fire/);
+	assert.equal(seated.clot.clots[1].name, 'Bare Clot');
+	assert.equal(seated.clot.clots[1].hasEffect, false); // no authored prose → em-dash, nothing invented
+	// no clot hosts → empty state unchanged.
+	const empty = await buildGuisePlayVM(mkActor([]));
+	assert.equal(empty.clot.seated, false);
+	assert.deepEqual(empty.clot.clots, []);
 });
 
 test('buildGuisePlayVM: previewId renders another owned guise WITHOUT binding (preview flag set)', async () => {

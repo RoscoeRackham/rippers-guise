@@ -3666,7 +3666,7 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	const classes = [];
 	for (const cls of d.classes ?? []) {
 		const cdoc = await safeFromUuid(cls.classUuid);
-		if (!cdoc) { classes.push({ name: '', unauthored: true, skills: [], hasSubNote: false }); continue; }
+		if (!cdoc) { classes.push({ name: '', unauthored: true, skills: [], hasSubNote: false, sumSl: 0, mastery: false }); continue; }
 		const defs = await skillsForClass(cls.classUuid);          // [{uuid,name,maxSl}] parsed from the class ref
 		const byUuid = new Map(defs.map((s) => [s.uuid, s]));
 		const skills = [];
@@ -3684,21 +3684,30 @@ async function buildGuisePlayVM(actor, opts = {}) {
 		// Sub-note line (therioform names etc.): NO structured selection dataset exists (flagged to god);
 		// rendered only if authored on the class entry, never invented.
 		const subNote = String(cls.subNote ?? '').trim();
-		classes.push({ name: cdoc.name ?? '(class)', unauthored: false, skills, subNote, hasSubNote: !!subNote });
+		// Mastery (heroics gating): a class is MASTERED when the guise's Σ SL in it reaches PER_CLASS_CAP.
+		const sumSl = (cls.skills ?? []).reduce((a, s) => a + (Number(s.sl) || 0), 0);
+		const mastery = sumSl >= PER_CLASS_CAP;
+		classes.push({ name: cdoc.name ?? '(class)', unauthored: false, skills, subNote, hasSubNote: !!subNote, sumSl, mastery });
 	}
-	// Heroic row — THREE slots. Slot 0 = the guise's own (signature/innate) Heroic; 1 & 2 are drawn empty
-	// (whether extra heroics attach to a bound guise is UNDECIDED — Austin; render dashed EMPTY, no invent).
+	// Heroic row — THREE slots that UNLOCK progressively by class mastery (Austin refinement):
+	//   slot 1 (i=0) is granted at CREATION (always); slot 2 (i=1) unlocks at TWO mastered classes;
+	//   slot 3 (i=2) at all THREE. availableHeroicSlots = 1 / 2 / 3 (slot 1 always present).
+	// Three render states per slot: UNLOCKED+FILLED (banner), UNLOCKED+EMPTY (dashed), LOCKED (gated).
+	const classesMastered = classes.filter((c) => c.mastery).length;
+	const availableHeroicSlots = classesMastered >= 3 ? 3 : classesMastered === 2 ? 2 : 1;
 	const heroicUuidList = innate ? (d.innateHeroicUuid ? [d.innateHeroicUuid] : []) : attachedHeroicUuids(d);
 	const heroicDocs = [];
 	for (const u of heroicUuidList) heroicDocs.push(await safeFromUuid(u));
 	const heroicSlots = [0, 1, 2].map((i) => {
+		const unlocked = i < availableHeroicSlots;
+		if (!unlocked) return { filled: false, unlocked: false, locked: true, needMastered: i + 1 };
 		const hDoc = heroicDocs[i];
 		if (hDoc) {
 			const desc = hDoc.system?.description ?? '';
 			const req = String(hDoc.system?.requirement?.value ?? hDoc.system?.requirements?.value ?? hDoc.system?.class?.value ?? '').trim();
-			return { filled: true, name: hDoc.name ?? '(heroic)', desc, hasDesc: !!String(desc).trim(), req, hasReq: !!req };
+			return { filled: true, unlocked: true, locked: false, name: hDoc.name ?? '(heroic)', desc, hasDesc: !!String(desc).trim(), req, hasReq: !!req };
 		}
-		return { filled: false };
+		return { filled: false, unlocked: true, locked: false };
 	});
 	const heroic = heroicDocs[0]?.name ?? '';   // kept for back-compat / headless tests
 	// Affinities — ALL NINE elements. Guise trio recorded via affinityModifiers; the rest neutral. IMMUNE
@@ -3758,9 +3767,21 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	const weaponItems = [...(actor?.itemTypes?.weapon ?? []), ...(actor?.itemTypes?.customWeapon ?? [])];
 	const primaryWeapon = getItem(eq.mainHand) && weaponItems.some((w) => w.id === eq.mainHand) ? getItem(eq.mainHand) : weaponItems[0] ?? null;
 	const weapon = primaryWeapon ? { name: primaryWeapon.name ?? '', ...weaponStats(primaryWeapon) } : null;
-	// Clot pane: only the empty state is designed — a seated-Clot readout is UNSPECIFIED (spec §9, owed to
-	// Austin). Stub the seated state; render the empty state faithfully. No invented seated readout.
-	const clot = { seated: false };
+	// Clot pane (Austin ruling — NAME + EFFECT phase): a seated Clot renders as its NAME + its EFFECT text,
+	// one row per seated Clot, gathered from the character's Clot hosts (custom weapons + armor; the active
+	// guise's kit is what is materialised on the actor). Effect text is the Clot's authored description —
+	// never invented; a Clot with no authored prose shows a muted em-dash. Empty state (no seats) unchanged.
+	// EXTENSION POINT (tracked follow-on): the FULL SOCKET GRID — every host socket by level, locked /
+	// unlocked-empty / seated, reflecting the weapon-/armor-side socket progression — layers on here later.
+	// This name+effect list is the building block; the grid would group these rows by host + socket index.
+	const clots = [];
+	for (const host of hoplosphereHosts(actor)) {
+		for (const sphere of seatedHoplospheres(host)) {
+			const effect = String(sphere?.system?.description ?? '').trim();
+			clots.push({ name: sphere?.name ?? '(Clot)', host: host?.name ?? '', effect, hasEffect: !!effect });
+		}
+	}
+	const clot = { seated: clots.length > 0, clots };
 	// Torment: character-level; authored on a flag if present, else the ⚠ hole (never invented).
 	const torment = String(actor?.getFlag?.(MODULE_ID, 'torment') ?? '').trim();
 	const bonusDescriptor = d.bonus?.descriptor ?? '';
@@ -3787,7 +3808,7 @@ async function buildGuisePlayVM(actor, opts = {}) {
 		active: true, preview, previewName: preview ? (guise.name ?? '') : '', activeName: activeItem?.name ?? '',
 		guiseMenu, guiseName: guise.name ?? '', innate, tradable: !innate, torment,
 		characterHeroics, charLevel,
-		classes, heroic, heroicSlots, affinities, affinityTrioOwed, innateNoTrio, attributes, changes,
+		classes, heroic, heroicSlots, availableHeroicSlots, classesMastered, affinities, affinityTrioOwed, innateNoTrio, attributes, changes,
 		armor, wornDef, wornMdef, equipment, weapon, clot,
 		bane: d.bane ?? '', tell: d.tell ?? '', perk: d.perk ?? '',
 		bonus: bonusDescriptor ? { descriptor: bonusDescriptor, value: Number(d.bonus?.value ?? 3) } : null,
