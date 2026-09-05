@@ -1216,6 +1216,26 @@ test('buildGuisePlayVM: the play-surface weapon carries its id so the readout ca
 	assert.ok(vm.weapon && vm.weapon.id === 'wpn1');
 });
 
+test('danglingActiveGuiseId: flag->missing item = the id; flag->present = null; no flag = null (guise-loss detection)', () => {
+	const { danglingActiveGuiseId } = mod;
+	const present = { id: 'g1' };
+	const items = { get: (id) => (id === 'g1' ? present : null) };
+	assert.equal(danglingActiveGuiseId({ getFlag: (_m, k) => (k === 'activeGuise' ? 'g1' : null), items }), null);
+	assert.equal(danglingActiveGuiseId({ getFlag: (_m, k) => (k === 'activeGuise' ? 'gGONE' : null), items }), 'gGONE');
+	assert.equal(danglingActiveGuiseId({ getFlag: () => null, items }), null);
+});
+
+test('registerGuiseClassFeature: idempotent (no-op if already registered); returns false when the PFU registry is absent (fix-safety)', () => {
+	const { registerGuiseClassFeature } = mod;
+	const prevCONFIG = globalThis.CONFIG; const prevPFU = globalThis.projectfu;
+	try {
+		globalThis.CONFIG = { FU: { classFeatures: { guise: {} } } };
+		assert.equal(registerGuiseClassFeature(), true);
+		globalThis.CONFIG = { FU: {} }; globalThis.projectfu = undefined;
+		assert.equal(registerGuiseClassFeature(), false);
+	} finally { globalThis.CONFIG = prevCONFIG; globalThis.projectfu = prevPFU; }
+});
+
 test('resolveUuidMap: resolves concurrently, de-dupes repeats, drops blanks, null on miss (perf helper)', async () => {
 	const { resolveUuidMap } = mod;
 	UUIDS.set('u.a', { name: 'Alpha' });

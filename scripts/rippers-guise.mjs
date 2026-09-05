@@ -3512,6 +3512,26 @@ async function migrateWorldGuises() {
 	return n;
 }
 
+/** GUISE-LOSS resilience (2026-09-05 incident): the id of an actor's activeGuise flag when it points at
+ *  a NO-LONGER-PRESENT item — a dangling reference, the fingerprint of a guise that was dropped (e.g. by
+ *  the featureType-choices validation miss the init-registration fix now prevents). Pure; null = healthy. */
+function danglingActiveGuiseId(actor) {
+	const id = actor?.getFlag?.(MODULE_ID, FLAG) ?? null;
+	if (!id) return null;
+	return actor?.items?.get?.(id) ? null : id;
+}
+/** Repair a dangling activeGuise flag: WARN loudly (so a transient miss is never SILENT) and clear the
+ *  flag so the sheet's _ensureDefaultGuise rebinds a present guise instead of holding a broken reference.
+ *  Cannot resurrect a dropped item (that needs a backup) — it makes the loss visible + the state sane. */
+async function repairDanglingActiveGuise(actor) {
+	const id = danglingActiveGuiseId(actor);
+	if (!id) return false;
+	console.warn(`[rippers-guise] ${actor?.name}: activeGuise flag references a MISSING item (${id}) — a guise may have been dropped. Clearing the dangling flag.`);
+	try { ui.notifications?.warn(`Rippers: "${actor?.name}" had a missing active-guise reference — cleared it. If guises are missing, restore from a backup.`); } catch { /* headless */ }
+	try { await actor.unsetFlag(MODULE_ID, FLAG); } catch (err) { console.warn('[rippers-guise] could not clear the dangling activeGuise flag:', err); }
+	return true;
+}
+
 /**
  * N2 (god, Stage A): the module NEVER auto-seeds guises onto actors — nothing in it re-creates a
  * guise on load, so it cannot itself accumulate copies across reloads. The duplicates god saw came
@@ -5369,6 +5389,34 @@ function registerRippersSheet() {
 }
 Hooks.once('setup', registerRippersSheet);
 
+// GUISE-LOSS FIX (2026-09-05 incident): register the guise classFeature as EARLY as possible — on
+// 'init', BEFORE Foundry constructs/validates world actor documents. PFU builds its classFeature
+// registry on 'init' (projectfu.mjs Hooks.once('init')) and is a SYSTEM (loads before modules), so our
+// 'init' runs after PFU's and CONFIG.FU.classFeatureRegistry / globalThis.projectfu are available.
+// PFU's ClassFeatureTypeDataModel declares featureType as a StringField whose `choices` are the
+// REGISTERED classFeature keys; if 'rippers-guise.guise' is NOT registered when the actors' embedded
+// items validate, that choices check fails and Foundry SILENTLY DROPS every guise item on load (the
+// root cause of the ~4h wipe — an install+reload window where our old 'setup' registration ran too
+// late). Idempotent + guarded; also invoked from 'setup' as a belt-and-suspenders fallback in case
+// PFU's async init had not yet populated the registry when our 'init' handler ran.
+function registerGuiseClassFeature() {
+	if (CONFIG.FU?.classFeatures?.guise) return true;            // already registered — idempotent, safe to call twice
+	const registry = CONFIG.FU?.classFeatureRegistry
+		?? globalThis.projectfu?.ClassFeatureRegistry?.instance
+		?? globalThis.projectfu?.ClassFeatureRegistry;
+	if (!registry?.register) return false;                        // PFU registry not up yet — the 'setup' fallback retries
+	try {
+		const GuiseDataModel = defineGuiseModel();
+		CONFIG.FU.classFeatures ??= {};
+		CONFIG.FU.classFeatures.guise = registry.register(MODULE_ID, 'guise', GuiseDataModel);
+		console.log(`[rippers-guise] registered classFeature "${MODULE_ID}.guise" (early — before actor validation).`);
+		return true;
+	} catch (err) { console.error('[rippers-guise] failed to register the guise classFeature:', err); return false; }
+}
+// PRIMARY: register on init — the earliest hook, before world documents are constructed/validated, so
+// the guise featureType is always a valid choice and guise items can never be dropped as invalid.
+Hooks.once('init', registerGuiseClassFeature);
+
 // ---------------------------------------------------------------------------
 // Registration + template preload.
 Hooks.once('setup', () => {
@@ -5400,19 +5448,9 @@ Hooks.once('setup', () => {
 			filePicker: 'folder',
 		});
 	} catch (err) { console.warn('[rippers-guise] could not register the arcana-base-path setting:', err); }
-	const registry = CONFIG.FU?.classFeatureRegistry ?? globalThis.projectfu?.ClassFeatureRegistry;
-	if (!registry?.register) {
-		console.error('[rippers-guise] CONFIG.FU.classFeatureRegistry not available — projectfu must be active. Guise not registered.');
-		return;
-	}
-	try {
-		const GuiseDataModel = defineGuiseModel();
-		CONFIG.FU.classFeatures ??= {};
-		CONFIG.FU.classFeatures.guise = registry.register(MODULE_ID, 'guise', GuiseDataModel);
-		console.log(`[rippers-guise] registered classFeature "${MODULE_ID}.guise" (v0.2 Stage B — dormancy + authoring UI).`);
-	} catch (err) {
-		console.error('[rippers-guise] failed to register the guise classFeature:', err);
-	}
+	// Fallback (belt-and-suspenders): ensure the guise classFeature is registered even if PFU's async
+	// init had not populated the registry when our 'init' handler ran. Idempotent — no-op if already done.
+	registerGuiseClassFeature();
 	const loader = foundry.applications?.handlebars?.loadTemplates ?? loadTemplates;
 	loader([`modules/${MODULE_ID}/templates/guise-sheet.hbs`, `modules/${MODULE_ID}/templates/benefit-picker.hbs`, `modules/${MODULE_ID}/templates/guise-builder.hbs`]);
 });
@@ -5681,6 +5719,12 @@ Hooks.once('ready', async () => {
 			const n = await migrateWorldGuises();
 			if (n) console.log(`[rippers-guise] v0.2 migration: updated ${n} guise item(s).`);
 		} catch (err) { console.warn('[rippers-guise] v0.2 migration skipped:', err); }
+		// GUISE-LOSS resilience: surface (and clear) any dangling activeGuise reference so a dropped guise
+		// is visible, never silent. With the init-registration fix above the drop shouldn't occur; this is
+		// the detection safety net.
+		let dangling = 0;
+		for (const actor of game.actors ?? []) { try { if (await repairDanglingActiveGuise(actor)) dangling += 1; } catch (err) { console.warn('[rippers-guise] dangling-flag repair failed:', err); } }
+		if (dangling) console.warn(`[rippers-guise] repaired ${dangling} dangling activeGuise reference(s) — check for lost guises and restore from a backup if needed.`);
 	}
 });
 
@@ -5688,7 +5732,7 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, attachedHeroicUuids, materialiseAttachedHeroic, materialiseEquipment, resolveUuidMap, prewarmGuisePacks, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, attachedHeroicUuids, materialiseAttachedHeroic, materialiseEquipment, resolveUuidMap, prewarmGuisePacks, registerGuiseClassFeature, danglingActiveGuiseId, repairDanglingActiveGuise, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.
