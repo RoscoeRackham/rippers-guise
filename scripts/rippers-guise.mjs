@@ -448,34 +448,42 @@ async function materialiseEquipment(actor, item) {
 	return { ids, equipUpdate };
 }
 
-// ── v0.7.33: editable ARMOR picker (guise editor) ─────────────────────────────────────────────────
-// A worn guise's armor lives as an equipment[] entry with slot 'armor'; materialiseEquipment already
-// creates + equips it on bind and _dismissCore strips it on dismiss (the CORRECT, unchanged mechanic).
-// The only gap was that the CHOICE was not user-editable. These two helpers back a dropdown in the
-// editor: collectArmorItems() enumerates every armor-type Item available (world + Item compendia — the
-// source-agnostic superset of any "basic armors" pack, so no pack name is invented), and setDraftArmor
-// atomically REPLACES the guise's single armor entry (no dup — the v0.7.23 discipline); '' = unarmored.
-async function collectArmorItems() {
+// ── v0.7.33 / v0.7.34: editable EQUIPMENT pickers (guise editor) ───────────────────────────────────
+// A worn guise's gear lives as equipment[] entries keyed by slot; materialiseEquipment already creates +
+// equips them on bind and _dismissCore strips them on dismiss (the CORRECT, unchanged mechanic). The gap
+// was that the CHOICES were not low-friction to edit. These helpers back a dropdown PER SLOT in the
+// editor: collectEquipItems() enumerates every equip-eligible Item (world + Item compendia — source-
+// agnostic, no pack name invented), and setDraftEquip atomically REPLACES a slot's single entry (no dup —
+// the v0.7.23 discipline); '' = empty (none). v0.7.34 generalised armor → all four slots (Austin).
+// Slot → allowed item types. offHand accepts a shield or an off-hand weapon; the hands accept weapons.
+const EQUIP_SLOT_TYPES = { mainHand: ['weapon', 'customWeapon'], offHand: ['weapon', 'customWeapon', 'shield'], armor: ['armor'], accessory: ['accessory'] };
+const EQUIP_ALL_TYPES = new Set(Object.values(EQUIP_SLOT_TYPES).flat());
+async function collectEquipItems() {
 	const out = []; const seen = new Set();
-	const push = (uuid, name) => { if (uuid && !seen.has(uuid)) { seen.add(uuid); out.push({ uuid, name: name || '(armor)' }); } };
-	try { for (const it of (globalThis.game?.items ?? [])) if (it?.type === 'armor') push(it.uuid, it.name); } catch { /* no world items */ }
+	const push = (uuid, name, type) => { if (uuid && type && !seen.has(uuid) && EQUIP_ALL_TYPES.has(type)) { seen.add(uuid); out.push({ uuid, name: name || `(${type})`, type }); } };
+	try { for (const it of (globalThis.game?.items ?? [])) push(it?.uuid, it?.name, it?.type); } catch { /* no world items */ }
 	try {
 		for (const pack of (globalThis.game?.packs ?? [])) {
 			if (pack?.documentName !== 'Item') continue;
 			let idx = [];
 			try { idx = [...(await pack.getIndex({ fields: ['type'] }))]; } catch { continue; }
-			for (const e of idx) if (e?.type === 'armor') push(`Compendium.${pack.collection}.Item.${e._id}`, e.name);
+			for (const e of idx) push(`Compendium.${pack.collection}.Item.${e._id}`, e.name, e.type);
 		}
 	} catch { /* no packs */ }
 	return out.sort((a, b) => a.name.localeCompare(b.name));
 }
-/** PURE: set/replace/clear the draft's single armor equipment entry. Removes ANY existing slot:'armor'
- *  entry first (atomic replace, never doubles), then appends the new one; '' uuid = unarmored (none). */
-function setDraftArmor(draft, uuid, name = '') {
-	const rest = (draft.equipment ?? []).filter((e) => e?.slot !== 'armor');
-	draft.equipment = uuid ? [...rest, { itemUuid: uuid, slot: 'armor', name }] : rest;
+/** Back-compat: armor-only enumeration (kept for existing callers/tests). */
+async function collectArmorItems() { return (await collectEquipItems()).filter((i) => i.type === 'armor'); }
+/** PURE: set/replace/clear one equipment SLOT's single entry. Removes ANY existing entry for that slot
+ *  first (atomic replace, never doubles), then appends the new one; '' uuid = empty (none). */
+function setDraftEquip(draft, slot, uuid, name = '') {
+	const s = EQUIP_SLOTS.includes(slot) ? slot : 'mainHand';
+	const rest = (draft.equipment ?? []).filter((e) => e?.slot !== s);
+	draft.equipment = uuid ? [...rest, { itemUuid: uuid, slot: s, name }] : rest;
 	return draft.equipment;
 }
+/** Back-compat wrapper: the armor slot. */
+function setDraftArmor(draft, uuid, name = '') { return setDraftEquip(draft, 'armor', uuid, name); }
 
 // FDN-7.1 re-entrancy lock. A stacked/duplicate click (or two rapid macro calls) must NOT run
 // two binds for one actor — that would materialise a second skill set and overwrite the `owned`
@@ -2634,15 +2642,20 @@ function getGuiseBuilderApp() {
 				i, uuid: eq.itemUuid, name: eq.name ?? eq.itemUuid,
 				slots: slotChoices.map((c) => ({ ...c, selected: c.value === eq.slot })),
 			}));
-			// v0.7.33: editable ARMOR dropdown for a WORN guise — options from every armor-type Item
-			// (world + compendia), the current armor pre-selected. Loaded once (cached on the instance).
-			const armorItems = isInnate ? [] : await this._loadArmorOptions();
-			const curArmor = (this._draft.equipment ?? []).find((e) => e?.slot === 'armor') ?? null;
-			const curArmorUuid = curArmor?.itemUuid ?? '';
-			const armorOptions = [{ uuid: '', name: game.i18n.localize('RIPPERS.Builder.ArmorNone'), selected: !curArmorUuid }]
-				.concat(armorItems.map((a) => ({ uuid: a.uuid, name: a.name, selected: a.uuid === curArmorUuid })));
-			// Preserve an existing selection even if the enumeration didn't surface it (don't silently drop it).
-			if (curArmorUuid && !armorItems.some((a) => a.uuid === curArmorUuid)) armorOptions.push({ uuid: curArmorUuid, name: curArmor?.name || curArmorUuid, selected: true });
+			// v0.7.34: an editable dropdown for EVERY equipment slot of a WORN guise (Austin — was armor-only).
+			// Options come from every equip-eligible Item (world + compendia), filtered per slot to its allowed
+			// types, the current pick pre-selected (and preserved if the enumeration misses it). Loaded once.
+			const equipItems = isInnate ? [] : await this._loadEquipOptions();
+			const equipByUuid = new Map(equipItems.map((i) => [i.uuid, i]));
+			const equipSlots = isInnate ? [] : EQUIP_SLOTS.map((slot) => {
+				const cur = (this._draft.equipment ?? []).find((e) => e?.slot === slot) ?? null;
+				const curUuid = cur?.itemUuid ?? '';
+				const allowed = EQUIP_SLOT_TYPES[slot] ?? [];
+				const options = [{ uuid: '', name: game.i18n.localize('RIPPERS.Builder.SlotNone'), selected: !curUuid }]
+					.concat(equipItems.filter((i) => allowed.includes(i.type)).map((i) => ({ uuid: i.uuid, name: i.name, selected: i.uuid === curUuid })));
+				if (curUuid && !equipByUuid.has(curUuid)) options.push({ uuid: curUuid, name: cur?.name || curUuid, selected: true });
+				return { slot, label: game.i18n.localize(`RIPPERS.Builder.Slot.${slot}`), options };
+			});
 			// v0.7.9 (Austin, 3 Sep): Specialties are FREE TEXT, not a picker. N inputs (N = SPECIALTY_COUNT),
 			// the 13-name list demoted to a <datalist> of autocomplete hints. Padded to N so positions are stable.
 			const specialtyDraft = this._draft.specialties ?? [];
@@ -2655,7 +2668,7 @@ function getGuiseBuilderApp() {
 			const specialtyCount = specialtyDraft.slice(0, specialtyMax).filter((s) => (s ?? '').trim()).length;
 			const heroicName = this._draft.innateHeroicUuid ? (this._draft.innateHeroicName || this._draft.innateHeroicUuid) : '';
 			const loadout = {
-				equipment, armorOptions, bonusValue: BONUS_VALUE,
+				equipment, equipSlots, bonusValue: BONUS_VALUE,
 				perk: this._draft.perk ?? '', bonusDescriptor: this._draft.bonusDescriptor ?? '',
 				tell: this._draft.tell ?? '', bane: this._draft.bane ?? '', flaw: this._draft.flaw ?? '',
 				specialtyInputs, specialtyHints: SPECIALTY_LIST, specialtyPlaceholder: game.i18n.localize('RIPPERS.Builder.SpecialtyPlaceholder'),
@@ -2731,8 +2744,8 @@ function getGuiseBuilderApp() {
 		}
 
 		_skillMax() { const m = {}; for (const arr of Object.values(this._classSkills)) for (const s of arr) m[s.uuid] = s.maxSl; return m; }
-		// v0.7.33: enumerate armor Items once per builder open (dropdown source), cached on the instance.
-		async _loadArmorOptions() { if (!this._armorOptions) this._armorOptions = await collectArmorItems(); return this._armorOptions; }
+		// v0.7.34: enumerate equip-eligible Items once per builder open (dropdown source), cached.
+		async _loadEquipOptions() { if (!this._equipOptions) this._equipOptions = await collectEquipItems(); return this._equipOptions; }
 
 		_onRender() {
 			const root = this.element;
@@ -2820,13 +2833,14 @@ function getGuiseBuilderApp() {
 				ev.preventDefault(); const i = Number(a.dataset.i);
 				this._draft.equipment = (this._draft.equipment ?? []).filter((_, idx) => idx !== i); this.render();
 			}));
-			// v0.7.33: the ARMOR dropdown — set/replace/clear the guise's armor (atomic, no dup). '' = unarmored.
-			root.querySelector('select.guise-armor-pick')?.addEventListener('change', (ev) => {
-				const uuid = ev.currentTarget.value;
-				const name = uuid ? (ev.currentTarget.selectedOptions?.[0]?.textContent?.trim() ?? '') : '';
-				setDraftArmor(this._draft, uuid, name);
+			// v0.7.34: a dropdown PER equipment slot — set/replace/clear that slot (atomic, no dup). '' = empty.
+			root.querySelectorAll('select.guise-equip-pick').forEach((sel) => sel.addEventListener('change', () => {
+				const slot = sel.dataset.slot;
+				const uuid = sel.value;
+				const name = uuid ? (sel.selectedOptions?.[0]?.textContent?.trim() ?? '') : '';
+				setDraftEquip(this._draft, slot, uuid, name);
 				this.render();
-			});
+			}));
 			// #5 (v0.7.9): remove an attached effect/ability
 			root.querySelectorAll('[data-action="removeAttachedEffect"]').forEach((a) => a.addEventListener('click', (ev) => {
 				ev.preventDefault(); const i = Number(a.dataset.i);
@@ -3566,7 +3580,7 @@ function buildInventoryVM(actor) {
 		}));
 		return { type: spec.type, label: spec.label, items, any: items.length > 0 };
 	});
-	return { sections, any: sections.some((s) => s.any), useEquipment: !!(actor?.system?.useEquipment?.value) };
+	return { sections, any: sections.some((s) => s.any) };
 }
 /** v0.7.25 — 'The Guise' PLAY SURFACE: a Persona-style at-a-glance readout of a guise. Async (resolves
  *  class/skill/heroic UUIDs + per-skill descriptions for the look-closer layer). v0.7.29 skins it to the
@@ -4750,7 +4764,6 @@ function getRippersActorSheetClass() {
 				effectToggle: RippersActorSheet.onEffectToggle,
 				effectDelete: RippersActorSheet.onEffectDelete,
 				itemEquip: RippersActorSheet.onItemEquip,
-				toggleUseEquipment: RippersActorSheet.onToggleUseEquipment,
 				itemUse: RippersActorSheet.onItemUse,
 				itemDelete: RippersActorSheet.onItemDelete,
 				spellAdd: RippersActorSheet.onSpellAdd,
@@ -5050,11 +5063,6 @@ function getRippersActorSheetClass() {
 			const cur = this.document.system?.equipped?.toObject?.() ?? { ...(this.document.system?.equipped ?? {}) };
 			try { await this.document.update({ 'system.equipped': equipToggleUpdate(cur, it) }); }
 			catch (err) { console.warn('[rippers-guise] equip toggle failed:', err); }
-			this.render();
-		}
-		static async onToggleUseEquipment() {
-			try { await this.document.update({ 'system.useEquipment.value': !this.document.system?.useEquipment?.value }); }
-			catch (err) { console.warn('[rippers-guise] useEquipment toggle failed:', err); }
 			this.render();
 		}
 		static async onItemUse(event, target) { const it = this.document.items?.get?.(target?.dataset?.item); if (it?.roll) { try { await it.roll(); } catch (err) { console.warn('[rippers-guise] item use failed:', err); } } }
@@ -5392,7 +5400,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, EQUIP_SLOT_TYPES };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };

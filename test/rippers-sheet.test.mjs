@@ -905,7 +905,7 @@ test('buildInventoryVM: reads native item fields per type, reflects equipped sta
 		system: { useEquipment: { value: true }, equipped: { isEquipped: (it) => it.id === 'a1' } },
 	};
 	const vm = buildInventoryVM(actor);
-	assert.equal(vm.useEquipment, true); assert.equal(vm.any, true);
+	assert.equal(vm.any, true);   // v0.7.34: the vestigial NPC-only useEquipment flag was removed
 	const armor = vm.sections.find((s) => s.type === 'armor');
 	assert.equal(armor.items[0].fields[0].val, 2);          // DEF read from system.def.value
 	assert.equal(armor.items[0].equipped, true);            // native isEquipped honored
@@ -1171,6 +1171,36 @@ test('armor-picker: the picked armor flows through guiseDraftToData → data.equ
 	const armor = (data.equipment ?? []).find((e) => e.slot === 'armor');
 	assert.ok(armor, 'armor entry present in guise data');
 	assert.equal(armor.itemUuid, 'Compendium.x.Item.toughskin');  // exactly what materialiseEquipment binds
+});
+
+// ── v0.7.34 all-equipment-slots picker ──
+test('equip-picker: setDraftEquip replaces per-slot atomically; each slot independent (no dup)', () => {
+	const { setDraftEquip } = mod;
+	const draft = { equipment: [] };
+	setDraftEquip(draft, 'mainHand', 'w1', 'Rifle');
+	setDraftEquip(draft, 'armor', 'a1', 'Plate');
+	setDraftEquip(draft, 'offHand', 's1', 'Buckler');
+	setDraftEquip(draft, 'accessory', 'x1', 'Ring');
+	assert.equal(draft.equipment.length, 4);                     // one per slot
+	setDraftEquip(draft, 'mainHand', 'w2', 'Sabre');             // replace mainHand only
+	assert.equal(draft.equipment.filter((e) => e.slot === 'mainHand').length, 1);
+	assert.equal(draft.equipment.find((e) => e.slot === 'mainHand').itemUuid, 'w2');
+	assert.equal(draft.equipment.find((e) => e.slot === 'armor').itemUuid, 'a1'); // others untouched
+	assert.equal(draft.equipment.length, 4);
+	setDraftEquip(draft, 'offHand', '');                         // clear off-hand
+	assert.equal(draft.equipment.some((e) => e.slot === 'offHand'), false);
+	assert.equal(draft.equipment.length, 3);
+});
+
+test('equip-picker: EQUIP_SLOT_TYPES maps each slot to its item types; setDraftArmor is the armor slot', () => {
+	const { EQUIP_SLOT_TYPES, setDraftArmor, setDraftEquip } = mod;
+	assert.deepEqual(EQUIP_SLOT_TYPES.armor, ['armor']);
+	assert.ok(EQUIP_SLOT_TYPES.mainHand.includes('weapon'));
+	assert.ok(EQUIP_SLOT_TYPES.offHand.includes('shield'));
+	// setDraftArmor is a thin wrapper over the 'armor' slot.
+	const a = { equipment: [] }; setDraftArmor(a, 'armX', 'Coat');
+	const b = { equipment: [] }; setDraftEquip(b, 'armor', 'armX', 'Coat');
+	assert.deepEqual(a.equipment, b.equipment);
 });
 
 // ── v0.7.23 cabinet restore = atomic MOVE (bugfix: was duplicating) ──

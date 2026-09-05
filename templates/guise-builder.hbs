@@ -140,11 +140,15 @@
 				<fieldset class="gb-equipment" data-gb-fixed {{#if isEditing}}title="{{localize 'RIPPERS.Builder.FixedHint'}}"{{/if}}>
 					<legend>{{localize "RIPPERS.Builder.Equipment"}}</legend>
 					<p class="gb-hint">{{localize "RIPPERS.Builder.EquipmentHint"}}</p>
-					{{!-- v0.7.33: editable ARMOR dropdown (Austin) — the worn guise armor materialises on bind. --}}
-					<label class="gb-armor-pick">{{localize "RIPPERS.Builder.Armor"}}
-						<select class="guise-armor-pick">{{#each loadout.armorOptions}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select>
-					</label>
-					<p class="gb-hint">{{localize "RIPPERS.Builder.ArmorHint"}}</p>
+					{{!-- v0.7.34: a dropdown per equipment slot (Austin) — worn-guise gear materialises on bind. --}}
+					<div class="gb-equip-pickers">
+						{{#each loadout.equipSlots}}
+							<label class="gb-equip-pick">{{label}}
+								<select class="guise-equip-pick" data-slot="{{slot}}">{{#each options}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select>
+							</label>
+						{{/each}}
+					</div>
+					<p class="gb-hint">{{localize "RIPPERS.Builder.EquipPickHint"}}</p>
 					{{#each loadout.equipment}}
 						<div class="gb-equip-row">
 							<span class="gb-equip-name">{{name}}</span>

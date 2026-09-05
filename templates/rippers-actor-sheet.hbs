@@ -520,7 +520,6 @@
 				{{!-- v0.7.15: full inventory — armor/shields/accessories/consumables/treasures (native FU items) --}}
 				<div class="rs-inv-head">
 					<span class="rs-edit-title">{{localize 'RIPPERS.Sheet.Inventory'}}</span>
-					<label class="rs-inv-useeq"><input type="checkbox" data-action="toggleUseEquipment" {{#if vm.inventory.useEquipment}}checked{{/if}}> {{localize 'RIPPERS.Sheet.UseEquipment'}}</label>
 				</div>
 				{{#each vm.inventory.sections as |sec|}}
 					{{#if sec.any}}
