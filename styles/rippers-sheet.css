@@ -256,7 +256,11 @@
 .rippers-sheet .rs-quirk-ctl { display: flex; gap: 6px; }
 /* Phase 2D polish: the quirk row read placeholder-ish (oversized centered heading in a heavy notch
    card). Compact it to a left-aligned list row — name at row scale, controls right, no notch. */
-.rippers-sheet .rs-quirk-row { padding: 6px 12px; clip-path: none; text-align: left; }
+/* v0.7.52: the populated quirk row is a HORIZONTAL row (name left, Edit/✕ right). Without this it
+   inherits .rs-classcard's flex-direction:column and the inline align-items:center stacks + centres
+   the content — the "placeholder-ish" look. Override the direction here. */
+.rippers-sheet .rs-quirk-row { padding: 6px 12px; clip-path: none; text-align: left; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+.rippers-sheet .rs-quirk-row .rs-quirk-ctl { flex: 0 0 auto; }
 .rippers-sheet .rs-quirk-row .rs-classcard-name { font-size: 15px; }
 /* Evidence Board launcher sits above the bond panel with breathing room. */
 .rippers-sheet .rs-bond-board { margin-bottom: 10px; }
