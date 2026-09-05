@@ -254,6 +254,12 @@
 .rippers-sheet .rs-wtag { font-family: var(--rs-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--rs-bone-dim); border: 1px solid var(--rs-border); padding: 1px 6px; }
 .rippers-sheet .rs-quirks { display: flex; flex-direction: column; gap: 8px; }
 .rippers-sheet .rs-quirk-ctl { display: flex; gap: 6px; }
+/* Phase 2D polish: the quirk row read placeholder-ish (oversized centered heading in a heavy notch
+   card). Compact it to a left-aligned list row — name at row scale, controls right, no notch. */
+.rippers-sheet .rs-quirk-row { padding: 6px 12px; clip-path: none; text-align: left; }
+.rippers-sheet .rs-quirk-row .rs-classcard-name { font-size: 15px; }
+/* Evidence Board launcher sits above the bond panel with breathing room. */
+.rippers-sheet .rs-bond-board { margin-bottom: 10px; }
 
 /* Arcana picker DialogV2 — renders OUTSIDE .rippers-sheet, so it carries its own palette (fixes the
    white-on-white buttons) + a scroll container. Verbs in Pirata One to match the sheet. */

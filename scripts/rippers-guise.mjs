@@ -4636,6 +4636,9 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const vault = (tab.vault && !deferHeavy) ? await buildVaultVM(actor) : null; // vault is a party-wide fetch — deferred on the fast pass
 	return {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, bondsNative, bondsIsGM,
+		// Evidence Board (rippers-deeper-bonds) availability — the Bonds tab shows a native launch
+		// button only when the module's api actually exposes openEvidenceBoard (else hidden).
+		evidenceBoard: !!globalThis.game?.modules?.get?.('rippers-deeper-bonds')?.api?.openEvidenceBoard,
 		theTurn: { available: !turnRefundUsed }, // H3: is The Turn's swap-refund still available this scene?
 		rivalWaiver: rivalWaiverVM(actor),       // R1: the Rival cost-waiver roller toggle (hidden unless the actor has it)
 		faces: { ...guiseFacesVM(actor) },       // H2: the two-portrait config + toggle availability
@@ -5187,6 +5190,7 @@ function getRippersActorSheetClass() {
 				toggleConditions: RippersActorSheet.onToggleConditions,
 				openConditions: RippersActorSheet.onOpenConditions,
 				selectTab: RippersActorSheet.onSelectTab,
+				openEvidenceBoard: RippersActorSheet.onOpenEvidenceBoard,
 				guiseWear: RippersActorSheet.onGuiseWear,
 				pickArcana: RippersActorSheet.onPickArcana,
 				toggleFace: RippersActorSheet.onToggleFace,
@@ -5445,6 +5449,11 @@ function getRippersActorSheetClass() {
 		static onToggleConditions() { this._showConditions = !this._showConditions; this.render(); }
 		static onOpenConditions() { sheetOpenConditions(statusTargetActor(this.document, this._statusSelf, globalThis.game?.user?.targets) ?? this.document); }
 		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this._previewGuiseId = null; this.render(); } }
+		// Bridge to rippers-deeper-bonds' Evidence Board (rdb injects its own button only on FU's
+		// renderFUStandardActorSheet, which this sheet doesn't fire — so we open it natively). Not
+		// GM-gated (Austin: players may focus-hop; rdb seals cards + gates verbs internally). Safe no-op
+		// if the module/api is absent (the button is also hidden then via the vm.evidenceBoard guard).
+		static onOpenEvidenceBoard() { globalThis.game?.modules?.get?.('rippers-deeper-bonds')?.api?.openEvidenceBoard?.(this.actor); }
 		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (!id) return; this._previewGuiseId = null; try { await sheetGuiseWear(this.document, id); } catch (err) { console.warn('[rippers-guise] guise wear/swap failed:', err); } finally { this.render(); } }
 		static async onPickArcana(event, target) { const id = target?.dataset?.guise; if (!id) return; try { await sheetPickArcana(this.document, id); } catch (err) { console.warn('[rippers-guise] arcana pick failed:', err); } finally { this.render(); } }
 		static async onToggleFace() { await sheetToggleFace(this.document); this.render(); }

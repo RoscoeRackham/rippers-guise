@@ -304,6 +304,9 @@
 			{{/if}}
 
 			{{#if vm.tab.bonds}}
+				{{!-- Phase 2D: native Evidence Board launcher (rippers-deeper-bonds injects its own button only on
+				     FU's standard sheet, not this one). Ungated — any viewer may open it (rdb seals/gates inside). --}}
+				{{#if vm.evidenceBoard}}<div class="rs-bond-board"><button type="button" class="rs-btn" data-action="openEvidenceBoard">{{localize 'RIPPERS.Sheet.EvidenceBoard'}}</button></div>{{/if}}
 				{{#if vm.bondsNative}}
 					{{#if vm.bondsIsGM}}
 						<div class="rs-bond-section-controls">
