@@ -16,8 +16,18 @@
 //      module.json, or this script exits non-zero.
 //
 // Usage: node tools/release-zip.mjs [outDir]   (default: the repo root; writes rippers-guise.zip)
-// Release checklist (TWO-ASSET RULE): upload BOTH rippers-guise.zip AND a file named exactly
-// `module.json` to the GitHub release, then verify latest/download/module.json serves the version.
+// RELEASE CHECKLIST (in order):
+//   1. node tools/release-zip.mjs <outDir>            — build the zip (this script).
+//   2. M1 REAL-RUNTIME GATE against the FRESH zip:    (RoscoeRackham/rippers-e2e; local checkout
+//        foundry-modules/e2e-harness)                    lives beside the modules)
+//        cd ../e2e-harness && ./run.sh <projectfu.zip> <the zip from step 1>
+//      M1 must print GREEN (guise classFeature registers before validation, a created guise
+//      survives a reload, zero validation errors) BEFORE anything is published. RED = stop.
+//   3. TWO-ASSET RULE: upload BOTH rippers-guise.zip AND a file named exactly `module.json`
+//      to the GitHub release, then verify latest/download/module.json serves the version
+//      (node tools/verify-release.mjs <tag> checks the published assets end-to-end).
+//   4. DEVBRIDGE rider (god, 5 Sep): the version self-report + console-export line ships with
+//      the next routine release — fold it in rather than cutting separately.
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
