@@ -282,7 +282,8 @@ test('handOffDecision: only a real non-innate guise, a distinct recipient, and w
 	assert.deepEqual(handOffDecision(src, innate, rec, true), { ok: false, reason: 'innate-untradable' });
 	assert.deepEqual(handOffDecision(src, g, null, true), { ok: false, reason: 'no-recipient' });
 	assert.deepEqual(handOffDecision(src, g, { id: 'A' }, true), { ok: false, reason: 'same-actor' });
-	assert.deepEqual(handOffDecision(src, g, rec, false), { ok: false, reason: 'needs-gm-socket' }); // cross-owner, no write
+	assert.deepEqual(handOffDecision(src, g, rec, false), { ok: false, reason: 'no-vault' });         // cross-owner, no write, no vault yet
+	assert.deepEqual(handOffDecision(src, g, rec, false, true), { ok: true, reason: 'via-vault' }); // cross-owner routes via the vault
 	assert.deepEqual(handOffDecision(src, g, rec, true), { ok: true, reason: 'ok' });
 });
 
@@ -296,11 +297,11 @@ test('sheetHandOffGuise: refuses cleanly (no mutation) without write access; mov
 	}
 	const item = guiseItem2('g1');
 	const src = { id: 'A', getFlag: () => null, items: { get: (id) => (id === 'g1' ? item : null) } };
-	// no write access (recipient not owned, not GM) → needs-gm-socket, no move
+	// no write access (recipient not owned, not GM) and no vault actor → no-vault, no move
 	const created = [];
 	const recNoWrite = { id: 'B', isOwner: false, createEmbeddedDocuments: async (_t, d) => created.push(...d) };
 	const r1 = await sheetHandOffGuise(src, 'g1', recNoWrite);
-	assert.equal(r1.reason, 'needs-gm-socket');
+	assert.equal(r1.reason, 'no-vault');
 	assert.equal(item._deleted, false); assert.equal(created.length, 0);
 	// clean path: recipient owned → the Item moves whole (create on B, delete on A)
 	const recOwned = { id: 'B', isOwner: true, createEmbeddedDocuments: async (_t, d) => created.push(...d) };

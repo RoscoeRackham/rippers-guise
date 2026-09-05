@@ -459,6 +459,7 @@
 											{{#if s.guise.lent.hp.current}}<span class="rs-vault-lent">HP (+{{s.guise.lent.hp.current}})</span>{{/if}}
 											{{#if s.guise.lent.mp.current}}<span class="rs-vault-lent">MP (+{{s.guise.lent.mp.current}})</span>{{/if}}
 											{{#if m.canWrite}}<button class="rs-vault-x" data-action="vaultStash" data-guise="{{s.guise.id}}" data-actor="{{m.actorId}}" title="{{localize 'RIPPERS.Vault.Cabinet'}}">▾</button>{{/if}}
+											{{#if s.guise.tradable}}{{#if m.canWrite}}<button class="rs-vault-x" data-action="vaultHandOffDialog" data-guise="{{s.guise.id}}" data-actor="{{m.actorId}}" title="{{localize 'RIPPERS.Vault.HandOff'}}">⇄</button>{{/if}}{{/if}}
 										</div>
 									{{else}}
 										<div class="rs-vault-slot" title="{{localize 'RIPPERS.Vault.Empty'}}"></div>
@@ -467,6 +468,26 @@
 							</div>
 						</div>
 					{{/each}}
+					{{#if vm.vault.trade.available}}
+						{{!-- The Vault (trade layer, Austin 5 Sep): guises in transit between players. A
+						      consigned guise sits here until its addressee draws it — player-driven, no GM
+						      gate. Thin chrome; Austin owns the visual design. --}}
+						<div class="rs-vault-transit">
+							<div class="rs-vault-mhead"><span class="rs-vault-mname">{{localize 'RIPPERS.Vault.Transit'}}</span></div>
+							{{#if vm.vault.trade.any}}
+								<div class="rs-vault-field">
+									{{#each vm.vault.trade.entries as |t|}}
+										<div class="rs-vault-card">
+											<img src="{{t.img}}" alt="">
+											<span class="rs-vault-cname">{{t.name}}</span>
+											<span class="rs-vault-lent">{{#if t.toName}}→ {{t.toName}}{{/if}}{{#if t.fromName}} · {{localize 'RIPPERS.Vault.TransitFrom'}} {{t.fromName}}{{/if}}</span>
+											{{#if t.canDraw}}<button class="rs-vault-x" data-action="vaultDraw" data-guise="{{t.id}}" data-to="{{t.toId}}" title="{{localize 'RIPPERS.Vault.Draw'}}">▴</button>{{/if}}
+										</div>
+									{{/each}}
+								</div>
+							{{else}}<p class="rs-empty">{{localize 'RIPPERS.Vault.TransitEmpty'}}</p>{{/if}}
+						</div>
+					{{/if}}
 					<div class="rs-vault-cabinet" data-vault-drop="cabinet">
 						<div class="rs-vault-mhead"><span class="rs-vault-mname">{{vm.vault.cabinet.label}}</span></div>
 						{{#if vm.vault.cabinet.entries.length}}

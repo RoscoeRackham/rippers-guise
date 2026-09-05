@@ -63,6 +63,22 @@ test('GUARD P4: _ensureDefaultGuise is fire-and-forget at its render call site (
 	for (const line of callSites) assert.doesNotMatch(line, /await/, `not awaited: ${line.trim()}`);
 });
 
+test('GUARD v0.7.49 (vault trade): both trade legs create BEFORE they delete — a guise is never lost', () => {
+	// vaultConsign: the source item is deleted only after the vault create succeeds; vaultDraw: the
+	// vault source is deleted only after the actor create, with rollback on delete failure. Reordering
+	// either (delete-first, or dropping the rollback) can destroy a player's guise on a failed write.
+	for (const name of ['vaultConsign', 'vaultDraw']) {
+		const code = fnBody(name).replace(/\/\/[^\n]*/g, '');
+		const create = code.indexOf('createEmbeddedDocuments');
+		const del = code.search(/\.delete\(\)/);
+		assert.ok(create !== -1 && del !== -1, `${name} has both create and delete`);
+		assert.ok(create < del, `${name}: create comes before delete`);
+	}
+	assert.match(fnBody('vaultDraw'), /deleteEmbeddedDocuments/); // the rollback path exists
+	// and trading must never write the repair path's forbidden actor flags (Turn economics untouched)
+	assert.doesNotMatch(fnBody('vaultConsign'), /USED_GUISES_FLAG.*setFlag|setFlag.*USED_GUISES_FLAG/);
+});
+
 test('GUARD packaging (v0.7.48): module declares the guises pack and the release tool hard-verifies it', () => {
 	const mod = JSON.parse(readFileSync(fileURLToPath(new URL('../module.json', import.meta.url)), 'utf8'));
 	assert.ok(mod.packs?.some((p) => p.path === 'packs/guises'), 'packs/guises declared');

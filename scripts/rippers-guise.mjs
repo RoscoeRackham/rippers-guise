@@ -873,7 +873,24 @@ async function buildVaultVM(selfActor) {
 		};
 	});
 	const cabinet = await buildCabinetEntries();
-	return { partySize: size, fieldLimit: limit, isGM, members, cabinet };
+	// Trade layer: the GM's first vault open creates the shared vault actor (players get it ready-made).
+	const vaultActor = isGM ? await ensureVaultActor() : findVaultActor();
+	const transit = (vaultActor?.items?.filter?.(isGuiseItem) ?? []).map((g) => {
+		const toId = g.getFlag?.(MODULE_ID, 'consignedTo') || '';
+		const toActor = toId ? globalThis.game?.actors?.get?.(toId) : null;
+		return {
+			id: g.id, name: g.name ?? '', img: g.img,
+			toId, toName: g.getFlag?.(MODULE_ID, 'consignedToName') || toActor?.name || '',
+			fromName: g.getFlag?.(MODULE_ID, 'consignedByName') || '',
+			canDraw: !!(isGM || (toActor?.isOwner)),
+		};
+	});
+	// Hand-off recipient candidates: every player character except the source (cross-owner allowed —
+	// that is the point of the vault). The dialog builds from this list.
+	const recipients = (globalThis.game?.actors?.filter?.((a) => a.type === 'character' && a.hasPlayerOwner) ?? [])
+		.map((a) => ({ id: a.id, name: a.name ?? '' }));
+	const trade = { available: !!vaultActor, entries: transit, any: transit.length > 0, recipients };
+	return { partySize: size, fieldLimit: limit, isGM, members, cabinet, trade };
 }
 
 /** X4 — hand a guise from one party member to another (the vault drop handler calls this). Reuses the
@@ -949,6 +966,126 @@ function getDocumentClass(name) {
 		?? globalThis.Item;
 }
 
+// ---------------------------------------------------------------------------
+// GUISE TRADING — THE VAULT (Austin 5 Sep morning ruling; PHIAL-TRADE-SPEC R1-R12 + ADDENDUM).
+// Player-driven, NOT GM-moderated: no approve/refuse gate, no pending state. The trade intermediary
+// is a SHARED WORLD ACTOR ("The Guise Vault", type npc so the party roster never lists it) whose
+// DEFAULT ownership is OWNER — so the giver moves a guise actor→vault under their OWN permissions
+// and the receiver draws vault→actor under theirs. No GM client is required for any step; the GM
+// only has to open the Party Vault once so the vault actor exists (same pattern as the cabinet).
+// Direct Hand Off stays the one-step clean path when the user can write the recipient (GM, or owns
+// both); otherwise the SAME verb consigns via the vault automatically — sugar over stash+draw.
+// The cabinet (world compendium) remains the GM store; the vault is the live trade layer.
+// ⚠ owed (spec §4 Q1/Q2/Q3/Q6/Q8/Q9): mid-conflict legality/action cost, forced-dismiss vs the
+// Turn, the used-list new-id accident, rest-refill vs 'in hand', proximity, duplicates — nothing
+// here answers any of them. Q3 handling: the source's per-scene used flag is CARRIED as an
+// informational item flag (usedThisSceneAtTrade) so the fact survives the id change, but NEITHER
+// actor's used-list is touched — shipped Turn economics are unchanged until Austin rules.
+const VAULT_ACTOR_FLAG = 'isVaultActor';
+const VAULT_ACTOR_NAME = 'The Guise Vault';
+
+/** The shared vault actor, or null. Found by flag, never by name (names are user-editable). */
+function findVaultActor() {
+	return globalThis.game?.actors?.find?.((a) => !!a.getFlag?.(MODULE_ID, VAULT_ACTOR_FLAG)) ?? null;
+}
+/** Ensure the vault actor exists. GM-only creation (players cannot create world actors); default
+ *  ownership OWNER so every player can consign into it and draw from it. Never throws. */
+async function ensureVaultActor() {
+	let v = findVaultActor();
+	if (v) return v;
+	if (!globalThis.game?.user?.isGM) return null;
+	const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+	try {
+		await getDocumentClass('Actor').create({
+			name: VAULT_ACTOR_NAME, type: 'npc',
+			ownership: { default: OWNER },
+			flags: { [MODULE_ID]: { [VAULT_ACTOR_FLAG]: true } },
+		});
+	} catch (err) { console.warn('[rippers-guise] could not create the vault actor:', err); }
+	return findVaultActor();
+}
+
+/** PURE. The object a traded guise travels as. toObject() carries the heroic ref, lent HP/MP CURRENT
+ *  values and the IP satchel (all in system.data — R2, no refill). Adds the consignment address (for
+ *  a vault leg) and the Q3 informational marker: whether the guise was in the SOURCE's per-scene
+ *  used-list at trade time. Strips _id. */
+function tradePayload(item, sourceActor, recipientActor, usedList = []) {
+	const obj = typeof item?.toObject === 'function' ? item.toObject() : { ...(item ?? {}) };
+	delete obj._id;
+	obj.flags = obj.flags ?? {};
+	obj.flags[MODULE_ID] = {
+		...(obj.flags[MODULE_ID] ?? {}),
+		consignedTo: recipientActor?.id ?? '', consignedToName: recipientActor?.name ?? '',
+		consignedBy: sourceActor?.id ?? '', consignedByName: sourceActor?.name ?? '',
+		usedThisSceneAtTrade: Array.isArray(usedList) && usedList.includes(item?.id),
+	};
+	return obj;
+}
+/** PURE. May this user draw a consigned vault guise onto `actor`? Addressed guises draw only to the
+ *  addressee's actor (GM may always redirect); the drawer must be able to write the target actor. */
+function drawDecision(vaultItem, actor, isGM) {
+	if (!vaultItem) return { ok: false, reason: 'no-guise' };
+	if (!actor) return { ok: false, reason: 'no-recipient' };
+	const to = vaultItem.getFlag?.(MODULE_ID, 'consignedTo') ?? vaultItem.flags?.[MODULE_ID]?.consignedTo ?? '';
+	if (!isGM && to && to !== actor.id) return { ok: false, reason: 'not-addressee' };
+	if (!(isGM || actor.isOwner)) return { ok: false, reason: 'no-write' };
+	return { ok: true, reason: 'ok' };
+}
+
+/** Consign a guise into the vault, addressed to a recipient (the giver's leg of a cross-owner trade).
+ *  Unwear-first (bind resets, R3); create on the vault, delete the source only after the create
+ *  succeeds (never lost, never doubled). The receiver completes the trade with vaultDraw. */
+async function vaultConsign(actor, guiseId, recipientActor) {
+	const item = actor?.items?.get?.(guiseId);
+	const vault = findVaultActor();
+	if (!vault) { ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Vault.NoVault') ?? 'The Vault is not set up yet — ask your GM to open the Party Vault once.'); return { ok: false, reason: 'no-vault' }; }
+	const d = handOffDecision(actor, item, recipientActor, true); // validation only; the write goes to the vault
+	if (!d.ok) { ui.notifications?.warn(handOffRefusalText(d.reason)); return d; }
+	if (getActiveGuise(actor) === guiseId) await dismissGuise(actor, guiseId); // unwear first (bind resets)
+	const used = actor.getFlag?.(MODULE_ID, USED_GUISES_FLAG) ?? [];
+	const obj = tradePayload(item, actor, recipientActor, used);
+	let created;
+	try { created = await vault.createEmbeddedDocuments('Item', [obj]); }
+	catch (err) { console.warn('[rippers-guise] consign-to-vault failed:', err); ui.notifications?.warn('Could not consign to the Vault.'); return { ok: false, reason: 'vault-write-failed' }; }
+	if (!created?.length) { ui.notifications?.warn('Could not consign to the Vault.'); return { ok: false, reason: 'vault-write-failed' }; }
+	await item.delete();
+	ui.notifications?.info(`Consigned "${item.name}" to the Vault — ${recipientActor?.name ?? 'the recipient'} can draw it.`);
+	return { ok: true, reason: 'consigned' };
+}
+
+/** Draw a consigned guise from the vault onto `actor` (the receiver's leg — their own permissions:
+ *  OWNER on the vault deletes the source, ownership of their actor creates the copy). It arrives
+ *  UNBOUND with the consignment address stripped; the Q3 marker stays (informational). Create-then-
+ *  delete with rollback so the guise is never lost and never doubled. */
+async function vaultDraw(actor, vaultItemId) {
+	const vault = findVaultActor();
+	const item = vault?.items?.get?.(vaultItemId);
+	const d = drawDecision(item, actor, !!globalThis.game?.user?.isGM);
+	if (!d.ok) {
+		const msg = {
+			'no-guise': 'That vault entry is not there any more.', 'no-recipient': 'No character to draw to.',
+			'not-addressee': 'That guise is consigned to another character.', 'no-write': 'You cannot write that character.',
+		}[d.reason] ?? 'Draw refused.';
+		ui.notifications?.warn(msg); return d;
+	}
+	const obj = item.toObject(); delete obj._id;
+	obj.flags = obj.flags ?? {}; obj.flags[MODULE_ID] = { ...(obj.flags[MODULE_ID] ?? {}) };
+	delete obj.flags[MODULE_ID].consignedTo; delete obj.flags[MODULE_ID].consignedToName;
+	let created;
+	try { created = await actor.createEmbeddedDocuments('Item', [obj]); }
+	catch (err) { console.warn('[rippers-guise] vault draw: actor create failed:', err); ui.notifications?.warn('Could not draw the guise.'); return { ok: false, reason: 'actor-create-failed' }; }
+	const newId = created?.[0]?.id ?? created?.[0]?._id;
+	if (!newId) { ui.notifications?.warn('Could not draw the guise.'); return { ok: false, reason: 'actor-create-failed' }; }
+	try { await item.delete(); }
+	catch (err) {
+		console.warn('[rippers-guise] vault draw: source delete failed — rolling back:', err);
+		try { await actor.deleteEmbeddedDocuments('Item', [newId]); } catch (err2) { console.warn('[rippers-guise] rollback failed:', err2); }
+		ui.notifications?.warn('Could not complete the draw — the guise stays in the Vault.');
+		return { ok: false, reason: 'vault-delete-failed' };
+	}
+	ui.notifications?.info(`Drawn "${item.name}" from the Vault — it arrives unbound.`);
+	return { ok: true, reason: 'drawn' };
+}
 
 // ---------------------------------------------------------------------------
 // FDN-8 STAGE 8a — HUNTER WEAPON (port of GUISE-v2-design §8 / PHASE2-STEP0 §4a).
@@ -4792,14 +4929,24 @@ async function sheetStashGuise(actor, guiseId) {
  *  there is a distinct recipient, and the current user can WRITE the recipient (canWrite = GM or the
  *  recipient is owned by this user). Cross-owner transfer without write access needs a GM-mediated
  *  socket — reported as reason 'needs-gm-socket', NOT half-built. Returns { ok, reason }. */
-function handOffDecision(sourceActor, item, recipient, canWrite) {
+function handOffDecision(sourceActor, item, recipient, canWrite, vaultAvailable = false) {
 	if (!item || !isGuiseItem(item)) return { ok: false, reason: 'no-guise' };
 	const innate = !!item.getFlag?.(MODULE_ID, 'isInnate') || item.system?.data?.mode === 'innate';
 	if (innate) return { ok: false, reason: 'innate-untradable' };
 	if (!recipient) return { ok: false, reason: 'no-recipient' };
 	if (recipient.id && sourceActor?.id && recipient.id === sourceActor.id) return { ok: false, reason: 'same-actor' };
-	if (!canWrite) return { ok: false, reason: 'needs-gm-socket' };
+	// Cross-owner without write is ROUTED, not refused (Austin 5 Sep: player-driven, no GM gate):
+	// the same verb consigns via the shared vault actor. Refused only when no vault exists yet.
+	if (!canWrite) return vaultAvailable ? { ok: true, reason: 'via-vault' } : { ok: false, reason: 'no-vault' };
 	return { ok: true, reason: 'ok' };
+}
+/** Player-facing refusal wording for a handOffDecision reason. */
+function handOffRefusalText(reason) {
+	return {
+		'no-guise': 'That is not a guise.', 'innate-untradable': 'The innate guise cannot be handed off.',
+		'no-recipient': 'Target a recipient token first.', 'same-actor': 'Cannot hand a guise to its own bearer.',
+		'no-vault': 'The Vault is not set up yet — ask your GM to open the Party Vault once.',
+	}[reason] ?? 'Hand-off refused.';
 }
 /** Hand a TRADABLE guise Item whole to a recipient actor: its attached heroic ref, lent HP/MP layer and
  *  IP satchel all ride (they live on the Item's system.data), and bind RESETS — the guise is unworn on
@@ -4808,18 +4955,14 @@ function handOffDecision(sourceActor, item, recipient, canWrite) {
 async function sheetHandOffGuise(actor, guiseId, recipient) {
 	const item = actor?.items?.get?.(guiseId);
 	const canWrite = !!(globalThis.game?.user?.isGM || recipient?.isOwner);
-	const d = handOffDecision(actor, item, recipient, canWrite);
-	if (!d.ok) {
-		const msg = {
-			'no-guise': 'That is not a guise.', 'innate-untradable': 'The innate guise cannot be handed off.',
-			'no-recipient': 'Target a recipient token first.', 'same-actor': 'Cannot hand a guise to its own bearer.',
-			'needs-gm-socket': 'You cannot write that character — a GM must mediate this hand-off.',
-		}[d.reason] ?? 'Hand-off refused.';
-		ui.notifications?.warn(msg);
-		return d;
-	}
+	const vault = findVaultActor();
+	const vaultAvailable = !!vault && (globalThis.game?.user?.isGM || !!vault.isOwner); // default-OWNER vault
+	const d = handOffDecision(actor, item, recipient, canWrite, vaultAvailable);
+	if (!d.ok) { ui.notifications?.warn(handOffRefusalText(d.reason)); return d; }
+	if (d.reason === 'via-vault') return vaultConsign(actor, guiseId, recipient); // cross-owner: consign, receiver draws
 	if (getActiveGuise(actor) === guiseId) await dismissGuise(actor, guiseId); // unwear first (bind resets)
-	const obj = item.toObject(); delete obj._id;                              // heroic ref + lent layer + satchel ride in system.data
+	const used = actor.getFlag?.(MODULE_ID, USED_GUISES_FLAG) ?? [];
+	const obj = tradePayload(item, actor, null, used);                        // heroic ref + lent layer + satchel ride in system.data; Q3 marker carried
 	await recipient.createEmbeddedDocuments('Item', [obj]);
 	await item.delete();
 	ui.notifications?.info(`${game.i18n?.localize?.('RIPPERS.Sheet.HandedOff') ?? 'Handed off'} "${item.name}".`);
@@ -5029,6 +5172,8 @@ function getRippersActorSheetClass() {
 				stashGuise: RippersActorSheet.onStashGuise,
 				handOffGuise: RippersActorSheet.onHandOffGuise,
 				vaultStash: RippersActorSheet.onVaultStash,
+				vaultHandOffDialog: RippersActorSheet.onVaultHandOffDialog,
+				vaultDraw: RippersActorSheet.onVaultDraw,
 				bondCreate: RippersActorSheet.onBondCreate,
 				bondAddRow: RippersActorSheet.onBondAddRow,
 				bondRemove: RippersActorSheet.onBondRemove,
@@ -5302,6 +5447,28 @@ function getRippersActorSheetClass() {
 			const id = target?.dataset?.guise; const aid = target?.dataset?.actor;
 			const actor = aid ? (globalThis.game?.actors?.get?.(aid) ?? this.document) : this.document;
 			if (id) { await vaultStashToCabinet(actor, id); this.render(); }
+		}
+		// Trade (Austin 5 Sep): the Hand Off verb — pick a recipient, then the one path routes itself
+		// (direct move when this user can write the recipient; consigned via the vault otherwise).
+		static async onVaultHandOffDialog(event, target) {
+			const id = target?.dataset?.guise; const aid = target?.dataset?.actor;
+			const actor = aid ? (globalThis.game?.actors?.get?.(aid) ?? this.document) : this.document;
+			const item = actor?.items?.get?.(id); if (!item) return;
+			const options = (globalThis.game?.actors?.filter?.((a) => a.type === 'character' && a.hasPlayerOwner && a.id !== actor.id) ?? [])
+				.map((a) => ({ value: a.id, label: a.name ?? '' }));
+			if (!options.length) { ui.notifications?.warn(game.i18n?.localize?.('RIPPERS.Vault.NoRecipients') ?? 'No recipient characters found.'); return; }
+			const pick = await promptBondPick(
+				`${game.i18n?.localize?.('RIPPERS.Vault.HandOff') ?? 'Hand Off'} — ${item.name}`,
+				game.i18n?.localize?.('RIPPERS.Vault.HandOffGuard') ?? 'Bind resets — it arrives unbound; lent HP/MP current values and the IP satchel travel as-is. This is not a loan.',
+				options);
+			if (!pick) return;
+			await sheetHandOffGuise(actor, id, globalThis.game?.actors?.get?.(pick) ?? null);
+			this.render();
+		}
+		static async onVaultDraw(event, target) {
+			const id = target?.dataset?.guise; const toId = target?.dataset?.to;
+			const dest = (toId ? globalThis.game?.actors?.get?.(toId) : null) ?? this.document;
+			if (id) { await vaultDraw(dest, id); this.render(); }
 		}
 		static async onHandOffGuise(event, target) {
 			const id = target?.dataset?.guise; if (!id) return;
@@ -5763,6 +5930,7 @@ export { faceForGuise, resolveFaceImg, nextManualFace, getFaces, setFace, applyG
 export { guiseSwapActionDecision, markGuiseUsed, guiseSceneState, accountGuiseSwap, clearGuiseSceneState, USED_GUISES_FLAG, TURN_REFUND_FLAG };
 // Unit 3 Party Vault: field limit + slots (V1/V5), roster/cabinet VM (V2/V3/V4), cross-owner hand-off (X4).
 export { partySize, guiseFieldLimit, fieldSlots, partyActors, vaultGuiseCard, buildCabinetEntries, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, ensureCabinetPack, PARTY_SIZE_SETTING, CABINET_PACK, CABINET_WORLD_PACK };
+export { findVaultActor, ensureVaultActor, tradePayload, drawDecision, vaultConsign, vaultDraw, handOffRefusalText, VAULT_ACTOR_FLAG, VAULT_ACTOR_NAME };
 export { sheetRollWeapon, sheetRollCheck, sheetRest, sheetSpendFabula };
 export { sheetOpenEditor, sheetStashGuise, handOffDecision, sheetHandOffGuise };
 export { deeperBondsApi, bondClockPips, bondPanelRow, buildBondPanelRows, SOLID_BOND_CAP, DEEPER_BONDS_ID };
