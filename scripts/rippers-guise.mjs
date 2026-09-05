@@ -464,7 +464,11 @@ async function materialiseEquipment(actor, item) {
 		delete obj._id;
 		obj.flags = obj.flags ?? {};
 		obj.flags[MODULE_ID] = { origin: item.id, kind: 'equipment' };
+		// DIAGNOSTIC (v0.7.43): each equipment item is a SEPARATE embedded-doc WRITE — on a 600ms link N
+		// pieces of gear = N serial write round-trips. Time each so the log shows the per-write latency.
+		const _wt = _now();
 		const [created] = await actor.createEmbeddedDocuments('Item', [obj]);
+		console.debug(`[guise-perf] materialiseEquipment write "${obj.name ?? '?'}" ${Math.round(_now() - _wt)}ms`);
 		if (!created) continue;
 		ids.push(created.id);
 		const slot = EQUIP_SLOTS.includes(eq.slot) ? eq.slot : 'mainHand';
@@ -526,39 +530,40 @@ function setDraftArmor(draft, uuid, name = '') { return setDraftEquip(draft, 'ar
 const _guiseBusy = new Set();
 
 async function _bindCore(actor, item) {
+	const _bt = _now(); // DIAGNOSTIC total-bind timer (v0.7.43)
 	// Dismiss any currently-active (different) guise first — one guise at a time.
 	const prev = actor.getFlag(MODULE_ID, FLAG);
 	if (prev && prev !== item.id) {
 		const prevItem = actor.items.get(prev);
-		if (prevItem) await _dismissCore(actor, prevItem, { silent: true });
+		if (prevItem) await _perf("bind: dismiss-prev", () => _dismissCore(actor, prevItem, { silent: true }));
 	}
 	const preBindEquip = foundry.utils.deepClone(actor.system?.equipped ?? {});
 	// Materialise the mask's live skill set FIRST (flagged guise-origin) …
-	const skillIds = await materialiseSkills(actor, item);
-	const { ids: equipIds, equipUpdate } = await materialiseEquipment(actor, item);
+	const skillIds = await _perf("bind: materialiseSkills", () => materialiseSkills(actor, item));
+	const { ids: equipIds, equipUpdate } = await _perf("bind: materialiseEquipment", () => materialiseEquipment(actor, item));
 	// #3 (v0.7.9): the worn guise's signature Heroic rides on while worn (its effects apply);
 	// removed on dismiss with the rest of the guise-origin owned set.
-	const heroicIds = await materialiseAttachedHeroic(actor, item);
+	const heroicIds = await _perf("bind: materialiseAttachedHeroic", () => materialiseAttachedHeroic(actor, item));
 	// #5 (v0.7.9): effects/abilities that travel with the guise ride on the same way.
-	const effectIds = await materialiseAttachedEffects(actor, item);
+	const effectIds = await _perf("bind: materialiseAttachedEffects", () => materialiseAttachedEffects(actor, item));
 	// v0.7.30: the guise's PICKED spells materialise as castable actor spell Items (stripped on dismiss).
-	const spellIds = await materialiseSpells(actor, item);
+	const spellIds = await _perf("bind: materialiseSpells", () => materialiseSpells(actor, item));
 	const owned = [...skillIds, ...equipIds, ...heroicIds, ...effectIds, ...spellIds];
-	await actor.update({
+	await _perf("bind: actor.update(flags+equip)", () => actor.update({
 		[`flags.${MODULE_ID}.${FLAG}`]: item.id,
 		[`flags.${MODULE_ID}.preBindEquip`]: preBindEquip,
 		[`flags.${MODULE_ID}.owned.${item.id}`]: owned,
 		...equipUpdate,
-	});
+	}));
 	// … THEN suppress the character's own innate skills, so exactly one 30-level set is live (Stage B).
-	const dormant = await suppressInnateSkills(actor);
+	const dormant = await _perf("bind: suppressInnateSkills", () => suppressInnateSkills(actor));
 	// … and sleep the creation heroic while masked (8c); 40/50/earned stay live.
-	await suppressCreationHeroic(actor);
+	await _perf("bind: suppressCreationHeroic", () => suppressCreationHeroic(actor));
 	// Affinities: the guise's embedded "Guise affinities" effect now transfers (transferEffects()=true).
 	// H2 portrait: cosmetic — it must NEVER block or abort a swap. Fully decoupled: any failure here
 	// (a bad face path, a rejected update, a FilePicker+ quirk) is swallowed so the bind always completes.
-	try { await applyGuiseFace(actor, item); } catch (err) { console.warn('[rippers-guise] applyGuiseFace failed (swap unaffected):', err); }
-	console.debug(`[rippers-guise] bound "${item.name}": ${skillIds.length} guise skill(s), ${equipIds.length} equipment; ${dormant} innate skill(s) dormant.`);
+	try { await _perf("bind: applyGuiseFace", () => applyGuiseFace(actor, item)); } catch (err) { console.warn('[rippers-guise] applyGuiseFace failed (swap unaffected):', err); }
+	console.debug(`[guise-perf] bind TOTAL "${item.name}": ${Math.round(_now() - _bt)}ms — ${skillIds.length} skill(s), ${equipIds.length} equipment, ${heroicIds.length} heroic(s), ${effectIds.length} effect(s), ${spellIds.length} spell(s); ${dormant} innate dormant.`);
 }
 
 async function _dismissCore(actor, item, { silent = false } = {}) {
@@ -619,7 +624,7 @@ function defaultActiveGuiseId(actor) {
 
 async function dismissGuise(actor, ref, opts = {}) {
 	const item = resolveItem(actor, ref);
-	if (!actor || !item) { console.warn('[rippers-guise] dismissGuise: no actor/item.'); return; }
+	if (!actor || !item) { console.warn('[rippers-guise] dismissGuise: no actor/item.'); console.trace('[guise-perf] dismissGuise guard — call stack (actor:', !!actor, 'ref:', ref, ')'); return; }
 	if (_guiseBusy.has(actor.id)) { console.debug('[rippers-guise] dismiss ignored — a guise op is already in flight for this actor.'); return; }
 	_guiseBusy.add(actor.id);
 	try { return await _dismissCore(actor, item, opts); } finally { _guiseBusy.delete(actor.id); }
@@ -3083,13 +3088,24 @@ async function safeFromUuid(uuid) {
 	try { return await fromUuid(uuid); } catch { return null; }
 }
 
+// ── DIAGNOSTIC (v0.7.43): instrumentation only, no behaviour change. Times the guise load/bind path so a
+// single console paste tells us WHERE the minutes go on a 600ms link. Remove once the cause is confirmed. ──
+const _now = () => (globalThis.performance?.now?.() ?? Date.now());
+async function _perf(label, fn) {
+	const t = _now();
+	try { return await fn(); }
+	finally { console.debug(`[guise-perf] ${label} ${Math.round(_now() - t)}ms`); }
+}
+
 /** PERF: resolve many UUIDs CONCURRENTLY into a Map<uuid, doc|null>. De-dupes so a repeated ref is
  *  fetched once. Replaces serial `await fromUuid` loops on the guise load/bind path — on a cold session
  *  the per-document pack cost stacked serially; one Promise.all lets the pack layer resolve them in
  *  parallel. Failures resolve to null (same as safeFromUuid), so callers keep their own "not found" warns. */
 async function resolveUuidMap(uuids) {
 	const unique = [...new Set((uuids ?? []).filter(Boolean).map(String))];
+	const t = _now(); // DIAGNOSTIC: count + wall time of the concurrent fetch batch (N cold fetches ≈ N×latency if serial upstream)
 	const docs = await Promise.all(unique.map((u) => safeFromUuid(u)));
+	if (unique.length) console.debug(`[guise-perf] resolveUuidMap fetched ${unique.length} uuid(s) in ${Math.round(_now() - t)}ms`);
 	const map = new Map();
 	unique.forEach((u, i) => map.set(u, docs[i]));
 	return map;
@@ -4993,7 +5009,8 @@ function getRippersActorSheetClass() {
 			const ctx = await super._prepareContext(options);
 			const key = this._heavyRenderKey();
 			const deferHeavy = this._heavyReadyKey !== key; // first paint for this state → shell now, content next
-			const vm = await buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions, previewGuiseId: this._previewGuiseId, deferHeavy });
+			const vm = await _perf(deferHeavy ? 'list-paint (pass 1, shell/no-fetch)' : 'content-resolve (pass 2, full)',
+				() => buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions, previewGuiseId: this._previewGuiseId, deferHeavy }));
 			if (deferHeavy) {
 				this._heavyReadyKey = key;
 				// Re-render off the critical path to resolve content; guarded so a render already in flight
@@ -5052,7 +5069,7 @@ function getRippersActorSheetClass() {
 				const id = defaultActiveGuiseId(actor);
 				if (!id) return;                                    // no guise → Unmasked stands
 				this._defaultingGuise = true;
-				await bindGuiseNoCost(actor, id);
+				await _perf('_ensureDefaultGuise → bindGuiseNoCost (first-open auto-bind)', () => bindGuiseNoCost(actor, id));
 				this._defaultingGuise = false;
 				this.render();
 			} catch (err) { this._defaultingGuise = false; console.warn('[rippers-guise] default-guise on open failed:', err); }
