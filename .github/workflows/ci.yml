@@ -1,0 +1,38 @@
+# CI (TEST-AUTOMATION-STRATEGY §4, Phase 1).
+# push/PR: the unit suite + the §2 regression guards (test/regression-guards.test.mjs).
+# release published: the §3 release-integrity gate against the just-published assets —
+# a red run here means the SHIPPED artifact is bad and must be fixed or the release pulled.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+
+jobs:
+  test:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test test/*.test.mjs
+
+  verify-release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/verify-release.mjs "${{ github.event.release.tag_name }}"
