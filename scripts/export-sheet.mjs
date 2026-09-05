@@ -15,7 +15,7 @@
  *                          crisis:{inCrisis,score} },
  *                 attributes:[{key,label,die}], affinities:[{type,level,word}],
  *                 derived:{ def, mdef, init } },
- *     guises:[{ name, role, identity, innate, worn, heroicName,
+ *     guises:[{ name, role, identity, innate, worn, bane, tell, perk, heroicName,
  *               affinities:[{type,level,word}], classes:[{name, skills:[{name,sl,maxSl}]}] }],
  *     bonds:[{ name, admInf, loyMis, affHat, strength, tier }],
  *     inventory:[{ section, name, detail }],
@@ -56,7 +56,9 @@ export function assembleExport(parts = {}, { now = new Date(), moduleVersion = '
 		},
 		guises: (parts.guises ?? []).map((g) => ({
 			name: s(g.name), role: s(g.role), identity: s(g.identity),
-			innate: !!g.innate, worn: !!g.worn, heroicName: g.heroicName ? s(g.heroicName) : null,
+			innate: !!g.innate, worn: !!g.worn,
+			bane: s(g.bane), tell: s(g.tell), perk: s(g.perk),
+			heroicName: g.heroicName ? s(g.heroicName) : null,
 			affinities: (g.affinities ?? []).map((a) => ({ type: s(a.type), level: n(a.level), word: s(a.word) })),
 			classes: (g.classes ?? []).map((cl) => ({
 				name: s(cl.name),
@@ -103,10 +105,13 @@ export function renderExportHTML(payload = {}) {
 			return `<div class="gcls"><div class="gcls-name">${esc(cl.name)}</div><ul>${sk || '<li class="none">—</li>'}</ul></div>`;
 		}).join('');
 		const tags = [g.worn ? '<span class="tag worn">worn</span>' : '', g.innate ? '<span class="tag innate">innate</span>' : ''].join('');
+		const htp = [['Perk', g.perk], ['Tell', g.tell], ['Bane', g.bane]].filter(([, val]) => s(val).trim())
+			.map(([k, val]) => `<div class="gtrait"><span class="k">${k}</span> ${esc(val)}</div>`).join('');
 		return `<section class="guise">
 			<h3>${esc(g.name)} ${tags}</h3>
 			<div class="gmeta">${[g.role, g.identity].filter(Boolean).map(esc).join(' · ') || ''}${g.heroicName ? ` · <em>${esc(g.heroicName)}</em>` : ''}</div>
 			<div class="affrow">${gAff}</div>
+			${htp}
 			${cls}
 		</section>`;
 	}).join('') || '<p class="none">No guises recorded.</p>';
@@ -153,6 +158,7 @@ h2{font-family:var(--disp);font-weight:400;font-size:20px;color:var(--bloodink);
 .tag{font-family:var(--mono);font-size:8px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
 padding:1px 6px;border:1px solid var(--muted);color:var(--muted);vertical-align:middle;margin-left:4px;}
 .tag.worn{background:var(--blood);color:#fff;border-color:var(--bloodink);}
+.gtrait{font-size:11px;margin:2px 0;} .gtrait .k{color:var(--bloodink);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:9px;}
 .gcls{margin-top:4px;} .gcls-name{font-weight:600;letter-spacing:.04em;}
 .gcls ul{margin:2px 0 6px;padding-left:16px;} .gcls li{list-style:square;}
 .sl{color:var(--muted);font-size:10px;}

@@ -14,6 +14,7 @@ const parts = () => ({
 	},
 	guises: [{
 		name: 'The Vampire Form', role: 'Predator', identity: 'a thing that was a man', innate: false, worn: true, heroicName: 'Nosferatu',
+		bane: 'sunlight', tell: 'no reflection', perk: 'never tires',
 		affinities: [{ type: 'dark', level: 2, word: 'Immune' }],
 		classes: [{ name: 'Vampire', skills: [{ name: 'Blood Drain', sl: 3, maxSl: 5 }] }],
 	}],
@@ -53,6 +54,20 @@ test('assembleExport: guises carry classes→skills and affinity words', () => {
 	assert.equal(p.guises[0].classes[0].skills[0].name, 'Blood Drain');
 	assert.equal(p.guises[0].classes[0].skills[0].sl, 3);
 	assert.equal(p.guises[0].affinities[0].word, 'Immune');
+	// bane/tell/perk structured per-guise (god ruling 5 Sep 2026; additive within schemaVersion 1)
+	assert.equal(p.guises[0].bane, 'sunlight');
+	assert.equal(p.guises[0].tell, 'no reflection');
+	assert.equal(p.guises[0].perk, 'never tires');
+});
+
+test('renderExportHTML: renders guise bane/tell/perk when present, omits when blank', () => {
+	const html = renderExportHTML(assembleExport(parts()));
+	assert.match(html, /Perk<\/span> never tires/);
+	assert.match(html, /Tell<\/span> no reflection/);
+	assert.match(html, /Bane<\/span> sunlight/);
+	// a guise with no bane/tell/perk shows no trait rows
+	const bare = parts(); bare.guises[0].bane = ''; bare.guises[0].tell = ''; bare.guises[0].perk = '';
+	assert.doesNotMatch(renderExportHTML(assembleExport(bare)), /class="gtrait"/);
 });
 
 test('assembleExport: drops empty bonds / inventory / quirks rows', () => {

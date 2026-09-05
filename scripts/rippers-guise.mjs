@@ -4464,6 +4464,8 @@ async function collectExportParts(actor) {
 		return {
 			name: g.name ?? '', role: d.role ?? '', identity: d.identity ?? '',
 			innate, worn: g.id === activeId,
+			// Austin's per-guise homebrew (structured; empty on innate guises) — export ruling god 5 Sep 2026.
+			bane: d.bane ?? '', tell: d.tell ?? '', perk: d.perk ?? '',
 			heroicName: heroicUuid ? (heroicDocs.get(heroicUuid)?.name ?? null) : null,
 			affinities: (d.affinityModifiers ?? []).map((m) => ({ type: m.type, level: m.level, word: affinityWordOf(m.level) })),
 			classes: (d.classes ?? []).map((cls) => {
