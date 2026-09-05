@@ -1151,6 +1151,23 @@ test('buildGuisePlayVM: the two CHARACTER-BOUND heroics are gated to L40/L50 and
 	assert.equal(high.characterHeroics[1].unlocked, true);
 });
 
+test('materialiseEquipment: creates ALL gear in ONE batched write (not N serial writes) — high-latency first-bind fix', async () => {
+	const { materialiseEquipment } = mod;
+	UUIDS.set('eq.sword', { type: 'weapon', name: 'Sabre', toObject: () => ({ type: 'weapon', name: 'Sabre', system: { hands: { value: 'one-handed' } } }) });
+	UUIDS.set('eq.mail', { type: 'armor', name: 'Proof Plate', toObject: () => ({ type: 'armor', name: 'Proof Plate', system: {} }) });
+	const item = { id: 'gEq', system: { data: { equipment: [{ itemUuid: 'eq.sword', slot: 'mainHand' }, { itemUuid: 'eq.mail', slot: 'armor' }] } } };
+	let createCalls = 0; let lastBatchLen = 0; let seq = 0;
+	const actor = {
+		createEmbeddedDocuments: async (_type, arr) => { createCalls++; lastBatchLen = arr.length; return arr.map((o) => ({ id: `c${++seq}`, name: o.name, system: o.system })); },
+	};
+	const { ids, equipUpdate } = await materialiseEquipment(actor, item);
+	assert.equal(createCalls, 1);                        // ONE write, not two
+	assert.equal(lastBatchLen, 2);                        // both items in the single batch
+	assert.equal(ids.length, 2);
+	assert.equal(equipUpdate['system.equipped.mainHand'], ids[0]); // slot mapping preserved (order)
+	assert.equal(equipUpdate['system.equipped.armor'], ids[1]);
+});
+
 test('buildGuisePlayVM: deferHeavy returns the cheap SHELL (guise list + identity) with ZERO pack fetches (high-latency fast paint)', async () => {
 	const { buildGuisePlayVM } = mod;
 	const guise = {

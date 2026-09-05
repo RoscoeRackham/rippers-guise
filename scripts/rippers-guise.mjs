@@ -457,6 +457,13 @@ async function materialiseEquipment(actor, item) {
 	// PERF: resolve the equipment refs concurrently; the create/equip loop stays serial (its two-hand
 	// displacement + equipUpdate ordering is order-dependent), but the cold pack fetch no longer stacks.
 	const srcByUuid = await resolveUuidMap((data.equipment ?? []).map((eq) => eq.itemUuid));
+	// PERF (high-latency FIRST BIND fix): build ALL equipment objects first, then create them in ONE
+	// batched write. Previously this loop did a SEPARATE `await createEmbeddedDocuments([obj])` per piece
+	// of gear — on a ~600ms remote link N items = N serial write round-trips (the multi-minute first-bind
+	// blank). One createEmbeddedDocuments(array) is a single round-trip. Order is preserved, so the equip
+	// slots + two-hand displacement below map back exactly as before — behaviour identical.
+	const objs = [];
+	const slotOf = [];
 	for (const eq of data.equipment ?? []) {
 		const src = srcByUuid.get(eq.itemUuid);
 		if (!src) { console.warn(`[rippers-guise] equipment ref not found: ${eq.itemUuid}`); continue; }
@@ -464,24 +471,24 @@ async function materialiseEquipment(actor, item) {
 		delete obj._id;
 		obj.flags = obj.flags ?? {};
 		obj.flags[MODULE_ID] = { origin: item.id, kind: 'equipment' };
-		// DIAGNOSTIC (v0.7.43): each equipment item is a SEPARATE embedded-doc WRITE — on a 600ms link N
-		// pieces of gear = N serial write round-trips. Time each so the log shows the per-write latency.
-		const _wt = _now();
-		const [created] = await actor.createEmbeddedDocuments('Item', [obj]);
-		console.debug(`[guise-perf] materialiseEquipment write "${obj.name ?? '?'}" ${Math.round(_now() - _wt)}ms`);
-		if (!created) continue;
-		ids.push(created.id);
-		const slot = EQUIP_SLOTS.includes(eq.slot) ? eq.slot : 'mainHand';
-		equipUpdate[`system.equipped.${slot}`] = created.id;
-		// D3b: a two-handed weapon occupies mainHand + offHand; the mask's loadout wins.
-		const twoHanded = /two/i.test(String(created.system?.hands?.value ?? created.system?.hands ?? ''));
-		if (twoHanded && slot === 'mainHand') {
-			if (equipUpdate['system.equipped.offHand'] && equipUpdate['system.equipped.offHand'] !== created.id) {
-				console.warn(`[rippers-guise] two-handed weapon "${created.name}" displaces the guise's off-hand item.`);
-			}
-			equipUpdate['system.equipped.offHand'] = created.id;
-		}
+		objs.push(obj);
+		slotOf.push(EQUIP_SLOTS.includes(eq.slot) ? eq.slot : 'mainHand');
 	}
+	const created = objs.length ? await actor.createEmbeddedDocuments('Item', objs) : [];
+	// created preserves input order → zip with slotOf to build ids + equipUpdate + two-hand displacement.
+	created.forEach((doc, i) => {
+		const slot = slotOf[i];
+		ids.push(doc.id);
+		equipUpdate[`system.equipped.${slot}`] = doc.id;
+		// D3b: a two-handed weapon occupies mainHand + offHand; the mask's loadout wins.
+		const twoHanded = /two/i.test(String(doc.system?.hands?.value ?? doc.system?.hands ?? ''));
+		if (twoHanded && slot === 'mainHand') {
+			if (equipUpdate['system.equipped.offHand'] && equipUpdate['system.equipped.offHand'] !== doc.id) {
+				console.warn(`[rippers-guise] two-handed weapon "${doc.name}" displaces the guise's off-hand item.`);
+			}
+			equipUpdate['system.equipped.offHand'] = doc.id;
+		}
+	});
 	return { ids, equipUpdate };
 }
 
@@ -5663,7 +5670,7 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, attachedHeroicUuids, materialiseAttachedHeroic, resolveUuidMap, prewarmGuisePacks, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, attachedHeroicUuids, materialiseAttachedHeroic, materialiseEquipment, resolveUuidMap, prewarmGuisePacks, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.
