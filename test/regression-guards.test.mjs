@@ -84,7 +84,7 @@ test('GUARD v0.7.50 (Full-Rest reload bug): no untyped <button> in the form-root
 	// native submit navigates — clicking Full Rest RELOADED Foundry (Austin, live). Every button in
 	// these templates must carry an explicit type. (benefit-picker's save-submit is the one deliberate
 	// exception, filtered by its type="submit".)
-	for (const tpl of ['rippers-actor-sheet.hbs', 'guise-sheet.hbs', 'guise-builder.hbs', 'benefit-picker.hbs']) {
+	for (const tpl of ['rippers-actor-sheet.hbs', 'guise-sheet.hbs', 'guise-builder.hbs', 'benefit-picker.hbs', 'guise-readout.hbs']) {
 		const html = readFileSync(fileURLToPath(new URL(`../templates/${tpl}`, import.meta.url)), 'utf8');
 		const untyped = (html.match(/<button(?![^>]*\btype=)/g) ?? []).length;
 		assert.equal(untyped, 0, `${tpl}: ${untyped} <button> without an explicit type`);
