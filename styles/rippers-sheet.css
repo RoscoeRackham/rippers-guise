@@ -71,6 +71,11 @@
 .rippers-sheet .rs-step { display: inline-flex; gap: 3px; margin-top: 0; } /* compact masthead: stepper sits inline, right of the number */
 .rippers-sheet .rs-step button { font-family: var(--rs-mono); font-size: 11px; font-weight: 600; width: 16px; height: 16px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); line-height: 1; }
 .rippers-sheet .rs-step button:hover { border-color: var(--rs-red); color: #fff; }
+/* Fabula Spend is a text button, NOT a ±-glyph stepper: size to its label with a clear gap
+   from the value (the .rs-stat column-gap separates them), so it never renders flush ("3Spend"). */
+.rippers-sheet .rs-spend { display: inline-flex; }
+.rippers-sheet .rs-spend button { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; width: auto; height: 16px; padding: 0 7px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); line-height: 1; white-space: nowrap; }
+.rippers-sheet .rs-spend button:hover { border-color: var(--rs-red); color: #fff; }
 
 /* Attributes row: ONE line, never wraps. Abbreviated labels (DEX/INS/MIG/WLP) + nowrap + a small nudge
    down keep Level + all four attributes on a single line at header width. Die value stays bold. */
