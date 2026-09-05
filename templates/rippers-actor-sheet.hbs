@@ -122,7 +122,7 @@
 								</div>
 								<div class="rs-play-dice">
 									{{#each vm.play.attributes as |a|}}
-										<span class="rs-die rs-die-{{a.shape}}{{#if a.buffed}} rs-die-up{{/if}}{{#if a.debuffed}} rs-die-down{{/if}}"><span class="rs-die-shape"><span class="rs-die-val">{{#if a.buffed}}▲{{/if}}d{{a.die}}</span></span><span class="rs-die-lbl">{{a.label}}</span></span>
+										<span class="rs-die rs-die-{{a.shape}}{{#if a.buffed}} rs-die-up{{/if}}{{#if a.debuffed}} rs-die-down{{/if}}"><span class="rs-die-box"><span class="rs-die-glyph"></span>{{#if a.buffed}}<span class="rs-die-mark">▲</span>{{/if}}{{#if a.debuffed}}<span class="rs-die-mark">▼</span>{{/if}}<span class="rs-die-val">d{{a.die}}</span></span><span class="rs-die-lbl">{{a.label}}</span></span>
 									{{/each}}
 								</div>
 							</div>

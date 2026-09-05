@@ -373,18 +373,24 @@
 .rippers-sheet .rs-play-lent { color: var(--rs-green); font-weight: 600; }
 /* 2b. die-shape attributes */
 .rippers-sheet .rs-play-dice { display: flex; gap: 14px; flex-wrap: wrap; }
-.rippers-sheet .rs-die { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
-.rippers-sheet .rs-die-shape { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: var(--rs-panel); border: 1px solid var(--rs-border); }
-.rippers-sheet .rs-die-sq .rs-die-shape { clip-path: none; }
-.rippers-sheet .rs-die-dia .rs-die-shape { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
-.rippers-sheet .rs-die-kite .rs-die-shape { clip-path: polygon(50% 0, 100% 38%, 50% 100%, 0 38%); }
-.rippers-sheet .rs-die-hex .rs-die-shape { clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
-.rippers-sheet .rs-die-val { font-family: var(--rs-mono); font-size: 13px; font-weight: 600; color: var(--rs-bone); }
+.rippers-sheet .rs-die { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+/* v0.7.32 readability (Austin): the die is a two-layer OUTLINED SILHOUETTE (bone-dim edge + raised
+   --card2 interior) so it separates from the near-black bg, and the shape is clipped WITHOUT clipping
+   the number — the value sits UPRIGHT on top (z-index 1), high-contrast, uncramped. The effect-moved
+   state is a small corner ▲/▼ + a coloured edge, not a glyph jammed inside the shape. */
+.rippers-sheet .rs-die-box { position: relative; width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; }
+.rippers-sheet .rs-die-glyph { position: absolute; inset: 0; background: var(--rs-bone-dim); }
+.rippers-sheet .rs-die-glyph::after { content: ''; position: absolute; inset: 2px; background: var(--rs-card2); }
+.rippers-sheet .rs-die-dia .rs-die-glyph, .rippers-sheet .rs-die-dia .rs-die-glyph::after { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.rippers-sheet .rs-die-kite .rs-die-glyph, .rippers-sheet .rs-die-kite .rs-die-glyph::after { clip-path: polygon(50% 0, 100% 40%, 50% 100%, 0 40%); }
+.rippers-sheet .rs-die-hex .rs-die-glyph, .rippers-sheet .rs-die-hex .rs-die-glyph::after { clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+.rippers-sheet .rs-die-val { position: relative; z-index: 1; font-family: var(--rs-mono); font-weight: 700; font-size: 15px; color: var(--rs-bone); letter-spacing: .01em; }
+.rippers-sheet .rs-die-mark { position: absolute; top: -3px; right: -2px; z-index: 2; font-size: 10px; line-height: 1; }
 .rippers-sheet .rs-die-lbl { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-bone-dim); }
-.rippers-sheet .rs-die-up .rs-die-shape { border-color: var(--rs-green); background: rgba(75,191,154,.12); }
-.rippers-sheet .rs-die-up .rs-die-val { color: var(--rs-green); }
-.rippers-sheet .rs-die-down .rs-die-shape { border-color: var(--rs-vuln); }
-.rippers-sheet .rs-die-down .rs-die-val { color: var(--rs-vuln); }
+.rippers-sheet .rs-die-up .rs-die-glyph { background: var(--rs-green); }
+.rippers-sheet .rs-die-up .rs-die-val, .rippers-sheet .rs-die-up .rs-die-mark { color: var(--rs-green); }
+.rippers-sheet .rs-die-down .rs-die-glyph { background: var(--rs-vuln); }
+.rippers-sheet .rs-die-down .rs-die-val, .rippers-sheet .rs-die-down .rs-die-mark { color: var(--rs-vuln); }
 /* 3. guise title + preview */
 .rippers-sheet .rs-play-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .rippers-sheet .rs-play-previewing { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .16em; color: var(--rs-violet); border: 1px solid var(--rs-violet); padding: 2px 6px; vertical-align: middle; }
