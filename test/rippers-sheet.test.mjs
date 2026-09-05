@@ -1137,6 +1137,42 @@ test('spell-mat: spellsForSkill maps a granting skill key to its compendium spel
 	} finally { globalThis.game = savedGame; }
 });
 
+// ── v0.7.33 editable ARMOR picker (guise editor) ──
+test('armor-picker: setDraftArmor atomically replaces the single armor entry (no dup); other slots kept', () => {
+	const { setDraftArmor } = mod;
+	const draft = { equipment: [
+		{ itemUuid: 'w1', slot: 'mainHand', name: 'Rifle' },
+		{ itemUuid: 'oldArmor', slot: 'armor', name: 'Proof Plate' },
+	] };
+	setDraftArmor(draft, 'newArmor', 'Toughened Skin');
+	const armors = draft.equipment.filter((e) => e.slot === 'armor');
+	assert.equal(armors.length, 1);                              // exactly one — no duplicate
+	assert.equal(armors[0].itemUuid, 'newArmor');
+	assert.equal(armors[0].name, 'Toughened Skin');
+	assert.ok(draft.equipment.some((e) => e.slot === 'mainHand' && e.itemUuid === 'w1')); // weapon untouched
+});
+
+test('armor-picker: setDraftArmor with empty uuid clears armor (unarmored); repeated set never doubles', () => {
+	const { setDraftArmor } = mod;
+	const draft = { equipment: [{ itemUuid: 'a1', slot: 'armor', name: 'Plate' }] };
+	setDraftArmor(draft, 'a2', 'Coat');
+	setDraftArmor(draft, 'a3', 'Mail');                          // replace again
+	assert.equal(draft.equipment.filter((e) => e.slot === 'armor').length, 1);
+	assert.equal(draft.equipment.find((e) => e.slot === 'armor').itemUuid, 'a3');
+	setDraftArmor(draft, '');                                    // none / unarmored
+	assert.equal(draft.equipment.filter((e) => e.slot === 'armor').length, 0);
+});
+
+test('armor-picker: the picked armor flows through guiseDraftToData → data.equipment (materialises on bind)', () => {
+	const { setDraftArmor, guiseDraftToData } = mod;
+	const draft = { mode: 'worn', name: 'Monster of Wounded Knee', classUuids: [], sl: {}, equipment: [], affinityImmunity: '', affinityVulnerability: '', affinityResistance: '' };
+	setDraftArmor(draft, 'Compendium.x.Item.toughskin', 'Toughened Skin');
+	const data = guiseDraftToData(draft, {}, 30);
+	const armor = (data.equipment ?? []).find((e) => e.slot === 'armor');
+	assert.ok(armor, 'armor entry present in guise data');
+	assert.equal(armor.itemUuid, 'Compendium.x.Item.toughskin');  // exactly what materialiseEquipment binds
+});
+
 // ── v0.7.23 cabinet restore = atomic MOVE (bugfix: was duplicating) ──
 const _guiseDoc = (name, pack, onDelete) => ({
 	type: 'classFeature', name, pack,
