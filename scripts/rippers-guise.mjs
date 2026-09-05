@@ -4568,7 +4568,10 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	// the automation registry) — listed for add/remove/edit on the Quirk tab. Not the guise locks.
 	const quirks = (actor.itemTypes?.effect ?? []).map((i) => ({
 		id: i.id, name: i.name ?? '', img: i.img,
-		fuid: i.getFlag?.('rippers-automation', 'fuid') ?? i.system?.fuid ?? '',
+		// Read the flag DIRECTLY, not via getFlag(): getFlag throws when 'rippers-automation' is not an
+		// active module (it is optional), which would crash the whole sheet for any actor holding an
+		// effect Item. Direct .flags read is value-identical when present and safe when absent.
+		fuid: i.flags?.['rippers-automation']?.fuid ?? i.system?.fuid ?? '',
 	}));
 	// Editing (Austin: the whole sheet was read-only). Raw values for the Edit tab's two-way inputs —
 	// the character's OWN fields (name/identity handled on Study; here: attributes, HP/MP/IP + maxes,
@@ -5763,7 +5766,7 @@ function actorSpecialties(actor) {
 function isTalented(actor) {
 	if (actorInnateGuise(actor)?.system?.data?.talented) return true;
 	for (const it of actor?.items ?? []) {
-		const f = it.getFlag?.('rippers-automation', 'fuid') ?? it.flags?.['rippers-automation']?.fuid ?? it.system?.fuid;
+		const f = it.flags?.['rippers-automation']?.fuid ?? it.system?.fuid; // direct read — getFlag throws when the (optional) automation module is inactive
 		if (f === 'talented') return true;
 	}
 	return false;
