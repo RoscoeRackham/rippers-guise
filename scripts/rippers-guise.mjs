@@ -53,6 +53,8 @@
  * @see globalThis.projectfu.RollableClassFeatureDataModel
  */
 
+import { assembleExport, renderExportHTML, exportBaseName } from './export-sheet.mjs';
+
 const MODULE_ID = 'rippers-guise';
 const FLAG = 'activeGuise';
 const FEATURE_TYPE = `${MODULE_ID}.guise`;
@@ -4401,6 +4403,127 @@ function buildBondPanelRows(fuBonds, records, api, { cap = SOLID_BOND_CAP } = {}
 	}).filter((b) => b.name || b.emotions.length);
 }
 
+// ── EXPORT SHEET (SHEET-EXPORT-P1) ───────────────────────────────────────────
+/**
+ * Collect the curated export PARTS from a live FU actor — the Foundry-side reads that feed the pure
+ * assembleExport (export-sheet.mjs). Reuses the sheet's own derivations (isGuiseItem, class/skill UUID
+ * resolution, buildInventoryVM, bondStrengthOf); invents nothing. Async — resolves guise class/skill
+ * and heroic names concurrently, the same pattern buildRippersSheetVM uses.
+ */
+async function collectExportParts(actor) {
+	const sys = actor.system ?? {};
+	const res = sys.resources ?? {};
+	const idn = (k) => String(res[k]?.name ?? '').trim();
+	const poolOf = (r) => ({ value: Number(r?.value ?? 0), max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null });
+	const character = {
+		name: actor.name ?? '', identity: idn('identity'), pronouns: idn('pronouns'),
+		theme: idn('theme'), origin: idn('origin'), level: Number(sys.level?.value ?? 0),
+		classes: (actor.itemTypes?.class ?? []).map((c) => c.name).filter(Boolean),
+		vitals: {
+			hp: poolOf(res.hp), mp: poolOf(res.mp), ip: poolOf(res.ip),
+			fp: Number(res.fp?.value ?? 0), exp: Number(res.exp?.value ?? 0), zenit: Number(res.zenit?.value ?? 0),
+			crisis: { inCrisis: !!res.hp?.inCrisis, score: Number(res.hp?.crisisScore ?? Math.floor((Number(res.hp?.max ?? 0)) / 2)) },
+		},
+		attributes: ['dex', 'ins', 'mig', 'wlp'].map((k) => ({
+			key: k, label: RS_ATTR_LABELS[k], short: k.toUpperCase(),
+			die: `d${Number(sys.attributes?.[k]?.current ?? sys.attributes?.[k]?.base ?? 8)}`,
+		})),
+		affinities: RS_AFFINITY_TYPES.map((t) => {
+			const lvl = Number(sys.affinities?.[t]?.current ?? sys.affinities?.[t]?.base ?? 0);
+			return { type: t, level: lvl, word: lvl === 0 ? '—' : affinityWordOf(lvl) };
+		}),
+		derived: {
+			def: Number(sys.derived?.def?.value ?? 0), mdef: Number(sys.derived?.mdef?.value ?? 0),
+			init: Number(sys.derived?.init?.value ?? 0),
+		},
+	};
+
+	const activeId = getActiveGuise(actor);
+	const guiseItems = actor.items?.filter ? actor.items.filter(isGuiseItem) : [];
+	// resolve every class + heroic doc ONCE, concurrently (mirrors buildRippersSheetVM)
+	const classUuids = new Set(), heroicUuids = new Set();
+	for (const g of guiseItems) {
+		const d = g.system?.data ?? {};
+		const innate = !!g.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
+		for (const cls of d.classes ?? []) if (cls?.classUuid) classUuids.add(cls.classUuid);
+		const hu = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
+		if (hu) heroicUuids.add(hu);
+	}
+	const classDocs = new Map(), heroicDocs = new Map();
+	await Promise.all([
+		...[...classUuids].map(async (u) => { classDocs.set(u, await safeFromUuid(u)); }),
+		...[...heroicUuids].map(async (u) => { heroicDocs.set(u, await safeFromUuid(u)); }),
+	]);
+	const classDefs = new Map();
+	for (const [u, doc] of classDocs) classDefs.set(u, parseClassSkills(doc?.system?.description ?? ''));
+
+	const guises = guiseItems.map((g) => {
+		const d = g.system?.data ?? {};
+		const innate = !!g.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
+		const heroicUuid = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
+		return {
+			name: g.name ?? '', role: d.role ?? '', identity: d.identity ?? '',
+			innate, worn: g.id === activeId,
+			heroicName: heroicUuid ? (heroicDocs.get(heroicUuid)?.name ?? null) : null,
+			affinities: (d.affinityModifiers ?? []).map((m) => ({ type: m.type, level: m.level, word: affinityWordOf(m.level) })),
+			classes: (d.classes ?? []).map((cls) => {
+				const byUuid = new Map((classDefs.get(cls.classUuid) ?? []).map((sk) => [sk.uuid, sk]));
+				return {
+					name: classDocs.get(cls.classUuid)?.name ?? '(class)',
+					skills: (cls.skills ?? []).map((sk) => ({
+						name: byUuid.get(sk.skillUuid)?.name ?? '(skill)',
+						sl: Number(sk.sl) || 0, maxSl: Number(byUuid.get(sk.skillUuid)?.maxSl ?? 1),
+					})),
+				};
+			}),
+		};
+	});
+
+	// bonds (native FU) + Deeper-Bonds tier by name (fleeting default; module optional)
+	const tierByName = new Map();
+	try { for (const r of (deeperBondsApi()?.getRecords?.(actor) ?? [])) if (r?.name) tierByName.set(r.name, r.tier ?? 'fleeting'); } catch { /* module absent */ }
+	const bonds = (sys.bonds ?? []).map((b) => ({
+		name: b.name ?? '', admInf: b.admInf ?? '', loyMis: b.loyMis ?? '', affHat: b.affHat ?? '',
+		strength: Number(b.strength ?? bondStrengthOf(b)), tier: tierByName.get(b.name ?? '') ?? 'fleeting',
+	}));
+
+	// inventory (flatten the section VM to {section,name,detail})
+	const invVM = buildInventoryVM(actor);
+	const inventory = [];
+	for (const sec of invVM.sections ?? []) for (const it of sec.items ?? []) {
+		const detail = (it.fields ?? []).filter((f) => f.val && f.val !== '—').map((f) => `${f.label} ${f.val}`).join(' · ');
+		inventory.push({ section: sec.label, name: it.name, detail });
+	}
+
+	// quirks (effect Items carrying a rippers-automation fuid) — direct .flags read (getFlag throws when off)
+	const quirks = (actor.itemTypes?.effect ?? []).map((i) => ({
+		name: i.name ?? '', fuid: i.flags?.['rippers-automation']?.fuid ?? i.system?.fuid ?? '',
+	}));
+
+	return { character, guises, bonds, inventory, quirks };
+}
+
+/** Collect + assemble: the stable export payload (JSON) for an actor. */
+async function buildCharacterExport(actor) {
+	const parts = await collectExportParts(actor);
+	const moduleVersion = globalThis.game?.modules?.get?.(MODULE_ID)?.version ?? '';
+	return assembleExport(parts, { now: new Date(), moduleVersion });
+}
+
+/** Runtime: build both artifacts and hand the browser two downloads (JSON + printable HTML). */
+async function downloadCharacterExport(actor) {
+	const payload = await buildCharacterExport(actor);
+	const html = renderExportHTML(payload);
+	const base = exportBaseName(payload);
+	const save = globalThis.foundry?.utils?.saveDataToFile ?? globalThis.saveDataToFile;
+	if (typeof save === 'function') {
+		save(JSON.stringify(payload, null, 2), 'application/json', `${base}.rippers.json`);
+		save(html, 'text/html', `${base}.sheet.html`);
+	}
+	globalThis.ui?.notifications?.info?.(`Exported ${payload.character.name || 'character'} — JSON + printable sheet.`);
+	return { payload, html, base };
+}
+
 /** Build the read-only view-model for the Rippers character sheet from a live FU actor. Async (resolves
  *  each guise's heroic name). Binds ONLY real actor.system.* + our guise API — invents nothing. `ui`
  *  carries the sheet's own view state (activeTab / statusSelf / showConditions). Exported for headless
@@ -5197,6 +5320,7 @@ function getRippersActorSheetClass() {
 				toggleConditions: RippersActorSheet.onToggleConditions,
 				openConditions: RippersActorSheet.onOpenConditions,
 				selectTab: RippersActorSheet.onSelectTab,
+				exportSheet: RippersActorSheet.onExportSheet,
 				openEvidenceBoard: RippersActorSheet.onOpenEvidenceBoard,
 				guiseWear: RippersActorSheet.onGuiseWear,
 				pickArcana: RippersActorSheet.onPickArcana,
@@ -5456,6 +5580,8 @@ function getRippersActorSheetClass() {
 		static onToggleConditions() { this._showConditions = !this._showConditions; this.render(); }
 		static onOpenConditions() { sheetOpenConditions(statusTargetActor(this.document, this._statusSelf, globalThis.game?.user?.targets) ?? this.document); }
 		static onSelectTab(event, target) { const t = target?.dataset?.tab; if (t) { this._activeTab = t; this._previewGuiseId = null; this.render(); } }
+		// SHEET-EXPORT-P1: hand the player two files — curated JSON + a printable register-styled HTML sheet.
+		static async onExportSheet() { try { await downloadCharacterExport(this.actor); } catch (err) { console.warn('[rippers-guise] sheet export failed:', err); globalThis.ui?.notifications?.warn?.('Sheet export failed — see the console.'); } }
 		// Bridge to rippers-deeper-bonds' Evidence Board (rdb injects its own button only on FU's
 		// renderFUStandardActorSheet, which this sheet doesn't fire — so we open it natively). Not
 		// GM-gated (Austin: players may focus-hop; rdb seals cards + gates verbs internally). Safe no-op
@@ -5952,7 +6078,7 @@ Hooks.once('ready', async () => {
 	Hooks.on('deleteCombat', _resetTurns);
 	Hooks.on('canvasReady', () => { if (!game.combat?.started) _resetTurns(); });
 	const mod = game.modules.get(MODULE_ID);
-	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, actorInActiveCombat, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, applyGuiseFace, restoreBaseFace, sheetToggleFace, setFace, getFaces, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST };
+	if (mod) mod.api = { armSpecialtyDieBump, disarmSpecialtyDieBump, armCheckBump, armCheckFlatBump, disarmCheckFlatBump, actorSpecialties, isTalented, actorSpecialtyCap, actorHunterWeapon, bindGuise, dismissGuise, setActiveGuise, getActiveGuise, clearActiveGuise, guiseSwapActionDecision, accountGuiseSwap, actorInActiveCombat, guiseSceneState, clearGuiseSceneState, clearAllGuiseSceneState, partySize, guiseFieldLimit, fieldSlots, buildVaultVM, vaultHandOff, vaultStashToCabinet, vaultSlotFromCabinet, applyGuiseFace, restoreBaseFace, sheetToggleFace, setFace, getFaces, suppressInnateSkills, restoreInnateSkills, migrateWorldGuises, migrateGuiseItem, sanitizeActorGuises, dedupeActorGuises, dedupeWorldGuises, syncAffinityEffect, swapAffinitySet, setAffinityLibrary, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, swapPactSet, setPactLibrary, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, isPoolKey, POOL_BLOCK, FLAG, isHunterWeapon, setHunterWeapon, hunterWeaponIsBane, swapActiveForm, swapHunterWeaponForm, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, slotHoplosphere, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, characterCanInitiateProjects, openBenefitPicker, benefitPickerContext, openGuiseBuilder, createGuiseFromDraft, guiseVitals, applyResourceCost, restRefillActorGuises, restockIp, spendIp, IP_UNIT_COST, collectExportParts, buildCharacterExport, downloadCharacterExport };
 	// §7 migration — GM only; idempotent (skips guises already at schemaVersion ≥ 2).
 	if (game.user?.isGM) {
 		try {

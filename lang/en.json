@@ -296,6 +296,8 @@
   "RIPPERS.Sheet.Attack": "Attack",
   "RIPPERS.Sheet.RollCheck": "Roll Check",
   "RIPPERS.Sheet.Rest": "Full Rest",
+  "RIPPERS.Sheet.ExportSheet": "Export sheet",
+  "RIPPERS.Sheet.ExportSheetHint": "Download this character as a JSON file plus a printable HTML sheet.",
   "RIPPERS.Sheet.HealToCrisis": "To Crisis",
   "RIPPERS.Sheet.HealToCrisisHint": "Set current HP to the Crisis threshold (half of maximum HP, rounded down).",
   "RIPPERS.Sheet.Name": "Name",
