@@ -171,6 +171,24 @@
 									{{/if}}
 								{{/each}}
 							</div>
+							{{!-- 5b. CHARACTER HEROICS — two, unlocked at character L40/L50; character-level, cross-guise --}}
+							<div class="rs-play-charheroics">
+								<div class="rs-play-charheroics-k">{{localize 'RIPPERS.Sheet.CharacterHeroics'}}</div>
+								{{#each vm.play.characterHeroics as |c|}}
+									{{#if c.unlocked}}
+										{{#if c.filled}}
+											<details class="rs-play-heroic-slot">
+												<summary class="rs-play-heroic"><span class="rs-play-heroic-k">L{{c.gate}}</span> {{c.name}} <a data-action="clearCharacterHeroic" data-slot="{{c.slot}}" title="{{localize 'RIPPERS.Builder.Clear'}}">✕</a></summary>
+												{{#if c.hasDesc}}<div class="rs-play-skill-desc">{{{c.desc}}}</div>{{/if}}
+											</details>
+										{{else}}
+											<div class="rs-play-heroic-empty rs-dashed" data-charheroic-drop="{{c.slot}}">L{{c.gate}} — {{localize 'RIPPERS.Sheet.DragHeroic'}}</div>
+										{{/if}}
+									{{else}}
+										<div class="rs-play-heroic-empty rs-locked">{{localize 'RIPPERS.Sheet.HeroicLocked'}} L{{c.gate}}</div>
+									{{/if}}
+								{{/each}}
+							</div>
 							{{!-- 6. WHAT THIS GUISE CHANGES + ARMOR (WORN) side by side --}}
 							<div class="rs-play-cols">
 								<div class="rs-play-changes">

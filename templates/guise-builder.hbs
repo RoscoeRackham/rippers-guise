@@ -175,10 +175,12 @@
 				<fieldset class="gb-signature-heroic">
 					<legend>{{localize "RIPPERS.Builder.SignatureHeroic"}}</legend>
 					<p class="gb-hint">{{localize "RIPPERS.Builder.SignatureHeroicHint"}}</p>
-					{{#if loadout.attachedHeroicName}}
-						<div class="gb-chip"><i class="fas fa-star"></i> {{loadout.attachedHeroicName}} <a data-action="clearWornHeroic" title="{{localize "RIPPERS.Builder.Clear"}}"><i class="fas fa-times"></i></a></div>
+					{{#each loadout.attachedHeroics as |h|}}
+						<div class="gb-chip"><i class="fas fa-star"></i> {{h.name}} <a data-action="clearWornHeroic" data-index="{{h.i}}" title="{{localize "RIPPERS.Builder.Clear"}}"><i class="fas fa-times"></i></a></div>
+					{{/each}}
+					{{#if loadout.canAddHeroic}}
+						<div class="guise-drop gb-drop" data-guise-drop="wornHeroic">{{localize "RIPPERS.Builder.DropSignatureHeroic"}}</div>
 					{{/if}}
-					<div class="guise-drop gb-drop" data-guise-drop="wornHeroic">{{localize "RIPPERS.Builder.DropSignatureHeroic"}}</div>
 				</fieldset>
 				<fieldset class="gb-attached-effects">
 					<legend>{{localize "RIPPERS.Builder.AttachedEffects"}}</legend>

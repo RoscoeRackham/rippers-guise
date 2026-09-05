@@ -407,6 +407,11 @@
 .rippers-sheet .rs-play-heroic-slot > summary { list-style: none; cursor: pointer; }
 .rippers-sheet .rs-play-heroic-req { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-gold); margin: 4px 0; }
 .rippers-sheet .rs-play-heroic-empty { flex: 1 1 200px; font-family: var(--rs-mono); font-size: 10px; letter-spacing: .12em; color: var(--rs-muted); padding: 6px 12px; transform: skewX(-10deg); text-align: center; }
+/* 5b. character heroics (L40/L50) — character-level, cross-guise; locked below the gate */
+.rippers-sheet .rs-play-charheroics { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
+.rippers-sheet .rs-play-charheroics-k { flex: 1 1 100%; font-family: var(--rs-mono); font-size: 9px; letter-spacing: .18em; color: var(--rs-muted); }
+.rippers-sheet .rs-play-charheroics .rs-play-heroic-empty.drop-hover { border-color: var(--rs-bone) !important; color: var(--rs-bone); }
+.rippers-sheet .rs-play-heroic-empty.rs-locked { border: 1px dotted var(--rs-muted); opacity: .55; }
 /* 6. what-this-guise-changes + armor columns */
 .rippers-sheet .rs-play-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .rippers-sheet .rs-play-changes, .rippers-sheet .rs-play-armorbox { background: var(--rs-card); border: 1px solid var(--rs-border); padding: 8px 10px; }

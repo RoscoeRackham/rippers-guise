@@ -225,6 +225,30 @@ test('v0.7.9 (#3): a worn guise requires an attached (signature) Heroic and carr
 	assert.equal(guiseDraftToData(innate, {}, 30).attachedHeroicUuid, undefined);
 });
 
+test('ruling: a worn guise carries UP TO THREE heroics — array is canonical, singular mirrors element 0, dedupe + cap 3, round-trips', () => {
+	const { attachedHeroicUuids } = mod;
+	const H = (n) => `Compendium.x.heroics.Item.${n}`;
+	// helper: prefers plural, falls back to singular, dedupes, caps at 3.
+	assert.deepEqual(attachedHeroicUuids({ attachedHeroicUuids: [H('a'), H('b'), H('c')] }), [H('a'), H('b'), H('c')]);
+	assert.deepEqual(attachedHeroicUuids({ attachedHeroicUuid: H('a') }), [H('a')]);
+	assert.deepEqual(attachedHeroicUuids({ attachedHeroicUuids: [H('a'), H('a'), H('b')] }), [H('a'), H('b')]); // dedupe
+	assert.deepEqual(attachedHeroicUuids({ attachedHeroicUuids: [H('a'), H('b'), H('c'), H('d')] }), [H('a'), H('b'), H('c')]); // cap 3
+	assert.deepEqual(attachedHeroicUuids({}), []);
+	// a worn draft with three heroics validates and both fields emit; guiseDataToDraft round-trips them.
+	const d = filled(threeClasses(emptyGuiseDraft()));
+	d.attachedHeroicUuids = [H('one'), H('two'), H('three')];
+	assert.equal(validateGuiseDraft(d, 'worn').ok, true);
+	const data = guiseDraftToData(d, {}, 30);
+	assert.deepEqual(data.attachedHeroicUuids, [H('one'), H('two'), H('three')]);
+	assert.equal(data.attachedHeroicUuid, H('one')); // element 0 mirror (back-compat)
+	const rebuilt = guiseDataToDraft(data);
+	assert.deepEqual(rebuilt.attachedHeroicUuids, [H('one'), H('two'), H('three')]);
+	assert.equal(rebuilt.attachedHeroicUuid, H('one'));
+	// zero heroics on a worn guise still fails validation (soft-required: at least one).
+	const empty = filled(threeClasses(emptyGuiseDraft()));
+	assert.equal(validateGuiseDraft(empty, 'worn').ok, false);
+});
+
 test('v0.7.9 (#5) / v0.7.36: a worn guise carries attached effects that ride it; blanks dropped; the innate guise carries them too', () => {
 	const d = wornOk(filled(threeClasses(emptyGuiseDraft())));
 	d.attachedEffects = [

@@ -382,17 +382,34 @@ async function materialiseSpells(actor, item) {
  *  guise-origin. It carries its own ActiveEffect(s), so creating it on bind rides those onto the
  *  actor; _dismissCore removes it on dismiss (it is neither a guise nor the Hunter Weapon). Distinct
  *  from the character's own heroic slots — never seated via assignHeroicSlot. Returns created ids. */
+/** Ruling: normalise a guise's attached-heroic refs to an ordered, de-duped list of UP TO THREE
+ *  UUIDs. Prefers the plural `attachedHeroicUuids`; falls back to the singular `attachedHeroicUuid`
+ *  (element 0) so existing one-heroic guises keep working. Accepts a guise `system.data` or a draft. */
+function attachedHeroicUuids(dataOrDraft) {
+	const d = dataOrDraft ?? {};
+	const arr = Array.isArray(d.attachedHeroicUuids) ? d.attachedHeroicUuids : [];
+	const list = arr.length ? arr.slice() : (d.attachedHeroicUuid ? [d.attachedHeroicUuid] : []);
+	const seen = new Set();
+	const out = [];
+	for (const u of list) { const s = String(u ?? '').trim(); if (s && !seen.has(s)) { seen.add(s); out.push(s); } }
+	return out.slice(0, 3);
+}
 async function materialiseAttachedHeroic(actor, item) {
-	const uuid = item.system?.data?.attachedHeroicUuid;
-	if (!uuid) return [];
-	const src = await fromUuid(uuid);
-	if (!src) { console.warn(`[rippers-guise] attached heroic ref not found: ${uuid}`); return []; }
-	if (src.type !== 'heroic') { console.warn(`[rippers-guise] attached heroic is not a Heroic Skill: ${uuid}`); return []; }
-	const obj = src.toObject();
-	delete obj._id;
-	obj.flags = obj.flags ?? {};
-	obj.flags[MODULE_ID] = { origin: item.id, kind: 'heroic' };
-	const created = await actor.createEmbeddedDocuments('Item', [obj]);
+	const uuids = attachedHeroicUuids(item.system?.data);
+	if (!uuids.length) return [];
+	const objs = [];
+	for (const uuid of uuids) {
+		const src = await fromUuid(uuid);
+		if (!src) { console.warn(`[rippers-guise] attached heroic ref not found: ${uuid}`); continue; }
+		if (src.type !== 'heroic') { console.warn(`[rippers-guise] attached heroic is not a Heroic Skill: ${uuid}`); continue; }
+		const obj = src.toObject();
+		delete obj._id;
+		obj.flags = obj.flags ?? {};
+		obj.flags[MODULE_ID] = { origin: item.id, kind: 'heroic' };
+		objs.push(obj);
+	}
+	if (!objs.length) return [];
+	const created = await actor.createEmbeddedDocuments('Item', objs);
 	return created.map((d) => d.id);
 }
 
@@ -2072,7 +2089,7 @@ function validateGuiseDraft(draft, mode = 'worn', skillMax = {}, budget = SKILL_
 		if (!t.ok) errors.push(t.reason);
 		// #3 (v0.7.9): a worn guise always carries one attached Heroic (Austin). Soft-required — the
 		// module-wide GM override (#4) can waive it; existing in-world guises are not re-validated.
-		if (!draft?.attachedHeroicUuid) errors.push('A worn Guise carries one attached Heroic Skill.');
+		if (!attachedHeroicUuids(draft).length) errors.push('A worn Guise carries at least one attached Heroic Skill (up to three).');
 	} else { // innate
 		const specs = (draft?.specialties ?? []).map((s) => (s ?? '').trim()).filter(Boolean);
 		const cap = specialtyCapFor(draftIsTalented(draft));
@@ -2111,7 +2128,10 @@ function emptyGuiseDraft() {
 		perk: '', bonusDescriptor: '', tell: '', bane: '', flaw: '',
 		// #3 (v0.7.9): every worn guise carries ONE guise-native ("signature") Heroic — its own,
 		// distinct from the character's heroics; materialised on bind so its effect rides while worn.
+		// Ruling: up to three; attachedHeroicUuids is canonical, names parallel it. The singular
+		// attachedHeroicUuid/Name mirror element 0 for back-compat.
 		attachedHeroicUuid: '', attachedHeroicName: '',
+		attachedHeroicUuids: [], attachedHeroicNames: [],
 		// #5 (v0.7.9): effects/abilities that TRAVEL with the guise — [{itemUuid, name}]. Effect-bearing
 		// Items (e.g. Greater Akromorphosis) that switch ON when the guise is worn and OFF when it's not.
 		attachedEffects: [],
@@ -2247,8 +2267,10 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 		affinityMode: 'modify', affinitySets: [], affinitySetCap: null, affinityCapSkill: '',
 		perk, bonus, tell: draft.tell ?? '', bane: draft.bane ?? '', flaw: draft.flaw ?? '',
 		specialties: [], innateHeroicUuid: '',
-		// #3 (v0.7.9): the guise-native attached Heroic (materialised on bind in _bindCore).
-		attachedHeroicUuid: draft.attachedHeroicUuid ?? '',
+		// #3 (v0.7.9): the guise-native attached Heroic(s) (materialised on bind in _bindCore).
+		// Ruling: up to three; element 0 mirrors the singular field for back-compat.
+		attachedHeroicUuids: attachedHeroicUuids(draft),
+		attachedHeroicUuid: attachedHeroicUuids(draft)[0] ?? '',
 		// #5 (v0.7.9): effects that ride the guise (materialised on bind, removed on dismiss).
 		attachedEffects: (draft.attachedEffects ?? []).filter((e) => e?.itemUuid).map((e) => ({ itemUuid: e.itemUuid })),
 	};
@@ -2305,7 +2327,8 @@ function guiseDataToDraft(data = {}) {
 	draft.tell = data.tell ?? '';
 	draft.bane = data.bane ?? '';
 	draft.flaw = data.flaw ?? '';
-	draft.attachedHeroicUuid = data.attachedHeroicUuid ?? '';
+	draft.attachedHeroicUuids = attachedHeroicUuids(data);
+	draft.attachedHeroicUuid = draft.attachedHeroicUuids[0] ?? '';
 	draft.attachedEffects = (data.attachedEffects ?? []).filter((e) => e?.itemUuid).map((e) => ({ itemUuid: e.itemUuid }));
 	return draft;
 }
@@ -2324,7 +2347,9 @@ async function draftFromGuiseItem(item) {
 		draft.armorName = await nameOf(draft.armorUuid);
 		draft.accessoryName = await nameOf(draft.accessoryUuid);
 	} else {
-		draft.attachedHeroicName = await nameOf(draft.attachedHeroicUuid);
+		draft.attachedHeroicNames = [];
+		for (const u of draft.attachedHeroicUuids) draft.attachedHeroicNames.push(await nameOf(u));
+		draft.attachedHeroicName = draft.attachedHeroicNames[0] ?? '';
 		for (const e of draft.equipment) e.name = await nameOf(e.itemUuid);
 		for (const e of draft.attachedEffects) e.name = await nameOf(e.itemUuid);
 	}
@@ -2685,8 +2710,13 @@ function getGuiseBuilderApp() {
 				// #2 (v0.7.9): innate armor + accessory chips
 				armorName: this._draft.armorUuid ? (this._draft.armorName || this._draft.armorUuid) : '',
 				accessoryName: this._draft.accessoryUuid ? (this._draft.accessoryName || this._draft.accessoryUuid) : '',
-				// #3 (v0.7.9): the worn guise's attached ("signature") Heroic chip
+				// #3 (v0.7.9): the worn guise's attached ("signature") Heroic chip (element 0, back-compat)
 				attachedHeroicName: this._draft.attachedHeroicUuid ? (this._draft.attachedHeroicName || this._draft.attachedHeroicUuid) : '',
+				// Ruling: up to THREE guise heroics — one chip per attached heroic + a drop while < 3.
+				attachedHeroics: (this._draft.attachedHeroicUuids ?? (this._draft.attachedHeroicUuid ? [this._draft.attachedHeroicUuid] : []))
+					.slice(0, 3)
+					.map((uuid, i) => ({ i, uuid, name: (this._draft.attachedHeroicNames ?? [])[i] || uuid })),
+				canAddHeroic: (this._draft.attachedHeroicUuids ?? (this._draft.attachedHeroicUuid ? [this._draft.attachedHeroicUuid] : [])).length < 3,
 				// #5 (v0.7.9): effects/abilities that ride the guise
 				attachedEffects: (this._draft.attachedEffects ?? []).map((e, i) => ({ i, uuid: e.itemUuid, name: e.name ?? e.itemUuid })),
 			};
@@ -2871,7 +2901,15 @@ function getGuiseBuilderApp() {
 			}));
 			// #3 (v0.7.9): worn guise attached-heroic clear
 			root.querySelectorAll('[data-action="clearWornHeroic"]').forEach((a) => a.addEventListener('click', (ev) => {
-				ev.preventDefault(); this._draft.attachedHeroicUuid = ''; this._draft.attachedHeroicName = ''; this.render();
+				ev.preventDefault();
+				// Ruling: remove one of the up-to-three guise heroics by index; keep the singular in sync with element 0.
+				const idx = Number(a.dataset.index ?? 0);
+				const uuids = (this._draft.attachedHeroicUuids ?? (this._draft.attachedHeroicUuid ? [this._draft.attachedHeroicUuid] : [])).slice();
+				const names = (this._draft.attachedHeroicNames ?? (this._draft.attachedHeroicName ? [this._draft.attachedHeroicName] : [])).slice();
+				if (Number.isFinite(idx) && idx >= 0 && idx < uuids.length) { uuids.splice(idx, 1); names.splice(idx, 1); }
+				this._draft.attachedHeroicUuids = uuids; this._draft.attachedHeroicNames = names;
+				this._draft.attachedHeroicUuid = uuids[0] ?? ''; this._draft.attachedHeroicName = names[0] ?? '';
+				this.render();
 			}));
 
 			// ---- G2 (Austin 4 Sep): RIGHT-CLICK a fixed field to override its distillation fixity ----
@@ -2914,7 +2952,14 @@ function getGuiseBuilderApp() {
 						this._draft.accessoryUuid = data.uuid; this._draft.accessoryName = doc.name;
 					} else if (zone.dataset.guiseDrop === 'wornHeroic') {
 						if (doc.type !== 'heroic') { ui.notifications?.warn('The attached Heroic must be a Heroic Skill.'); return; }
-						this._draft.attachedHeroicUuid = data.uuid; this._draft.attachedHeroicName = doc.name;
+						// Ruling: APPEND to the up-to-three list (dedupe, cap 3); mirror the singular to element 0.
+						const uuids = (this._draft.attachedHeroicUuids ?? (this._draft.attachedHeroicUuid ? [this._draft.attachedHeroicUuid] : [])).slice();
+						const names = (this._draft.attachedHeroicNames ?? (this._draft.attachedHeroicName ? [this._draft.attachedHeroicName] : [])).slice();
+						if (uuids.includes(data.uuid)) { ui.notifications?.warn('That Heroic is already attached to this guise.'); return; }
+						if (uuids.length >= 3) { ui.notifications?.warn('A guise carries at most three Heroics.'); return; }
+						uuids.push(data.uuid); names.push(doc.name);
+						this._draft.attachedHeroicUuids = uuids; this._draft.attachedHeroicNames = names;
+						this._draft.attachedHeroicUuid = uuids[0] ?? ''; this._draft.attachedHeroicName = names[0] ?? '';
 					} else if (zone.dataset.guiseDrop === 'attachedEffect') {
 						// #5: any effect-bearing Item may ride the guise; the GM authors what belongs.
 						this._draft.attachedEffects = [...(this._draft.attachedEffects ?? []), { itemUuid: data.uuid, name: doc.name }];
@@ -3137,6 +3182,10 @@ function defineGuiseModel() {
 				// #3 (v0.7.9): a worn guise's own ("signature") Heroic — materialised on bind, distinct
 				// from the character's heroics. Innate guises leave this empty.
 				attachedHeroicUuid: new StringField({ initial: '' }),
+				// Ruling (heroics): a worn guise carries UP TO THREE heroics — one per its three mastered
+				// classes — each materialised on bind / stripped on dismiss like skills/equipment. The
+				// singular attachedHeroicUuid above is kept as element 0 for back-compat.
+				attachedHeroicUuids: new ArrayField(new StringField({ initial: '' })),
 				// #5 (v0.7.9): effects/abilities that ride the guise — effect-bearing Item refs
 				// materialised on bind (on while worn) and removed on dismiss. Body/standing effects
 				// per the GUISES sort test (e.g. mutations); the GM authors which effects ride.
@@ -3639,17 +3688,19 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	}
 	// Heroic row — THREE slots. Slot 0 = the guise's own (signature/innate) Heroic; 1 & 2 are drawn empty
 	// (whether extra heroics attach to a bound guise is UNDECIDED — Austin; render dashed EMPTY, no invent).
-	const heroicUuid = innate ? d.innateHeroicUuid : d.attachedHeroicUuid;
-	const hDoc = heroicUuid ? await safeFromUuid(heroicUuid) : null;
+	const heroicUuidList = innate ? (d.innateHeroicUuid ? [d.innateHeroicUuid] : []) : attachedHeroicUuids(d);
+	const heroicDocs = [];
+	for (const u of heroicUuidList) heroicDocs.push(await safeFromUuid(u));
 	const heroicSlots = [0, 1, 2].map((i) => {
-		if (i === 0 && hDoc) {
+		const hDoc = heroicDocs[i];
+		if (hDoc) {
 			const desc = hDoc.system?.description ?? '';
 			const req = String(hDoc.system?.requirement?.value ?? hDoc.system?.requirements?.value ?? hDoc.system?.class?.value ?? '').trim();
 			return { filled: true, name: hDoc.name ?? '(heroic)', desc, hasDesc: !!String(desc).trim(), req, hasReq: !!req };
 		}
 		return { filled: false };
 	});
-	const heroic = hDoc?.name ?? '';   // kept for back-compat / headless tests
+	const heroic = heroicDocs[0]?.name ?? '';   // kept for back-compat / headless tests
 	// Affinities — ALL NINE elements. Guise trio recorded via affinityModifiers; the rest neutral. IMMUNE
 	// (green) = level ≥ 2, RESISTANT (tan) = 1, VULNERABLE (red) = ≤ −1, neutral (dashed) = 0.
 	const recorded = new Map((d.affinityModifiers ?? []).map((m) => [m.type, Number(m.level) || 0]));
@@ -3713,9 +3764,29 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	// Torment: character-level; authored on a flag if present, else the ⚠ hole (never invented).
 	const torment = String(actor?.getFlag?.(MODULE_ID, 'torment') ?? '').trim();
 	const bonusDescriptor = d.bonus?.descriptor ?? '';
+	// CHARACTER-BOUND heroics (Austin ruling): TWO, unlocked at character LEVEL 40 and 50. These are
+	// character-level (persist across every guise), NOT part of the guise's three. Level-gated: below
+	// the gate the slot is locked; render read-only here (seat/clear via assignHeroicSlot/clearHeroicSlot).
+	const charLevel = charLevelOf(actor);
+	const heroicSlotState = getHeroicSlots(actor);
+	const characterHeroics = [
+		{ slot: 'level40', gate: 40 },
+		{ slot: 'level50', gate: 50 },
+	].map(({ slot, gate }) => {
+		const unlocked = charLevel >= gate;
+		const seated = heroicSlotState?.[slot] ? actor?.items?.get(heroicSlotState[slot]) : null;
+		return {
+			slot, gate, unlocked,
+			filled: !!seated,
+			name: seated?.name ?? '',
+			desc: seated ? (seated.system?.description ?? '') : '',
+			hasDesc: !!String(seated?.system?.description ?? '').trim(),
+		};
+	});
 	return {
 		active: true, preview, previewName: preview ? (guise.name ?? '') : '', activeName: activeItem?.name ?? '',
 		guiseMenu, guiseName: guise.name ?? '', innate, tradable: !innate, torment,
+		characterHeroics, charLevel,
 		classes, heroic, heroicSlots, affinities, affinityTrioOwed, innateNoTrio, attributes, changes,
 		armor, wornDef, wornMdef, equipment, weapon, clot,
 		bane: d.bane ?? '', tell: d.tell ?? '', perk: d.perk ?? '',
@@ -4858,6 +4929,7 @@ function getRippersActorSheetClass() {
 			try { this._wireItemEdit(this.element); } catch (err) { console.warn('[rippers-guise] item-edit wiring failed:', err); }
 			try { this._wireBondParty(this.element); } catch (err) { console.warn('[rippers-guise] bond party-toggle wiring failed:', err); }
 			try { this._wirePreview(this.element); } catch (err) { console.warn('[rippers-guise] play-surface preview wiring failed:', err); }
+			try { this._wireCharacterHeroics(this.element); } catch (err) { console.warn('[rippers-guise] character-heroic wiring failed:', err); }
 			this._ensureDefaultGuise(); // P4: no active guise → wear the basic guise (fire-and-forget; re-renders)
 		}
 		// P4 (Austin: "Unmasked form doesn't make sense. It should default to his basic Guise."): when the
@@ -4978,6 +5050,32 @@ function getRippersActorSheetClass() {
 					const sourceActor = globalThis.game?.actors?.get?.(p.actorId); if (!sourceActor) return;
 					if (dropKind === 'cabinet') { await vaultStashToCabinet(sourceActor, p.guiseId); self.render(); return; }
 					if (dropKind === 'field' && targetActor && targetActor.id !== sourceActor.id) { await vaultHandOff(sourceActor, p.guiseId, targetActor); self.render(); }
+				});
+			}
+		}
+		// Ruling: the two CHARACTER-BOUND heroics (level40 / level50) are seated here on the play surface.
+		// Drop a Heroic Item on an UNLOCKED slot → assignHeroicSlot (which level-gates + refuses); the ✕
+		// clears it. Locked slots (below the L40/L50 gate) carry no drop zone. Character-level, cross-guise.
+		_wireCharacterHeroics(root) {
+			if (!root?.querySelectorAll) return;
+			const self = this;
+			for (const zone of root.querySelectorAll('[data-charheroic-drop]')) {
+				zone.addEventListener('dragover', (ev) => { ev.preventDefault(); zone.classList.add('drop-hover'); });
+				zone.addEventListener('dragleave', () => zone.classList.remove('drop-hover'));
+				zone.addEventListener('drop', async (ev) => {
+					ev.preventDefault(); zone.classList.remove('drop-hover');
+					const data = readDropData(ev); if (!data?.uuid) return;
+					const doc = await safeFromUuid(data.uuid);
+					if (!doc || doc.type !== 'heroic') { ui.notifications?.warn('A character Heroic must be a Heroic Skill.'); return; }
+					const res = await assignHeroicSlot(self.document, zone.dataset.charheroicDrop, doc);
+					if (res?.ok) self.render();
+				});
+			}
+			for (const a of root.querySelectorAll('[data-action="clearCharacterHeroic"]')) {
+				a.addEventListener('click', async (ev) => {
+					ev.preventDefault();
+					await clearHeroicSlot(self.document, a.dataset.slot);
+					self.render();
 				});
 			}
 		}
@@ -5424,7 +5522,7 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, attachedHeroicUuids, materialiseAttachedHeroic, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.
