@@ -131,8 +131,8 @@
 							<div class="rs-play-head">
 								<div class="rs-play-title">{{vm.play.guiseName}}{{#if vm.play.preview}} <span class="rs-play-previewing">PREVIEW</span>{{/if}}</div>
 								<div class="rs-play-preview">
-									<span class="rs-play-preview-k">PREVIEW</span>
-									<select data-preview-guise>
+									<span class="rs-play-preview-k">PREVIEW — LOOK ONLY</span>
+									<select data-preview-guise title="Preview another guise's readout — this does NOT change your guise. Use Swap (top-right) to change.">
 										<option value="">{{vm.play.activeName}} — BOUND</option>
 										{{#each vm.play.guiseMenu as |g|}}{{#unless g.worn}}<option value="{{g.id}}"{{#if g.previewing}} selected{{/if}}>{{g.name}}</option>{{/unless}}{{/each}}
 									</select>
@@ -142,7 +142,7 @@
 							<div class="rs-play-classes">
 								{{#each vm.play.classes as |c|}}
 									{{#if c.unauthored}}
-										<div class="rs-play-class rs-dashed"><div class="rs-play-class-name rs-warn">CLASS SLOT — ⚠ UNAUTHORED</div></div>
+										<div class="rs-play-class rs-dashed"><div class="rs-play-class-name rs-warn">CLASS SLOT — ⚠ NOT SET YET</div></div>
 									{{else}}
 										<div class="rs-play-class">
 											<div class="rs-play-class-name">{{c.name}}</div>
@@ -207,21 +207,22 @@
 							</div>
 							{{!-- 7. affinities — all NINE elements, four states --}}
 							<div class="rs-play-affs">{{#each vm.play.affinities as |aff|}}<span class="rs-affchip rs-aff-{{aff.state}}">{{aff.type}} — {{aff.word}}</span>{{/each}}</div>
-							{{#if vm.play.affinityTrioOwed}}<div class="rs-play-owed rs-warn">TRIO — ⚠ NOT IN OUR BOOKS FOR THIS GUISE; FIXED AT DISTILLATION</div>{{else if vm.play.innateNoTrio}}<div class="rs-play-owed rs-play-note">{{localize 'RIPPERS.Sheet.InnateNoTrio'}}</div>{{/if}}
+							{{#if vm.play.affinityTrioOwed}}<div class="rs-play-owed rs-warn">AFFINITIES — ⚠ NOT SET FOR THIS GUISE YET</div>{{else if vm.play.innateNoTrio}}<div class="rs-play-owed rs-play-note">{{localize 'RIPPERS.Sheet.InnateNoTrio'}}</div>{{/if}}
 							{{!-- 8. bane / tell / perk cards (innate → NONE; unauthored → ⚠ OWED) --}}
 							<div class="rs-play-btp">
 								{{#if vm.play.innate}}
 									<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> NONE — INNATE</div>
 								{{else}}
-									<div class="rs-play-card rs-play-bane"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> {{#if vm.play.bane}}{{vm.play.bane}}{{else}}<span class="rs-warn">⚠ OWED</span>{{/if}}</div>
-									<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Tell'}}</span> {{#if vm.play.tell}}{{vm.play.tell}}{{else}}<span class="rs-warn">⚠ OWED</span>{{/if}}</div>
-									<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Perk'}}</span> {{#if vm.play.perk}}{{vm.play.perk}}{{else}}<span class="rs-warn">⚠ OWED</span>{{/if}}</div>
+									<div class="rs-play-card rs-play-bane"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> {{#if vm.play.bane}}{{vm.play.bane}}{{else}}<span class="rs-warn">⚠ NOT SET YET</span>{{/if}}</div>
+									<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Tell'}}</span> {{#if vm.play.tell}}{{vm.play.tell}}{{else}}<span class="rs-warn">⚠ NOT SET YET</span>{{/if}}</div>
+									<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Perk'}}</span> {{#if vm.play.perk}}{{vm.play.perk}}{{else}}<span class="rs-warn">⚠ NOT SET YET</span>{{/if}}</div>
 								{{/if}}
 								{{#if vm.play.bonus}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bonus'}}</span> +{{vm.play.bonus.value}} to {{vm.play.bonus.descriptor}}</div>{{/if}}
 							</div>
 							{{!-- 9. weapon detail + equipped (fixed at distillation) + clot --}}
 							{{#if vm.play.weapon}}<div class="rs-play-weapon"><b>{{vm.play.weapon.name}}</b> · {{vm.play.weapon.accLabel}} · {{vm.play.weapon.dmgLabel}} {{vm.play.weapon.dmgType}}{{#if vm.play.weapon.traits.length}} · {{#each vm.play.weapon.traits as |t|}}{{t}} {{/each}}{{/if}}</div>{{/if}}
 							<div class="rs-play-equip"><span class="rs-inv-label">{{localize 'RIPPERS.Sheet.Equipped'}} — FIXED AT DISTILLATION</span>{{#if vm.play.equipment.length}}{{#each vm.play.equipment as |e|}}<span class="rs-play-equip-item"><img src="{{e.img}}" alt="">{{e.name}}</span>{{/each}}{{else}}<span class="rs-play-gap">—</span>{{/if}}</div>
+							<div class="rs-play-sec-k">CLOT</div>
 							<div class="rs-play-clot">{{#if vm.play.clot.seated}}{{#each vm.play.clot.clots as |cl|}}<div class="rs-play-clot-row"><span class="rs-play-clot-name">{{cl.name}}</span>{{#if cl.hasEffect}}<span class="rs-play-clot-fx">{{{cl.effect}}}</span>{{else}}<span class="rs-play-clot-fx rs-play-gap">—</span>{{/if}}</div>{{/each}}{{else}}<span class="rs-play-gap">No Clot seated.</span>{{/if}}</div>
 							{{!-- 10. identity footer — BOUND/TRADABLE, field limit, the Turn --}}
 							<div class="rs-play-footer">
