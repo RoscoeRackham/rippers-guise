@@ -104,6 +104,7 @@
 			     gaps are marked, never invented. Attributes are CHARACTER-level (post-effect). --}}
 			{{#if vm.tab.play}}
 				{{#if vm.play.active}}
+					{{#if vm.play.resolving}}<div class="rs-play-resolving rs-play-gap">{{localize 'RIPPERS.Sheet.ResolvingGuise'}}</div>{{else}}
 						<div class="rs-play">
 							{{!-- 1. title bar --}}
 							<div class="rs-play-titlebar"><span class="rs-play-tb-k">THE GUISE — ACTIVE-GUISE PLAY SURFACE</span></div>
@@ -229,6 +230,7 @@
 								<span class="rs-play-turn">{{localize 'RIPPERS.Sheet.TheTurnNote'}}</span>
 							</div>
 						</div>
+					{{/if}}
 					{{else}}<p class="rs-empty">{{localize 'RIPPERS.Sheet.NoActiveGuise'}}</p>{{/if}}
 			{{/if}}
 

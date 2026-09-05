@@ -1151,6 +1151,29 @@ test('buildGuisePlayVM: the two CHARACTER-BOUND heroics are gated to L40/L50 and
 	assert.equal(high.characterHeroics[1].unlocked, true);
 });
 
+test('buildGuisePlayVM: deferHeavy returns the cheap SHELL (guise list + identity) with ZERO pack fetches (high-latency fast paint)', async () => {
+	const { buildGuisePlayVM } = mod;
+	const guise = {
+		id: 'gd', name: 'The Deferred', getFlag: (_m, k) => (k === 'isInnate' ? false : undefined),
+		system: { data: { mode: 'worn', classes: [{ classUuid: 'clsZ', skills: [{ skillUuid: 'skZ', sl: 3 }] }], affinityModifiers: [{ type: 'dark', level: 2 }], attachedHeroicUuids: ['H.z'] } },
+	};
+	const items = [guise];
+	items.get = (id) => items.find((i) => i.id === id) ?? null;
+	items.filter = (fn) => [guise].filter(fn);
+	const actor = { getFlag: (_m, k) => (k === 'activeGuise' ? 'gd' : undefined), items, itemTypes: { weapon: [], customWeapon: [] }, system: { attributes: {}, equipped: {}, derived: {} } };
+	let fetches = 0; const realFromUuid = globalThis.fromUuid;
+	globalThis.fromUuid = async (u) => { fetches++; return UUIDS.get(u) ?? null; };
+	try {
+		const vm = await buildGuisePlayVM(actor, { deferHeavy: true });
+		assert.equal(vm.active, true);
+		assert.equal(vm.resolving, true);          // drives the "resolving…" placeholder
+		assert.equal(vm.guiseName, 'The Deferred'); // identity from the owned Item
+		assert.ok(Array.isArray(vm.guiseMenu));     // the list is present…
+		assert.equal(vm.classes, undefined);        // …but NO content resolved
+		assert.equal(fetches, 0);                    // and ZERO pack round-trips on the fast pass
+	} finally { globalThis.fromUuid = realFromUuid; }
+});
+
 test('resolveUuidMap: resolves concurrently, de-dupes repeats, drops blanks, null on miss (perf helper)', async () => {
 	const { resolveUuidMap } = mod;
 	UUIDS.set('u.a', { name: 'Alpha' });

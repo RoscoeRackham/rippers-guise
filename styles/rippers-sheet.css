@@ -414,6 +414,8 @@
 .rippers-sheet .rs-play-heroic-slot > summary { list-style: none; cursor: pointer; }
 .rippers-sheet .rs-play-heroic-req { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-gold); margin: 4px 0; }
 .rippers-sheet .rs-play-heroic-empty { flex: 1 1 200px; font-family: var(--rs-mono); font-size: 10px; letter-spacing: .12em; color: var(--rs-muted); padding: 6px 12px; transform: skewX(-10deg); text-align: center; }
+/* progressive-load placeholder: shown on the fast first paint while guise content resolves off the link */
+.rippers-sheet .rs-play-resolving { padding: 24px 14px; text-align: center; font-style: italic; letter-spacing: .08em; }
 /* 5b. character heroics (L40/L50) — character-level, cross-guise; locked below the gate */
 .rippers-sheet .rs-play-charheroics { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
 .rippers-sheet .rs-play-charheroics-k { flex: 1 1 100%; font-family: var(--rs-mono); font-size: 9px; letter-spacing: .18em; color: var(--rs-muted); }

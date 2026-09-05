@@ -3689,6 +3689,17 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	if (!guise) return { active: false, guiseMenu };
 	const d = guise.system?.data ?? {};
 	const innate = !!guise.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
+	// PERF (high-latency load): the CHEAP shell — guise identity + the preview menu — needs ZERO pack
+	// round-trips (it's all on the owned guise Item). When the caller asks to DEFER the heavy content
+	// resolution (classes/skills/heroics/equipment/clot, each a link round-trip), return this shell now so
+	// the sheet paints the guise list + title immediately; a `resolving` flag drives a "resolving…" state,
+	// and the caller re-renders with the full VM once the content has resolved off the critical path.
+	if (opts.deferHeavy) {
+		return {
+			active: true, resolving: true, preview, previewName: preview ? (guise.name ?? '') : '',
+			activeName: activeItem?.name ?? '', guiseMenu, guiseName: guise.name ?? '', innate, tradable: !innate,
+		};
+	}
 	// Classes → skills (name + SL + max + look-closer description + source tag). An unresolvable class UUID
 	// is an UNAUTHORED class slot (dashed ⚠), not an error — the design draws Carbolic Coat that way.
 	// PERF: pre-resolve every class + skill doc CONCURRENTLY (was a serial safeFromUuid per class and
@@ -4154,6 +4165,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const activeTab = RS_TABS.some((t) => t.key === ui.activeTab) ? ui.activeTab : 'form';
 	const statusSelf = ui.statusSelf !== false;
 	const showConditions = !!ui.showConditions;
+	const deferHeavy = !!ui.deferHeavy; // fast first-paint pass: skip all pack round-trips, resolve content on the re-render
 	const sys = actor.system ?? {};
 	const res = sys.resources ?? {};
 	const pool = (r) => ({ value: Number(r?.value ?? 0), max: Number.isFinite(Number(r?.max)) ? Number(r.max) : null });
@@ -4211,7 +4223,11 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		if (hu) _heroicUuids.add(hu);
 	}
 	const _classDocs = new Map(), _heroicDocs = new Map();
-	await Promise.all([
+	// PERF (high-latency load): these class/heroic NAME lookups are pack round-trips. On the DEFERRED fast
+	// pass we skip them so the guise LIST + shell paint immediately (the picker needs only the owned guise
+	// name/portrait/mode); the maps stay empty -> names fall to placeholders, and the sheet re-renders with
+	// resolved names once the full pass completes off the critical path.
+	if (!deferHeavy) await Promise.all([
 		...[..._classUuids].map(async (u) => { _classDocs.set(u, await safeFromUuid(u)); }),
 		...[..._heroicUuids].map(async (u) => { _heroicDocs.set(u, await safeFromUuid(u)); }),
 	]);
@@ -4366,13 +4382,13 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const tabs = RS_TABS.map((t) => ({ ...t, active: t.key === activeTab }));
 	const tab = { play: activeTab === 'play', form: activeTab === 'form', bonds: activeTab === 'bonds', study: activeTab === 'study', resources: activeTab === 'resources', vault: activeTab === 'vault', kit: activeTab === 'kit', effects: activeTab === 'effects', spells: activeTab === 'spells', edit: activeTab === 'edit' };
 	if (!tab.play && !tab.form && !tab.bonds && !tab.study && !tab.resources && !tab.vault && !tab.kit && !tab.effects && !tab.spells && !tab.edit) { tab.other = true; tab.otherNote = RS_TAB_STUBS[activeTab] ?? ''; }
-	const play = tab.play ? await buildGuisePlayVM(actor, { previewId: ui.previewGuiseId }) : null; // v0.7.25/29: 'The Guise' play surface (active guise + preview)
+	const play = tab.play ? await buildGuisePlayVM(actor, { previewId: ui.previewGuiseId, deferHeavy }) : null; // v0.7.25/29: 'The Guise' play surface (active guise + preview)
 	// v0.7.15: full inventory (Kit) + native Active Effects (Effects tab) — built only when their tab is open.
 	const inventory = tab.kit ? buildInventoryVM(actor) : null;
 	const effects = tab.effects ? buildEffectsVM(actor) : null;
 	const spells = tab.spells ? buildSpellsVM(actor) : null; // v0.7.16: native 'spell' Items (list + cast)
 	// V3: the Party Vault is an embedded tab — build its (party-wide, async) VM only when it is open.
-	const vault = tab.vault ? await buildVaultVM(actor) : null;
+	const vault = (tab.vault && !deferHeavy) ? await buildVaultVM(actor) : null; // vault is a party-wide fetch — deferred on the fast pass
 	return {
 		masthead, vitals, derived, attributes, affinities, guises, bonds, bondsNative, bondsIsGM,
 		theTurn: { available: !turnRefundUsed }, // H3: is The Turn's swap-refund still available this scene?
@@ -4381,6 +4397,7 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, quirks, editable, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
+		resolving: deferHeavy, // true on the fast first-paint pass; the sheet re-renders with resolved content
 		inventory, effects, spells, play,
 	};
 }
@@ -4961,9 +4978,28 @@ function getRippersActorSheetClass() {
 			},
 		};
 		static PARTS = { body: { template: `modules/${MODULE_ID}/templates/rippers-actor-sheet.hbs` } };
+		// PERF (high-latency load): PROGRESSIVE render. On a remote link (~600ms) resolving a guise's
+		// content (classes/skills/heroics/equipment — each a pack round-trip) took long enough that the
+		// whole sheet, INCLUDING the guise list, sat blank for minutes. So we paint in two passes: a FAST
+		// pass (deferHeavy) that renders the guise list + shell with ZERO pack fetches, then a background
+		// re-render that resolves the content. The key captures what the heavy pass depends on; a routine
+		// re-render (same guise/tab — e.g. a status toggle) skips the defer and resolves directly (the
+		// pack docs are warm by then), so interactions aren't double-rendered needlessly.
+		_heavyRenderKey() {
+			const ids = (this.document?.items?.filter ? this.document.items.filter(isGuiseItem).map((g) => g.id) : []).join(',');
+			return [getActiveGuise(this.document) ?? '', this._previewGuiseId ?? '', this._activeTab ?? '', ids].join('|');
+		}
 		async _prepareContext(options) {
 			const ctx = await super._prepareContext(options);
-			const vm = await buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions, previewGuiseId: this._previewGuiseId });
+			const key = this._heavyRenderKey();
+			const deferHeavy = this._heavyReadyKey !== key; // first paint for this state → shell now, content next
+			const vm = await buildRippersSheetVM(this.document, { activeTab: this._activeTab, statusSelf: this._statusSelf, showConditions: this._showConditions, previewGuiseId: this._previewGuiseId, deferHeavy });
+			if (deferHeavy) {
+				this._heavyReadyKey = key;
+				// Re-render off the critical path to resolve content; guarded so a render already in flight
+				// (or a closed sheet) doesn't loop. The next _prepareContext sees the key as ready → full VM.
+				Promise.resolve().then(() => { if (this.rendered) this.render(false); });
+			}
 			return { ...ctx, actor: this.document, vm };
 		}
 		// v0.7.35 SAVE-REGRESSION FIX: the sheet never saves through the native document-form path — all
@@ -5536,35 +5572,41 @@ function registerSpecialtyBumpHooks() {
 	Hooks.on(CH.processCheck ?? 'projectfu.processCheck', onProcessCheckFlat);
 }
 
-/** PERF (guise load-after-reboot): on a fresh world the compendium packs aren't indexed or cached until
- *  the FIRST guise op touches them, so that first bind/sheet-render pays the whole cold-pack cost
- *  (index load + per-document fetch) serially. This warms them ONCE on ready, off the critical path:
- *  every Item pack's index (cheap; feeds the editor pickers) plus a full getDocuments() on the
- *  rippers-compendium.* Item packs the guise actually materialises from (so the first bind's fromUuid
- *  calls hit warm documents) + the cached spell index. Fire-and-forget; failures are swallowed. Behaviour
- *  is untouched — this only pre-populates Foundry's own pack caches earlier than first-use would. */
+/** PERF: warm the compendium pack INDICES only, and only when the link is idle. An earlier version
+ *  fully getDocuments()'d every rippers-compendium.* pack on ready — on a high-latency remote link
+ *  (~600ms) that front-loaded a large transfer that SATURATED the connection and starved the actual
+ *  sheet render, making first-load worse, not better. So now: (1) index-only (getIndex is a single
+ *  small request per pack — it feeds the editor pickers; documents are fetched lazily + batched by the
+ *  render/bind path via resolveUuidMap when actually needed); (2) idle-scheduled well after ready so it
+ *  never competes with an opening sheet; (3) sequential with a yield between packs so it can't burst.
+ *  Fire-and-forget, best-effort. Never fetches full documents. */
 async function prewarmGuisePacks() {
 	const packs = globalThis.game?.packs; if (!packs) return;
 	const t0 = (globalThis.performance?.now?.() ?? Date.now());
-	const jobs = [];
-	for (const pack of packs) {
-		if (pack?.documentName !== 'Item') continue;
-		jobs.push((async () => {
-			try { await pack.getIndex(); } catch { /* index warm best-effort */ }
-			try { if (String(pack.collection ?? '').startsWith('rippers-compendium')) await pack.getDocuments(); } catch { /* doc warm best-effort */ }
-		})());
+	const itemPacks = [...packs].filter((p) => p?.documentName === 'Item');
+	for (const pack of itemPacks) {
+		try { await pack.getIndex(); } catch { /* index warm best-effort */ }
+		await new Promise((r) => setTimeout(r, 0)); // yield between packs — never burst the link
 	}
-	jobs.push(loadSpellIndex().catch(() => {}));
-	await Promise.all(jobs);
+	try { await loadSpellIndex(); } catch { /* spell index best-effort */ }
 	const ms = Math.round((globalThis.performance?.now?.() ?? Date.now()) - t0);
-	console.debug(`[rippers-guise] pre-warmed guise packs in ${ms}ms — first guise load should now be warm.`);
+	console.debug(`[rippers-guise] warmed ${itemPacks.length} pack index(es) in ${ms}ms (index-only; documents load lazily).`);
+}
+/** Schedule the index warm-up for when the browser is idle, so it never competes with the first sheet
+ *  render on a slow link. requestIdleCallback where available, else a generous timeout. */
+function scheduleGuisePackPrewarm() {
+	const run = () => prewarmGuisePacks().catch((err) => console.warn('[rippers-guise] pack pre-warm skipped:', err));
+	const ric = globalThis.requestIdleCallback;
+	if (typeof ric === 'function') ric(run, { timeout: 8000 });
+	else setTimeout(run, 4000);
 }
 
 Hooks.once('ready', async () => {
 	registerSpecialtyBumpHooks();
-	// PERF: warm the compendium packs the guise binds from, so the first load-after-reboot isn't cold.
-	// Fire-and-forget — never block ready or a swap on it.
-	prewarmGuisePacks().catch((err) => console.warn('[rippers-guise] pack pre-warm skipped:', err));
+	// PERF: warm the compendium pack INDICES when the link is idle (index-only, never on the critical
+	// path — a high-latency link must not have its first sheet render starved by a warm-up). Content
+	// documents load lazily + batched via resolveUuidMap when a bind/render actually needs them.
+	scheduleGuisePackPrewarm();
 	// §10 lent vitals: a rest refills every LIVE guise's lent HP/MP to maximum (worn or in hand). The
 	// IP satchel is NOT refilled (bought back at 10z/pt). FU dispatches REST_EVENT with { actor }.
 	// ⚠ INTEGRATION FLAG: "lent layer spent before the wearer's own pool" is provided as the
