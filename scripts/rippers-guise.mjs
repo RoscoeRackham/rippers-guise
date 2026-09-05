@@ -3934,8 +3934,8 @@ const RS_COND_GROUPS = [
 ];
 const RS_TABS = [
 	{ key: 'play', label: 'The Guise' },
-	{ key: 'form', label: 'Form' }, { key: 'bonds', label: 'Bonds' }, { key: 'study', label: 'Study' },
-	{ key: 'resources', label: 'Resources' }, { key: 'vault', label: 'Vault' },
+	{ key: 'form', label: 'Guises' }, { key: 'bonds', label: 'Bonds' }, { key: 'study', label: 'Identity' },
+	{ key: 'resources', label: 'Resources' }, { key: 'vault', label: 'Cabinet' },
 	{ key: 'spells', label: 'Spells' }, { key: 'kit', label: 'Kit' }, { key: 'effects', label: 'Effects' },
 	{ key: 'clots', label: 'Clots' }, { key: 'quirk', label: 'Quirk' }, { key: 'edit', label: 'Edit' },
 ];
