@@ -220,7 +220,7 @@
 								{{#if vm.play.bonus}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bonus'}}</span> +{{vm.play.bonus.value}} to {{vm.play.bonus.descriptor}}</div>{{/if}}
 							</div>
 							{{!-- 9. weapon detail + equipped (fixed at distillation) + clot --}}
-							{{#if vm.play.weapon}}<div class="rs-play-weapon"><b>{{vm.play.weapon.name}}</b> · {{vm.play.weapon.accLabel}} · {{vm.play.weapon.dmgLabel}} {{vm.play.weapon.dmgType}}{{#if vm.play.weapon.traits.length}} · {{#each vm.play.weapon.traits as |t|}}{{t}} {{/each}}{{/if}}</div>{{/if}}
+							{{#if vm.play.weapon}}<div class="rs-play-weapon"><b>{{vm.play.weapon.name}}</b> · {{vm.play.weapon.accLabel}} · {{vm.play.weapon.dmgLabel}} {{vm.play.weapon.dmgType}}{{#if vm.play.weapon.traits.length}} · {{#each vm.play.weapon.traits as |t|}}{{t}} {{/each}}{{/if}}{{#if vm.play.weapon.id}} <button type="button" class="rs-chip rs-play-attack" data-action="rollWeapon" data-item="{{vm.play.weapon.id}}">{{localize 'RIPPERS.Sheet.Attack'}}</button>{{/if}}</div>{{/if}}
 							<div class="rs-play-equip"><span class="rs-inv-label">{{localize 'RIPPERS.Sheet.Equipped'}} — FIXED AT DISTILLATION</span>{{#if vm.play.equipment.length}}{{#each vm.play.equipment as |e|}}<span class="rs-play-equip-item"><img src="{{e.img}}" alt="">{{e.name}}</span>{{/each}}{{else}}<span class="rs-play-gap">—</span>{{/if}}</div>
 							<div class="rs-play-sec-k">CLOT</div>
 							<div class="rs-play-clot">{{#if vm.play.clot.seated}}{{#each vm.play.clot.clots as |cl|}}<div class="rs-play-clot-row"><span class="rs-play-clot-name">{{cl.name}}</span>{{#if cl.hasEffect}}<span class="rs-play-clot-fx">{{{cl.effect}}}</span>{{else}}<span class="rs-play-clot-fx rs-play-gap">—</span>{{/if}}</div>{{/each}}{{else}}<span class="rs-play-gap">No Clot seated.</span>{{/if}}</div>
@@ -498,6 +498,7 @@
 								{{#if sp.mp}}<span class="rs-inv-stat">MP {{sp.mp}}</span>{{/if}}
 								{{#if sp.target}}<span class="rs-inv-stat">{{sp.target}}</span>{{/if}}
 								{{#if sp.duration}}<span class="rs-inv-stat">{{sp.duration}}</span>{{/if}}
+								{{#if sp.summary}}<span class="rs-inv-stat rs-inv-summary">{{sp.summary}}</span>{{/if}}
 							</span>
 							<span class="rs-inv-controls">
 								<button type="button" class="rs-chip" data-action="itemUse" data-item="{{sp.id}}">{{localize 'RIPPERS.Sheet.Cast'}}</button>

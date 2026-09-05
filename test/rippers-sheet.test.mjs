@@ -1191,6 +1191,31 @@ test('buildGuisePlayVM: deferHeavy returns the cheap SHELL (guise list + identit
 	} finally { globalThis.fromUuid = realFromUuid; }
 });
 
+test('buildSpellsVM: each spell carries a damage/effect SUMMARY read from the FU item (P0-5, read-only)', () => {
+	const { buildSpellsVM } = mod;
+	const actor = { itemTypes: { spell: [
+		{ id: 's1', name: 'Flare', img: '', system: { mpCost: { value: 10 }, target: { value: 'One' }, duration: { value: 'Instant' }, isOffensive: { value: true }, rollInfo: { damage: { hasDamage: { value: true }, value: 20, type: { value: 'fire' } } } } },
+		{ id: 's2', name: 'Warding Sigil', img: '', system: { mpCost: { value: 5 }, opportunity: { value: 'Target gains Resistance to dark this scene.' }, rollInfo: { damage: { hasDamage: { value: false } } } } },
+	] } };
+	const vm = buildSpellsVM(actor);
+	assert.equal(vm.any, true);
+	assert.match(vm.spells[0].summary, /HR \+ 20 fire/);
+	assert.equal(vm.spells[1].summary, 'Target gains Resistance to dark this scene.');
+});
+
+test('buildGuisePlayVM: the play-surface weapon carries its id so the readout can wire an Attack roll (P0-4)', async () => {
+	const { buildGuisePlayVM } = mod;
+	const guise = { id: 'gw4', name: 'The Blade', getFlag: (_m, k) => (k === 'isInnate' ? false : undefined), system: { data: { mode: 'worn', classes: [], affinityModifiers: [{ type: 'dark', level: 2 }] } } };
+	const actor = {
+		getFlag: (_m, k) => (k === 'activeGuise' ? 'gw4' : undefined),
+		items: { get: (id) => (id === 'gw4' ? guise : null) },
+		itemTypes: { weapon: [{ id: 'wpn1', name: 'Sabre', type: 'weapon', system: { attributes: { primary: { value: 'dex' }, secondary: { value: 'mig' } }, accuracy: { value: 1 }, damage: { value: 5 }, damageType: { value: 'physical' }, type: { value: 'melee' } } }], customWeapon: [] },
+		system: { attributes: { dex: { base: 8 }, ins: { base: 8 }, mig: { base: 8 }, wlp: { base: 8 } }, equipped: {}, derived: {} },
+	};
+	const vm = await buildGuisePlayVM(actor);
+	assert.ok(vm.weapon && vm.weapon.id === 'wpn1');
+});
+
 test('resolveUuidMap: resolves concurrently, de-dupes repeats, drops blanks, null on miss (perf helper)', async () => {
 	const { resolveUuidMap } = mod;
 	UUIDS.set('u.a', { name: 'Alpha' });

@@ -711,6 +711,16 @@ function announceGuiseSwapCost(actor, targetId, decision) {
 		? (game.i18n?.format?.('RIPPERS.Turn.Refunded', { name }) ?? `The Turn: swapping to "${name}" is FREE — the action is refunded (once per scene).`)
 		: (game.i18n?.format?.('RIPPERS.Turn.CostsAction', { name }) ?? `Swapping to "${name}" costs an Action.`);
 	ui.notifications?.info?.(msg);
+	// P0-2: on a REFUND (The Turn fires), also post a persistent chat card so the whole table SEES the
+	// signature homebrew happen — the toast above is transient and only the acting client sees it.
+	if (decision.refunded) {
+		try {
+			ChatMessage?.create?.({
+				speaker: ChatMessage.implementation?.getSpeaker?.({ actor }) ?? {},
+				content: `<div class="rippers-guise-card"><strong>THE TURN</strong> — ${foundry.utils?.escapeHTML?.(actor?.name ?? '') ?? actor?.name ?? ''} swaps to <strong>${foundry.utils?.escapeHTML?.(name) ?? name}</strong> as a free action (the swap's action is refunded — once per scene).</div>`,
+			});
+		} catch (err) { console.warn('[rippers-guise] The Turn chat card failed (non-blocking):', err); }
+	}
 	console.debug(`[rippers-guise] ${msg}`);
 }
 
@@ -3668,6 +3678,14 @@ function buildSpellsVM(actor) {
 		target: rsDotGet(s, 'system.target.value') ?? '',
 		duration: rsDotGet(s, 'system.duration.value') ?? '',
 		offensive: !!rsDotGet(s, 'system.isOffensive.value'),
+		// P0-5: the spell's own damage/effect summary (read from the FU item — never invented): a damage line
+		// when the spell has damage, else its opportunity/effect text; the row shows whichever is present.
+		summary: (() => {
+			const hasDmg = !!rsDotGet(s, 'system.rollInfo.damage.hasDamage.value');
+			const dv = rsDotGet(s, 'system.rollInfo.damage.value'); const dt = rsDotGet(s, 'system.rollInfo.damage.type.value');
+			if (hasDmg && (dv != null || dt)) return `${dv != null ? `HR + ${dv}` : ''}${dt ? ` ${dt}` : ''}`.trim();
+			return String(rsDotGet(s, 'system.opportunity.value') ?? '').trim();
+		})(),
 	}));
 	return { spells, any: spells.length > 0 };
 }
@@ -3834,7 +3852,7 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	// Weapon / unarmed strike detail (reuse weaponStats). Prefer the equipped mainHand weapon, else first.
 	const weaponItems = [...(actor?.itemTypes?.weapon ?? []), ...(actor?.itemTypes?.customWeapon ?? [])];
 	const primaryWeapon = getItem(eq.mainHand) && weaponItems.some((w) => w.id === eq.mainHand) ? getItem(eq.mainHand) : weaponItems[0] ?? null;
-	const weapon = primaryWeapon ? { name: primaryWeapon.name ?? '', ...weaponStats(primaryWeapon) } : null;
+	const weapon = primaryWeapon ? { id: primaryWeapon.id, name: primaryWeapon.name ?? '', ...weaponStats(primaryWeapon) } : null; // P0-4: id → attack-from-readout
 	// Clot pane (Austin ruling — NAME + EFFECT phase): a seated Clot renders as its NAME + its EFFECT text,
 	// one row per seated Clot, gathered from the character's Clot hosts (custom weapons + armor; the active
 	// guise's kit is what is materialised on the actor). Effect text is the Clot's authored description —
