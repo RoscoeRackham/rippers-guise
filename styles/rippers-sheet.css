@@ -77,8 +77,14 @@
 
 /* swap column */
 .rippers-sheet .rs-swapcol { flex: none; width: 210px; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
-.rippers-sheet .rs-swap-btn { font-family: var(--rs-verb); font-size: 36px; line-height: 1; padding: 20px 12px; cursor: pointer; border: none; background: var(--rs-bg); color: #fff; transform: rotate(-3deg); box-shadow: 6px 6px 0 var(--rs-red); white-space: nowrap; }
-.rippers-sheet .rs-swap-btn:hover { background: #12080a; }
+/* v0.7.45 (UX audit P0-1): the Swap verb had no button chrome (border:none + bg=page ground) so it read
+   as a TITLE, not a control — the single most important homebrew action looked non-interactive. Give it
+   the primary-verb treatment (red fill, white, flat black drop) so it is unmistakably a button. Behaviour
+   unchanged: Swap = quick toggle (unmask / re-wear); the labelled picker below is the precise choice. */
+.rippers-sheet .rs-swap-btn { font-family: var(--rs-verb); font-size: 34px; line-height: 1; padding: 16px 12px; cursor: pointer; border: none; background: var(--rs-red); color: #fff; transform: rotate(-3deg); box-shadow: 4px 4px 0 rgba(7,4,5,.9); white-space: nowrap; }
+.rippers-sheet .rs-swap-btn:hover { background: #e11430; filter: brightness(1.05); }
+/* label the picker so it reads as 'click a guise to wear it', distinct from the quick Swap button */
+.rippers-sheet .rs-guise-picker-k { font-family: var(--rs-mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rs-bone-dim); padding: 2px 2px 4px; }
 .rippers-sheet .rs-guise-picker { display: flex; flex-direction: column; gap: 3px; background: var(--rs-bg); padding: 4px; border: 1px solid var(--rs-border); }
 .rippers-sheet .rs-guise-pick { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-family: var(--rs-mono); font-size: 11px; padding: 6px 10px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-panel); color: var(--rs-bone-dim); text-align: left; }
 .rippers-sheet .rs-guise-pick:hover { border-color: var(--rs-red); color: var(--rs-bone); }

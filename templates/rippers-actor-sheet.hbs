@@ -78,6 +78,7 @@
 				<button class="rs-swap-btn" data-action="guiseSwap" title="{{localize 'RIPPERS.Sheet.SwapHint'}}"><span>{{localize 'RIPPERS.Sheet.Swap'}}</span></button>
 				{{#if vm.guises.length}}
 					<div class="rs-guise-picker">
+						<div class="rs-guise-picker-k">{{localize 'RIPPERS.Sheet.WearAGuise'}}</div>
 						{{#each vm.guises as |g|}}
 							<button class="rs-guise-pick {{#if g.worn}}rs-worn{{/if}}" data-action="guiseWear" data-guise="{{g.id}}">
 								<span>{{g.name}}</span>
