@@ -324,11 +324,15 @@ async function materialiseSkills(actor, item) {
 	let spent = 0;
 	const perClass = {};
 	const toCreate = [];
+	// PERF: resolve every skill UUID CONCURRENTLY up front (was a serial await per skill — the cold-pack
+	// cost stacked on the first bind after a reboot). The ordered cap loop below is unchanged; it just
+	// reads from the pre-resolved map instead of awaiting inside the loop, so behaviour is identical.
+	const srcByUuid = await resolveUuidMap((data.classes ?? []).flatMap((c) => (c.skills ?? []).map((s) => s.skillUuid)));
 	for (const cls of data.classes ?? []) {
 		const key = cls.classUuid || '_';
 		perClass[key] = perClass[key] ?? 0;
 		for (const s of cls.skills ?? []) {
-			const src = await fromUuid(s.skillUuid);
+			const src = srcByUuid.get(s.skillUuid);
 			if (!src) { console.warn(`[rippers-guise] skill ref not found: ${s.skillUuid}`); continue; }
 			let sl = Math.max(0, Math.floor(Number(s.sl ?? 0)));
 			const maxSl = src.system?.level?.max ?? 10;
@@ -358,21 +362,28 @@ async function materialiseSkills(actor, item) {
 async function materialiseSpells(actor, item) {
 	const data = item.system?.data ?? {};
 	const toCreate = [];
+	// PERF: gather the picked spell UUIDs (capped at each skill's SL, first-seen order) then resolve them
+	// CONCURRENTLY (was a serial await per spell). Dedupe + order preserved, so the created set is identical.
+	const picked = [];
 	const seen = new Set();
 	for (const cls of data.classes ?? []) {
 		for (const s of cls.skills ?? []) {
 			const sl = Math.max(0, Math.floor(Number(s.sl ?? 0)));
 			for (const spellUuid of (s.spellUuids ?? []).slice(0, sl)) {
 				if (!spellUuid || seen.has(spellUuid)) continue; seen.add(spellUuid);
-				const src = await fromUuid(spellUuid);
-				if (!src) { console.warn(`[rippers-guise] spell ref not found: ${spellUuid}`); continue; }
-				const obj = src.toObject();
-				delete obj._id;
-				obj.flags = obj.flags ?? {};
-				obj.flags[MODULE_ID] = { origin: item.id, kind: 'spell' };
-				toCreate.push(obj);
+				picked.push(spellUuid);
 			}
 		}
+	}
+	const srcByUuid = await resolveUuidMap(picked);
+	for (const spellUuid of picked) {
+		const src = srcByUuid.get(spellUuid);
+		if (!src) { console.warn(`[rippers-guise] spell ref not found: ${spellUuid}`); continue; }
+		const obj = src.toObject();
+		delete obj._id;
+		obj.flags = obj.flags ?? {};
+		obj.flags[MODULE_ID] = { origin: item.id, kind: 'spell' };
+		toCreate.push(obj);
 	}
 	const created = toCreate.length ? await actor.createEmbeddedDocuments('Item', toCreate) : [];
 	return created.map((d) => d.id);
@@ -398,8 +409,9 @@ async function materialiseAttachedHeroic(actor, item) {
 	const uuids = attachedHeroicUuids(item.system?.data);
 	if (!uuids.length) return [];
 	const objs = [];
+	const srcByUuid = await resolveUuidMap(uuids); // PERF: resolve the ≤3 heroic refs concurrently
 	for (const uuid of uuids) {
-		const src = await fromUuid(uuid);
+		const src = srcByUuid.get(uuid);
 		if (!src) { console.warn(`[rippers-guise] attached heroic ref not found: ${uuid}`); continue; }
 		if (src.type !== 'heroic') { console.warn(`[rippers-guise] attached heroic is not a Heroic Skill: ${uuid}`); continue; }
 		const obj = src.toObject();
@@ -422,9 +434,10 @@ async function materialiseAttachedHeroic(actor, item) {
 async function materialiseAttachedEffects(actor, item) {
 	const list = item.system?.data?.attachedEffects ?? [];
 	const toCreate = [];
+	const srcByUuid = await resolveUuidMap(list.map((e) => e?.itemUuid)); // PERF: resolve effect refs concurrently
 	for (const e of list) {
 		if (!e?.itemUuid) continue;
-		const src = await fromUuid(e.itemUuid);
+		const src = srcByUuid.get(e.itemUuid);
 		if (!src) { console.warn(`[rippers-guise] attached effect ref not found: ${e.itemUuid}`); continue; }
 		const obj = src.toObject();
 		delete obj._id;
@@ -441,8 +454,11 @@ async function materialiseEquipment(actor, item) {
 	const data = item.system?.data ?? {};
 	const ids = [];
 	const equipUpdate = {};
+	// PERF: resolve the equipment refs concurrently; the create/equip loop stays serial (its two-hand
+	// displacement + equipUpdate ordering is order-dependent), but the cold pack fetch no longer stacks.
+	const srcByUuid = await resolveUuidMap((data.equipment ?? []).map((eq) => eq.itemUuid));
 	for (const eq of data.equipment ?? []) {
-		const src = await fromUuid(eq.itemUuid);
+		const src = srcByUuid.get(eq.itemUuid);
 		if (!src) { console.warn(`[rippers-guise] equipment ref not found: ${eq.itemUuid}`); continue; }
 		const obj = src.toObject();
 		delete obj._id;
@@ -3067,6 +3083,18 @@ async function safeFromUuid(uuid) {
 	try { return await fromUuid(uuid); } catch { return null; }
 }
 
+/** PERF: resolve many UUIDs CONCURRENTLY into a Map<uuid, doc|null>. De-dupes so a repeated ref is
+ *  fetched once. Replaces serial `await fromUuid` loops on the guise load/bind path — on a cold session
+ *  the per-document pack cost stacked serially; one Promise.all lets the pack layer resolve them in
+ *  parallel. Failures resolve to null (same as safeFromUuid), so callers keep their own "not found" warns. */
+async function resolveUuidMap(uuids) {
+	const unique = [...new Set((uuids ?? []).filter(Boolean).map(String))];
+	const docs = await Promise.all(unique.map((u) => safeFromUuid(u)));
+	const map = new Map();
+	unique.forEach((u, i) => map.set(u, docs[i]));
+	return map;
+}
+
 /** Build the enriched view-model the guise sheet renders (async; names + caps resolved). */
 async function enrichGuiseData(model) {
 	const item = model?.item ?? null;
@@ -3663,15 +3691,21 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	const innate = !!guise.getFlag?.(MODULE_ID, 'isInnate') || d.mode === 'innate';
 	// Classes → skills (name + SL + max + look-closer description + source tag). An unresolvable class UUID
 	// is an UNAUTHORED class slot (dashed ⚠), not an error — the design draws Carbolic Coat that way.
+	// PERF: pre-resolve every class + skill doc CONCURRENTLY (was a serial safeFromUuid per class and
+	// per skill — the cold-pack cost on the first sheet render after a reboot). Loop logic is unchanged.
+	const [classDocMap, skillDocMap] = await Promise.all([
+		resolveUuidMap((d.classes ?? []).map((c) => c.classUuid)),
+		resolveUuidMap((d.classes ?? []).flatMap((c) => (c.skills ?? []).map((sk) => sk.skillUuid))),
+	]);
 	const classes = [];
 	for (const cls of d.classes ?? []) {
-		const cdoc = await safeFromUuid(cls.classUuid);
+		const cdoc = classDocMap.get(cls.classUuid);
 		if (!cdoc) { classes.push({ name: '', unauthored: true, skills: [], hasSubNote: false, sumSl: 0, mastery: false }); continue; }
-		const defs = await skillsForClass(cls.classUuid);          // [{uuid,name,maxSl}] parsed from the class ref
+		const defs = await skillsForClass(cdoc);                   // pass the resolved doc — no re-fetch
 		const byUuid = new Map(defs.map((s) => [s.uuid, s]));
 		const skills = [];
 		for (const s of cls.skills ?? []) {
-			const skDoc = await safeFromUuid(s.skillUuid);
+			const skDoc = skillDocMap.get(s.skillUuid);
 			const desc = skDoc?.system?.description ?? '';
 			// Source tag: from the skill Item where authored (a citation flag or system.source); else omitted.
 			const source = String(skDoc?.getFlag?.(MODULE_ID, 'source') ?? skDoc?.system?.source?.value ?? '').trim();
@@ -3696,8 +3730,8 @@ async function buildGuisePlayVM(actor, opts = {}) {
 	const classesMastered = classes.filter((c) => c.mastery).length;
 	const availableHeroicSlots = classesMastered >= 3 ? 3 : classesMastered === 2 ? 2 : 1;
 	const heroicUuidList = innate ? (d.innateHeroicUuid ? [d.innateHeroicUuid] : []) : attachedHeroicUuids(d);
-	const heroicDocs = [];
-	for (const u of heroicUuidList) heroicDocs.push(await safeFromUuid(u));
+	const heroicDocMap = await resolveUuidMap(heroicUuidList); // PERF: resolve ≤3 heroic refs concurrently
+	const heroicDocs = heroicUuidList.map((u) => heroicDocMap.get(u));
 	const heroicSlots = [0, 1, 2].map((i) => {
 		const unlocked = i < availableHeroicSlots;
 		if (!unlocked) return { filled: false, unlocked: false, locked: true, needMastered: i + 1 };
@@ -5502,8 +5536,35 @@ function registerSpecialtyBumpHooks() {
 	Hooks.on(CH.processCheck ?? 'projectfu.processCheck', onProcessCheckFlat);
 }
 
+/** PERF (guise load-after-reboot): on a fresh world the compendium packs aren't indexed or cached until
+ *  the FIRST guise op touches them, so that first bind/sheet-render pays the whole cold-pack cost
+ *  (index load + per-document fetch) serially. This warms them ONCE on ready, off the critical path:
+ *  every Item pack's index (cheap; feeds the editor pickers) plus a full getDocuments() on the
+ *  rippers-compendium.* Item packs the guise actually materialises from (so the first bind's fromUuid
+ *  calls hit warm documents) + the cached spell index. Fire-and-forget; failures are swallowed. Behaviour
+ *  is untouched — this only pre-populates Foundry's own pack caches earlier than first-use would. */
+async function prewarmGuisePacks() {
+	const packs = globalThis.game?.packs; if (!packs) return;
+	const t0 = (globalThis.performance?.now?.() ?? Date.now());
+	const jobs = [];
+	for (const pack of packs) {
+		if (pack?.documentName !== 'Item') continue;
+		jobs.push((async () => {
+			try { await pack.getIndex(); } catch { /* index warm best-effort */ }
+			try { if (String(pack.collection ?? '').startsWith('rippers-compendium')) await pack.getDocuments(); } catch { /* doc warm best-effort */ }
+		})());
+	}
+	jobs.push(loadSpellIndex().catch(() => {}));
+	await Promise.all(jobs);
+	const ms = Math.round((globalThis.performance?.now?.() ?? Date.now()) - t0);
+	console.debug(`[rippers-guise] pre-warmed guise packs in ${ms}ms — first guise load should now be warm.`);
+}
+
 Hooks.once('ready', async () => {
 	registerSpecialtyBumpHooks();
+	// PERF: warm the compendium packs the guise binds from, so the first load-after-reboot isn't cold.
+	// Fire-and-forget — never block ready or a swap on it.
+	prewarmGuisePacks().catch((err) => console.warn('[rippers-guise] pack pre-warm skipped:', err));
 	// §10 lent vitals: a rest refills every LIVE guise's lent HP/MP to maximum (worn or in hand). The
 	// IP satchel is NOT refilled (bought back at 10z/pt). FU dispatches REST_EVENT with { actor }.
 	// ⚠ INTEGRATION FLAG: "lent layer spent before the wearer's own pool" is provided as the
@@ -5543,7 +5604,7 @@ Hooks.once('ready', async () => {
 export { buildReplaceChanges, validateAffinitySet, validateAffinityLibrary, affinitySwapAllowed, buildGuiseAffinityChanges, getAffinityLibrary, getActiveAffinitySet, getActiveAffinitySetId, isReplaceModeGuise, affinitySetCapOf, namedSkillSL, setAffinityLibrary, swapAffinitySet, AFFINITY_TYPES, AFFINITY_VALUES, AE_OVERRIDE };
 // Back-compat aliases (pre-release Diabolist "pact" names).
 export { validatePactSet, validatePactLibrary, pactSwapAllowed, getPactLibrary, getActivePact, getActivePactId, miasmicFormsSL, setPactLibrary, swapPactSet };
-export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, attachedHeroicUuids, materialiseAttachedHeroic, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
+export { isPoolKey, filterChanges, POOL_BLOCK, affinityChange, materialiseSkills, resolveItem, isInnateSkill, suppressInnateSkills, restoreInnateSkills, clampAllocationInputs, AFFINITY_LEVELS, budgetOf, guiseSummary, bindGuise, bindGuiseNoCost, defaultActiveGuiseId, dismissGuise, setActiveGuise, getActiveGuise, isHunterWeapon, nextForm, swapActiveForm, setHunterWeapon, hunterWeaponIsBane, hoplosphereSocketCapacity, checkHoplosphereSockets, seatedHoplospheres, evaluateSlotting, baseSocketCapacity, persistentSlotsUnlocked, hoplosphereHostKind, characterHoplosphereImmunityCount, hoplosphereHosts, slotHoplosphere, getHeroicSlots, assignHeroicSlot, clearHeroicSlot, heroicIsCreationBanned, suppressCreationHeroic, restoreCreationHeroic, BENEFIT_POOL, validateBenefitPicks, benefitResourceDeltas, benefitEffectChanges, getBenefitPicks, setBenefitPicks, benefitPickSummary, rebuildBenefitEffect, stripClassBenefits, characterRitualDisciplines, normalizeDisciplines, characterCanInitiateProjects, benefitSelectionSummary, benefitPickerContext, parseBenefitForm, RITUAL_DISCIPLINES, RITUAL_SECOND_DISCIPLINES, ritualsLabel, openBenefitPicker, emptyGuiseDraft, parseClassSkills, guiseDraftToData, guiseDataToDraft, attachedHeroicUuids, materialiseAttachedHeroic, resolveUuidMap, prewarmGuisePacks, createGuiseFromDraft, materialiseCreationHeroic, materialiseHunterWeapon, materialiseInnateEquip, EQUIP_INNATE_SLOTS, innateKitReconcilePlan, innateKitPlanIsEmpty, reconcileInnateKit, draftKey, DRAFT_SEP, openGuiseBuilder, WIZARD_STEPS, clampWizardStep, affinityLevelOf, withAffinityLevel, newAffinitySet };
 // GUISE-BUILDER-FIX (v0.7.0) — canon vocabularies + guardrail validators (pure, unit-tested).
 export { GUISE_MODES, REQUIRED_CLASS_COUNT, SPECIALTY_LIST, SPECIALTY_COUNT, TALENTED_SPECIALTY_COUNT, specialtyCapFor, draftIsTalented, BONUS_VALUE, TRIO_LEVEL, affinityTrioToModifiers, validateAffinityTrio, validateGuiseDraft };
 // v0.7.6 — per-step guardrail errors (wizard chrome gating) + budget/min-per-class helpers.

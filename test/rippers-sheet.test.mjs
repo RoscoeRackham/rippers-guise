@@ -1151,6 +1151,23 @@ test('buildGuisePlayVM: the two CHARACTER-BOUND heroics are gated to L40/L50 and
 	assert.equal(high.characterHeroics[1].unlocked, true);
 });
 
+test('resolveUuidMap: resolves concurrently, de-dupes repeats, drops blanks, null on miss (perf helper)', async () => {
+	const { resolveUuidMap } = mod;
+	UUIDS.set('u.a', { name: 'Alpha' });
+	UUIDS.set('u.b', { name: 'Beta' });
+	let calls = 0;
+	const realFromUuid = globalThis.fromUuid;
+	globalThis.fromUuid = async (u) => { calls++; return UUIDS.get(u) ?? null; };
+	try {
+		const map = await resolveUuidMap(['u.a', 'u.a', 'u.b', '', null, 'u.missing']);
+		assert.equal(map.get('u.a').name, 'Alpha');
+		assert.equal(map.get('u.b').name, 'Beta');
+		assert.equal(map.get('u.missing'), null);   // miss → null, not a throw
+		assert.equal(map.has(''), false);            // blanks dropped
+		assert.equal(calls, 3);                       // de-duped: a, b, missing resolved once each
+	} finally { globalThis.fromUuid = realFromUuid; }
+});
+
 test('buildGuisePlayVM: seated Clots render NAME + EFFECT (one row each); no seats → empty state (ruling)', async () => {
 	const { buildGuisePlayVM } = mod;
 	const guise = { id: 'gk', name: 'The Aetherist', getFlag: (_m, k) => (k === 'isInnate' ? false : undefined), system: { data: { mode: 'worn', classes: [], affinityModifiers: [{ type: 'dark', level: 2 }], attachedHeroicUuid: '' } } };
