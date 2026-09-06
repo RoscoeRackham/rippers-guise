@@ -529,9 +529,15 @@
 				<div class="rs-edit-block">
 					<div class="rs-edit-title">{{localize 'RIPPERS.Sheet.EditCharacter'}}</div>
 					<label class="rs-edit-row"><span>{{localize 'RIPPERS.Sheet.Name'}}</span><input type="text" data-edit="name" value="{{vm.editable.name}}"></label>
-					{{!-- LEVEL / XP / advancement are FU-owned (Austin ruling 2026-09-06 "defer to FU"): no Level
-					     input, no XP input, no manual Level Up here. Character level lives at system.level.value;
-					     the 40/50 heroic slots and the hoplosphere socket cadence derive from it. --}}
+					{{!-- ADVANCEMENT LOGIC is FU-owned (Austin ruling 2026-09-06 "defer to FU"): no Level Up
+					     button, no milestone prompt, no attribute-die logic, no shadow state here. But because our
+					     sheet REPLACES FU's PC sheet, FU's own level/XP controls are unreachable — so we surface
+					     the system's own numbers as plain editable fields (data-edit binds straight to FU's values).
+					     The 40/50 heroic slots and the hoplosphere socket cadence derive from system.level.value. --}}
+					<div class="rs-advance">
+						<label class="rs-edit-row rs-advance-cell"><span>{{localize 'RIPPERS.Sheet.Level'}}</span><input type="number" data-edit="system.level.value" data-dtype="number" min="1" value="{{vm.editable.level}}"></label>
+						<label class="rs-edit-row rs-advance-cell"><span>{{localize 'RIPPERS.Sheet.XP'}}</span><input type="number" data-edit="system.resources.exp.value" data-dtype="number" min="0" value="{{vm.editable.exp}}"></label>
+					</div>
 					<div class="rs-attr-grid">
 						{{#each vm.editable.attributes as |a|}}
 							<label class="rs-edit-row"><span>{{a.label}}</span>

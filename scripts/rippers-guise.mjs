@@ -4734,6 +4734,10 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		}),
 		hp: { value: hp.value, max: hp.max ?? 0 }, mp: { value: mp.value, max: mp.max ?? 0 }, ip: { value: ip.value, max: ip.max ?? 0 },
 		fp: vitals.fp, exp: vitals.exp, zenit: vitals.zenit,
+		// FU-owned data surfaced on our sheet (which REPLACES FU's, so FU's own level/XP fields are
+		// unreachable). We render the system's numbers editable; we own NO advancement logic (no Level Up
+		// button, no milestone, no shadow state) — that stays FU's. Bound to system.level.value / exp.value.
+		level: Number(sys.level?.value ?? sys.level ?? 0) || 0,
 		// Inline bonds: name + the three FU emotion SELECTS (blank + two valid choices each). Strength is
 		// read-only (derived from the emotions). `tier` is the Deeper-Bonds tier by name (fleeting by
 		// default) — shown as a chip so a freshly-added bond visibly reads "Fleeting"; promotion to
