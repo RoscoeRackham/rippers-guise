@@ -29,7 +29,7 @@
 /* Red-legibility ruling (Austin, override of the mock): the big masthead slash is a DARK BLOOD ground,
    not a saturated-red field — text sits on dark, red returns to accent (Swap, borders, active tab, bars).
    Nothing eye-searing/glowing at rest. */
-.rippers-sheet .rs-slash-red { position: absolute; top: -120px; left: -140px; width: 640px; height: 430px; background: var(--rs-border-red); transform: rotate(-9deg); pointer-events: none; }
+.rippers-sheet .rs-slash-red { position: absolute; top: -120px; left: -140px; width: 640px; height: 430px; background: #8c1c26; transform: rotate(-9deg); pointer-events: none; }
 .rippers-sheet .rs-slash-dark { position: absolute; top: -120px; left: 430px; width: 70px; height: 460px; background: #1a0e12; transform: rotate(-9deg); pointer-events: none; }
 .rippers-sheet .rs-grain { position: absolute; top: 0; left: 0; right: 0; height: 320px; background-image: radial-gradient(circle, rgba(232,220,203,.07) 1px, transparent 1px); background-size: 9px 9px; pointer-events: none; }
 .rippers-sheet .rs-watermark { position: absolute; top: 110px; right: -30px; font-family: var(--rs-verb); font-size: 360px; line-height: 1; color: rgba(200,16,42,.14); transform: rotate(-9deg); pointer-events: none; user-select: none; }
