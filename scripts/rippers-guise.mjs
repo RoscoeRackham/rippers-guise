@@ -5338,6 +5338,7 @@ function getRippersActorSheetClass() {
 			form: { submitOnChange: false, closeOnSubmit: false },
 			actions: {
 				resAdjust: RippersActorSheet.onResAdjust,
+				resDirectEntry: RippersActorSheet.onResDirectEntry,
 				toggleStatus: RippersActorSheet.onToggleStatus,
 				statusMode: RippersActorSheet.onStatusMode,
 				toggleConditions: RippersActorSheet.onToggleConditions,
@@ -5591,7 +5592,36 @@ function getRippersActorSheetClass() {
 		// ── actions (AppV2 binds `this` to the app instance) ──
 		static async onResAdjust(event, target) {
 			const res = target?.dataset?.res; const dir = Number(target?.dataset?.dir) || 0;
-			if (res && dir) { await sheetAdjustResource(this.document, res, dir); this.render(); }
+			if (res && dir) { await sheetAdjustResource(this.document, res, dir * (event.shiftKey ? 5 : 1)); this.render(); }
+		}
+		static async onResDirectEntry(event, target) {
+			// Click-to-edit the HP/MP/IP value. Accepts: absolute (28) or delta (-17 / +5).
+			if (target.querySelector('input.rs-stat-entry')) return; // already open
+			const res = target.dataset.res;
+			if (!['hp', 'mp', 'ip'].includes(res)) return;
+			const actor = this.document;
+			const current = Number(actor.system?.resources?.[res]?.value ?? 0);
+			const input = document.createElement('input');
+			input.type = 'text'; input.value = String(current); input.className = 'rs-stat-entry';
+			target.innerHTML = '';
+			target.appendChild(input);
+			input.focus(); input.select();
+			const self = this;
+			let done = false;
+			async function commit() {
+				if (done) return; done = true;
+				const raw = input.value.trim();
+				let amount = 0;
+				if (/^[+\-]/.test(raw)) { amount = Number(raw); }        // delta: -17 or +5
+				else { const abs = Number(raw); if (!isNaN(abs) && abs >= 0) amount = abs - current; } // absolute: 28
+				if (!isNaN(amount) && amount !== 0) await sheetAdjustResource(actor, res, amount);
+				self.render();
+			}
+			input.addEventListener('keydown', async (ev) => {
+				if (ev.key === 'Enter') { ev.preventDefault(); await commit(); }
+				else if (ev.key === 'Escape') { done = true; self.render(); }
+			});
+			input.addEventListener('blur', commit);
 		}
 		static async onToggleStatus(event, target) {
 			const id = target?.dataset?.status;

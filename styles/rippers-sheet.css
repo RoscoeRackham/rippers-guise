@@ -71,6 +71,11 @@
 .rippers-sheet .rs-stat-dual .rs-stat-num { font-size: 15px; color: var(--rs-bone); }
 
 /* vitals steppers (P2a wiring) */
+.rippers-sheet .rs-stat-num[data-action="resDirectEntry"] { cursor: pointer; }
+.rippers-sheet .rs-stat-num[data-action="resDirectEntry"]:hover { text-decoration: underline dotted rgba(255,255,255,.45); }
+/* Inline direct-entry input (click-to-edit vitals). Shift+stepper = ×5. */
+.rippers-sheet .rs-stat-entry { width: 3.5em; background: transparent; border: none; border-bottom: 1px solid currentColor;
+	font: inherit; color: inherit; text-align: center; padding: 0; outline: none; }
 .rippers-sheet .rs-step { display: inline-flex; gap: 3px; margin-top: 0; } /* compact masthead: stepper sits inline, right of the number */
 .rippers-sheet .rs-step button { font-family: var(--rs-mono); font-size: 11px; font-weight: 600; width: 16px; height: 16px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); line-height: 1; }
 .rippers-sheet .rs-step button:hover { border-color: var(--rs-red); color: #fff; }
