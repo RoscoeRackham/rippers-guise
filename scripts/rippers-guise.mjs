@@ -1706,7 +1706,7 @@ const BENEFIT_POOL = {
 	hpmp5: { label: '+5 HP and +5 MP',  kind: 'stat', delta: { hp: 5, mp: 5 }, contested: false },
 	ip4:   { label: '+4 IP',            kind: 'stat', delta: { ip: 4 },        contested: false },
 	projects:         { label: 'Projects',            kind: 'capability', contested: true },
-	rituals:          { label: 'Rituals',             kind: 'capability', contested: true, namedDiscipline: true },
+	rituals:          { label: 'Rituals',             kind: 'capability', contested: false, namedDiscipline: true },
 	see_you_later:    { label: 'See You Later',       kind: 'capability', contested: true },
 	unexpected_ally:  { label: 'Unexpected Ally',     kind: 'capability', contested: true },
 	personal_vehicle: { label: 'Personal Vehicle',    kind: 'capability', contested: true },
@@ -1780,7 +1780,8 @@ async function setBenefitPicks(actor, { picks = [], ritualDiscipline = '' } = {}
 const capWord = (s) => (s ? String(s)[0].toUpperCase() + String(s).slice(1) : String(s ?? ''));
 
 /**
- * The Rituals pick grants Ritualism (universal, always) PLUS one NAMED second discipline (contested).
+ * The Rituals pick grants Ritualism (universal, always) PLUS one NAMED second discipline (any number
+ * of characters may hold the same school — the discipline lock was withdrawn, Austin, 8 Sep 2026).
  * Ritualism is never the named second — so a named discipline of 'ritualism' (or empty) collapses to
  * just "Rituals (Ritualism)" rather than the "Ritualism + Ritualism" dupe. (POLISH-picker-ritualism-dupe.)
  */
@@ -2004,7 +2005,8 @@ function injectGuisePanel(app) {
 // UI LAYER ONLY: no AE/engine changes. The pure helpers below are unit-tested headless; the
 // Application is thin (context + form-submit + client max-2 enforcement) and QA'd live in Foundry.
 const RITUAL_DISCIPLINES = ['ritualism', 'arcanism', 'chimerism', 'elementalism', 'entropism', 'spiritism'];
-// The NAMED second discipline the Rituals pick lets you claim (contested). Ritualism is universal and
+// The NAMED second discipline the Rituals pick lets you claim (shareable — the discipline lock was
+// withdrawn, Austin, 8 Sep 2026). Ritualism is universal and
 // always granted, so it's excluded here — it's implied, never the named second (POLISH-picker-ritualism-dupe).
 const RITUAL_SECOND_DISCIPLINES = RITUAL_DISCIPLINES.filter((d) => d !== 'ritualism');
 
@@ -2023,7 +2025,8 @@ function benefitSelectionSummary(picks, ritualDiscipline) {
 function benefitPickerContext(actor) {
 	const { picks, ritualDiscipline } = getBenefitPicks(actor);
 	const sel = new Set(picks);
-	// The named SECOND discipline (contested) — never ritualism, which is universal/implied. Default to
+	// The named SECOND discipline (shareable; lock withdrawn 8 Sep 2026) — never ritualism, which is
+	// universal/implied. Default to
 	// the first real second-discipline when nothing valid is saved.
 	const saved = (ritualDiscipline || '').toLowerCase();
 	const disc = RITUAL_SECOND_DISCIPLINES.includes(saved) ? saved : RITUAL_SECOND_DISCIPLINES[0];
