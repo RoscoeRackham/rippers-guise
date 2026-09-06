@@ -5,7 +5,7 @@
 {{!-- 2. CHARACTER SUMMARY STRIP — level/torment meta + the dice (▲/▼ = guise mods). --}}
 <div class="rs-play-strip">
 	<div class="rs-play-who">
-		<span class="rs-play-meta">LEVEL {{masthead.level}} · TORMENT — {{#if play.torment}}{{play.torment}}{{else}}<span class="rs-warn">⚠</span>{{/if}}</span>
+		<span class="rs-play-meta">LEVEL {{masthead.level}} · TORMENT — {{#if play.torment}}{{play.torment}}{{else}}<span class="rs-warn">⚠</span>{{/if}}{{#unless readonly}} <button type="button" class="rs-torment-btn" data-action="tormentDialog" title="{{localize 'RIPPERS.Sheet.TormentView'}}">{{#if play.torment}}{{localize 'RIPPERS.Sheet.TormentQuestions'}}{{else}}{{localize 'RIPPERS.Sheet.TormentChoose'}}{{/if}}</button>{{/unless}}</span>
 	</div>
 	<div class="rs-play-dice">
 		{{#each play.attributes as |a|}}

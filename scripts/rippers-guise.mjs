@@ -54,6 +54,7 @@
  */
 
 import { assembleExport, renderExportHTML, exportBaseName } from './export-sheet.mjs';
+import { TORMENTS, resolveTorment } from './torments.mjs';
 
 const MODULE_ID = 'rippers-guise';
 const FLAG = 'activeGuise';
@@ -4075,8 +4076,10 @@ async function buildGuisePlayVM(actor, opts = {}) {
 		}
 	}
 	const clot = { seated: clots.length > 0, clots };
-	// Torment: character-level; authored on a flag if present, else the ⚠ hole (never invented).
-	const torment = String(actor?.getFlag?.(MODULE_ID, 'torment') ?? '').trim();
+	// Torment: character-level; resolved from the flag against the canonical eight (torments.mjs).
+	// A matched key/label shows its canonical name; unmatched free text is preserved verbatim; unset
+	// leaves '' so the strip renders the ⚠ hole. Never invented. The three questions live in the dialog.
+	const torment = resolveTorment(actor?.getFlag?.(MODULE_ID, 'torment'))?.label ?? '';
 	const bonusDescriptor = d.bonus?.descriptor ?? '';
 	// CHARACTER-BOUND heroics (Austin ruling): TWO, unlocked at character LEVEL 40 and 50. These are
 	// character-level (persist across every guise), NOT part of the guise's three. Level-gated: below
@@ -4891,6 +4894,47 @@ async function sheetPickArcana(actor, guiseId) {
 	if (pick) await guise.setFlag(MODULE_ID, ARCANA_FLAG, pick);
 	else if (guise.getFlag(MODULE_ID, ARCANA_FLAG)) await guise.unsetFlag(MODULE_ID, ARCANA_FLAG);
 }
+// ── TORMENT (narrative, no state beyond the chosen key) ──────────────────────────────────────────
+// Austin: "It should really just be a button that shows the three questions when clicked. It's mostly
+// narrative." The flag is a canonical key (torments.mjs); the picker sets it, the view lists the three
+// questions read-only. Question text is SOURCED from canon (COMPENDIUM-player-reference.md §Torments,
+// four fills ratified 6 Sep 2026) — never typed here. Unmatched legacy free text is preserved (resolver).
+const tormentEsc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+/** Picker over the canonical eight → writes the KEY to the flag. Pre-selects the current value. */
+async function openTormentPicker(actor) {
+	if (!actor?.setFlag) return;
+	const L = (k, f) => globalThis.game?.i18n?.localize?.(k) ?? f;
+	const cur = String(actor.getFlag?.(MODULE_ID, 'torment') ?? '').trim().toLowerCase();
+	const opts = TORMENTS.map((t) => `<option value="${t.key}"${(t.key === cur || t.label.toLowerCase() === cur) ? ' selected' : ''}>${tormentEsc(t.label)}</option>`).join('');
+	const title = L('RIPPERS.Sheet.TormentChoose', 'Choose a Torment');
+	const content = `<div class="rg-torment-picker"><p>${tormentEsc(L('RIPPERS.Sheet.TormentPickMsg', 'Your Torment rides through every mask. Choose one of the eight:'))}</p>`
+		+ `<div class="form-group"><label>${tormentEsc(L('RIPPERS.Sheet.Torment', 'Torment'))} </label><select name="torment">${opts}</select></div></div>`;
+	const okLabel = L('RIPPERS.Sheet.TormentSet', 'Set Torment');
+	const DV2 = foundry?.applications?.api?.DialogV2;
+	let key = null;
+	if (DV2?.prompt) key = await DV2.prompt({ window: { title }, content, ok: { label: okLabel, callback: (_e, b) => b.form?.elements?.torment?.value ?? null }, rejectClose: false }).catch(() => null);
+	else { const Dlg = globalThis.Dialog; if (!Dlg) return; key = await new Promise((res) => new Dlg({ title, content, buttons: { ok: { label: okLabel, callback: (h) => res((h[0] ?? h).querySelector('select[name=torment]')?.value ?? null) }, cancel: { label: L('RIPPERS.Sheet.Cancel', 'Cancel'), callback: () => res(null) } }, default: 'ok', close: () => res(null) }).render(true)); }
+	if (key) await actor.setFlag(MODULE_ID, 'torment', key);
+}
+/** The Torment button: unset → picker; set → a read-only dialog of the three questions (with Change). */
+async function showTormentDialog(actor) {
+	if (!actor) return;
+	const t = resolveTorment(actor.getFlag?.(MODULE_ID, 'torment'));
+	if (!t) return openTormentPicker(actor);            // unset resolves via the picker
+	const L = (k, f) => globalThis.game?.i18n?.localize?.(k) ?? f;
+	const body = t.questions.length
+		? `<ol class="rg-torment-qs">${t.questions.map((q) => `<li>${tormentEsc(q)}</li>`).join('')}</ol>`
+		: `<p class="rg-torment-custom">${tormentEsc(L('RIPPERS.Sheet.TormentCustomNote', 'This Torment is not one of the canonical eight, so it carries no set questions. Choose one of the eight to see its questions.'))}</p>`;
+	const content = `<div class="rg-torment-view"><h3>${tormentEsc(t.label)}</h3>${t.description ? `<p class="rg-torment-desc"><em>${tormentEsc(t.description)}</em></p>` : ''}${body}</div>`;
+	const title = L('RIPPERS.Sheet.TormentView', 'Torment — the questions you may always ask');
+	const changeLbl = L('RIPPERS.Sheet.TormentChange', 'Change');
+	const closeLbl = L('RIPPERS.Sheet.Close', 'Close');
+	const DV2 = foundry?.applications?.api?.DialogV2;
+	let r = 'close';
+	if (DV2?.wait) r = await DV2.wait({ window: { title }, content, buttons: [{ action: 'change', label: changeLbl }, { action: 'close', label: closeLbl, default: true }], rejectClose: false }).catch(() => 'close');
+	else { const Dlg = globalThis.Dialog; if (!Dlg) return; r = await new Promise((res) => new Dlg({ title, content, buttons: { change: { label: changeLbl, callback: () => res('change') }, close: { label: closeLbl, callback: () => res('close') } }, default: 'close', close: () => res('close') }).render(true)); }
+	if (r === 'change') await openTormentPicker(actor);
+}
 /** The Swap button: worn → unmask; else wear the first roster guise (the picker gives precise choice). */
 async function sheetGuiseSwap(actor) {
 	if (!actor) return;
@@ -5297,6 +5341,7 @@ function getRippersActorSheetClass() {
 				selectTab: RippersActorSheet.onSelectTab,
 				exportSheet: RippersActorSheet.onExportSheet,
 				openEvidenceBoard: RippersActorSheet.onOpenEvidenceBoard,
+				tormentDialog: RippersActorSheet.onTormentDialog,
 				guiseWear: RippersActorSheet.onGuiseWear,
 				pickArcana: RippersActorSheet.onPickArcana,
 				toggleFace: RippersActorSheet.onToggleFace,
@@ -5561,6 +5606,7 @@ function getRippersActorSheetClass() {
 		// GM-gated (Austin: players may focus-hop; rdb seals cards + gates verbs internally). Safe no-op
 		// if the module/api is absent (the button is also hidden then via the vm.evidenceBoard guard).
 		static onOpenEvidenceBoard() { globalThis.game?.modules?.get?.('rippers-deeper-bonds')?.api?.openEvidenceBoard?.(this.actor); }
+		static async onTormentDialog() { await showTormentDialog(this.document); this.render(); }
 		static async onGuiseWear(event, target) { const id = target?.dataset?.guise; if (!id) return; this._previewGuiseId = null; try { await sheetGuiseWear(this.document, id); } catch (err) { console.warn('[rippers-guise] guise wear/swap failed:', err); } finally { this.render(); } }
 		static async onPickArcana(event, target) { const id = target?.dataset?.guise; if (!id) return; try { await sheetPickArcana(this.document, id); } catch (err) { console.warn('[rippers-guise] arcana pick failed:', err); } finally { this.render(); } }
 		static async onToggleFace() { await sheetToggleFace(this.document); this.render(); }
