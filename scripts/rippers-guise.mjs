@@ -4848,24 +4848,47 @@ async function fuInventoryPipeline() {
 
 const TRADE_SOCKET_ID = `module.${MODULE_ID}`;
 const TRADE_GIVE_ACTION = 'giveItem';
+const TRADE_DECLINE_ACTION = 'giveItemDeclined';
 
-/** GM-side handler: execute a partial-quantity item split (N of M from source → target). */
-async function _gmHandleItemSplit({ srcUuid, itemUuid, targetUuid, qty }) {
+/**
+ * GM-side handler: confirm + execute a partial-quantity item split (N of M from source → target).
+ * D4: 'GM approves' — partial splits are NOT silent; GM sees a confirm dialog before execution.
+ * If declined, the initiating player (by userId in the payload) is notified via socket.
+ */
+async function _gmHandleItemSplit({ srcUuid, itemUuid, targetUuid, qty, userId }) {
 	const item = globalThis.fromUuidSync?.(itemUuid);
 	const targetActor = globalThis.fromUuidSync?.(targetUuid);
 	if (!item || !targetActor) return;
 	const maxQty = Math.max(1, Number(item.system?.quantity?.value) || 1);
 	const n = Math.min(Math.max(1, Number(qty) || 1), maxQty);
-	// Clone with adjusted quantity and create on the target actor
+	const srcName = item.parent?.name ?? '?';
+
+	// GM confirm dialog — names source, target, item, qty; uses wrapper-object pattern (no DialogV2 substitution)
+	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+	if (DialogV2) {
+		const res = await DialogV2.wait({
+			window: { title: 'Approve item transfer?' },
+			content: `<p><strong>${escHtmlTrade(srcName)}</strong> wants to give <strong>${n > 1 ? `${n}× ` : ''}${escHtmlTrade(item.name)}</strong> to <strong>${escHtmlTrade(targetActor.name)}</strong>.</p>`,
+			buttons: [
+				{ action: 'approve', label: 'Approve', default: true, callback: () => ({ approve: true }) },
+				{ action: 'decline', label: 'Decline', callback: () => ({ approve: false }) },
+			],
+		});
+		if (!res || !res.approve) {
+			// Notify the initiating player that the transfer was declined
+			if (userId) globalThis.game?.socket?.emit?.(TRADE_SOCKET_ID, { action: TRADE_DECLINE_ACTION, userId, itemName: item.name, qty: n, targetName: targetActor.name });
+			return;
+		}
+	}
+
+	// Execute the split
 	const cloned = item.toObject();
 	if (cloned.system?.quantity) cloned.system.quantity.value = n;
 	await targetActor.createEmbeddedDocuments('Item', [cloned]);
-	// Update source: delete if giving all, else decrement
 	if (n >= maxQty) await item.delete();
 	else await item.update({ 'system.quantity.value': maxQty - n });
-	const srcName = item.parent?.name ?? '?';
 	await globalThis.ChatMessage?.create?.({
-		content: `<p>${srcName} gave <strong>${n > 1 ? `${n}× ` : ''}${item.name}</strong> to ${targetActor.name}.</p>`,
+		content: `<p>${escHtmlTrade(srcName)} gave <strong>${n > 1 ? `${n}× ` : ''}${escHtmlTrade(item.name)}</strong> to ${escHtmlTrade(targetActor.name)}.</p>`,
 	});
 }
 
@@ -4958,8 +4981,9 @@ async function executeItemGive(actor, item, targetUuid, qty) {
 		await globalThis.game.projectfu?.socket?.requestTrade?.(actor.uuid, item.uuid, false, targetUuid, { shift: true });
 	} else {
 		// Partial split — route to GM via module socket
-		globalThis.game?.socket?.emit?.(TRADE_SOCKET_ID, { action: TRADE_GIVE_ACTION, srcUuid: actor.uuid, itemUuid: item.uuid, targetUuid, qty: n });
-		globalThis.ui?.notifications?.info?.(`Sending ${n}× ${item.name} — the GM is processing the transfer.`);
+		const userId = globalThis.game?.user?.id;
+		globalThis.game?.socket?.emit?.(TRADE_SOCKET_ID, { action: TRADE_GIVE_ACTION, srcUuid: actor.uuid, itemUuid: item.uuid, targetUuid, qty: n, userId });
+		globalThis.ui?.notifications?.info?.(`Sending ${n}× ${item.name} — waiting for GM approval.`);
 	}
 }
 
@@ -6301,8 +6325,15 @@ Hooks.once('ready', async () => {
 	// PC-to-PC trading: GM-side handler for partial-quantity item splits.
 	// Players emit TRADE_GIVE_ACTION via the module socket; only the active GM processes it.
 	globalThis.game?.socket?.on?.(TRADE_SOCKET_ID, async (payload) => {
-		if (payload?.action !== TRADE_GIVE_ACTION || !globalThis.game?.user?.isGM) return;
-		await _gmHandleItemSplit(payload);
+		// GM-side: execute/confirm partial item split
+		if (payload?.action === TRADE_GIVE_ACTION && globalThis.game?.user?.isGM) {
+			await _gmHandleItemSplit(payload);
+		}
+		// Player-side: receive decline notification from GM
+		if (payload?.action === TRADE_DECLINE_ACTION && globalThis.game?.user?.id === payload.userId) {
+			const label = payload.qty > 1 ? `${payload.qty}× ${payload.itemName}` : payload.itemName;
+			globalThis.ui?.notifications?.warn?.(`Transfer declined by GM: ${label} → ${payload.targetName}.`);
+		}
 	});
 	registerSpecialtyBumpHooks();
 	// PERF: warm the compendium pack INDICES when the link is idle (index-only, never on the critical
