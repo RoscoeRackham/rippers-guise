@@ -3912,6 +3912,7 @@ function buildInventoryVM(actor) {
 			fields: spec.fields.map(([label, path]) => ({ label, val: rsDotGet(it, path) ?? '—' })),
 			equippable: !!spec.equip && itemEquippable(it.type), equipped: !!spec.equip && isEq(it),
 			usable: !!spec.use,
+			qty: Math.max(1, Number(rsDotGet(it, 'system.quantity.value')) || 1),
 		}));
 		return { type: spec.type, label: spec.label, items, any: items.length > 0 };
 	});
@@ -4812,6 +4813,7 @@ const FU_IMPORT = {
 	resource: '/systems/projectfu/module/pipelines/resource-pipeline.mjs',
 	effects: '/systems/projectfu/module/pipelines/effects.mjs',
 	inline: '/systems/projectfu/module/helpers/inline-helper.mjs',
+	inventory: '/systems/projectfu/module/pipelines/inventory-pipeline.mjs',
 };
 let _fuAdapter = null;
 async function fuAdapter() {
@@ -4819,6 +4821,174 @@ async function fuAdapter() {
 	const [rp, ef, ih] = await Promise.all([import(FU_IMPORT.resource), import(FU_IMPORT.effects), import(FU_IMPORT.inline)]);
 	_fuAdapter = { ResourceRequest: rp.ResourceRequest, ResourcePipeline: rp.ResourcePipeline, Effects: ef.Effects, InlineSourceInfo: ih.InlineSourceInfo };
 	return _fuAdapter;
+}
+
+// ── PC-to-PC TRADING (item give + zenit send) ─────────────────────────────────
+// FU already ships requestTrade + requestZenitTransfer via game.projectfu.socket.
+// We expose these from a player-facing button on each item row and in the zenit controls.
+// For partial-quantity splits (give N of M), a module socket routes the write to the GM
+// since players cannot write to another player's actor directly.
+//
+// GUARD: both FU transports require game.users.activeGM — we check before opening dialogs.
+// NOTE: InventoryPipeline is not on game.projectfu; dynamic-import at the system path (same pattern
+// as resource/effects above). Fail-soft: if the path drifts the feature degrades with a warn.
+
+let _fuInventoryPipeline = null;
+async function fuInventoryPipeline() {
+	if (_fuInventoryPipeline) return _fuInventoryPipeline;
+	try {
+		const mod = await import(FU_IMPORT.inventory);
+		_fuInventoryPipeline = mod.InventoryPipeline ?? null;
+	} catch (err) {
+		console.warn(`${MODULE_ID} | could not load FU InventoryPipeline (version drift?)`, err);
+		_fuInventoryPipeline = null;
+	}
+	return _fuInventoryPipeline;
+}
+
+const TRADE_SOCKET_ID = `module.${MODULE_ID}`;
+const TRADE_GIVE_ACTION = 'giveItem';
+
+/** GM-side handler: execute a partial-quantity item split (N of M from source → target). */
+async function _gmHandleItemSplit({ srcUuid, itemUuid, targetUuid, qty }) {
+	const item = globalThis.fromUuidSync?.(itemUuid);
+	const targetActor = globalThis.fromUuidSync?.(targetUuid);
+	if (!item || !targetActor) return;
+	const maxQty = Math.max(1, Number(item.system?.quantity?.value) || 1);
+	const n = Math.min(Math.max(1, Number(qty) || 1), maxQty);
+	// Clone with adjusted quantity and create on the target actor
+	const cloned = item.toObject();
+	if (cloned.system?.quantity) cloned.system.quantity.value = n;
+	await targetActor.createEmbeddedDocuments('Item', [cloned]);
+	// Update source: delete if giving all, else decrement
+	if (n >= maxQty) await item.delete();
+	else await item.update({ 'system.quantity.value': maxQty - n });
+	const srcName = item.parent?.name ?? '?';
+	await globalThis.ChatMessage?.create?.({
+		content: `<p>${srcName} gave <strong>${n > 1 ? `${n}× ` : ''}${item.name}</strong> to ${targetActor.name}.</p>`,
+	});
+}
+
+/** PURE helper: is a character actor different from selfActor and available for trading? */
+function tradingPartners(selfActor) {
+	return partyActors(selfActor).filter((a) => a.id !== selfActor?.id);
+}
+
+/** PURE: can this item be given? Equipped items must be unequipped first. */
+export function canGiveItem(item, equipped) { return !equipped; }
+
+/** PURE: parse qty from the dialog form. Clamps to [1, maxQty]. */
+export function parseGiveQty(rawQty, maxQty) {
+	const n = Number(rawQty);
+	return Number.isFinite(n) ? Math.min(Math.max(1, Math.round(n)), maxQty) : maxQty;
+}
+
+function escHtmlTrade(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+/** Open the Give dialog for an inventory item. Returns { targetUuid, qty } or null on cancel. */
+async function openGiveDialog(actor, item) {
+	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+	if (!DialogV2) return null;
+	const partners = tradingPartners(actor);
+	if (!partners.length) {
+		globalThis.ui?.notifications?.warn?.('No other characters available to give to.');
+		return null;
+	}
+	const maxQty = Math.max(1, Number(item.system?.quantity?.value) || 1);
+	const stackable = maxQty > 1;
+	const opts = partners.map((a) => `<option value="${escHtmlTrade(a.uuid)}">${escHtmlTrade(a.name)}</option>`).join('');
+	const qtyRow = stackable
+		? `<div style="margin-top:8px"><label>Quantity: <input type="number" name="qty" value="${maxQty}" min="1" max="${maxQty}" style="width:5em"></label> of ${maxQty} available</div>`
+		: '';
+	const result = await DialogV2.wait({
+		window: { title: `Give ${item.name}` },
+		content: `<form><label>Give to:<br><select name="target" style="width:100%;margin-top:4px">${opts}</select></label>${qtyRow}</form>`,
+		buttons: [
+			{ action: 'ok', label: 'Give', default: true, callback: (_ev, btn) => {
+				const targetUuid = btn.form.querySelector('select[name="target"]').value;
+				const qty = stackable ? parseGiveQty(btn.form.querySelector('input[name="qty"]').value, maxQty) : 1;
+				return { targetUuid, qty };
+			}},
+			{ action: 'cancel', label: 'Cancel', callback: () => ({ cancel: true }) },
+		],
+	});
+	if (!result || result.cancel) return null;
+	return result;
+}
+
+/** Open the Send Zenit dialog. Returns { targetUuid, amount } or null on cancel. */
+async function openZenitSendDialog(actor) {
+	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+	if (!DialogV2) return null;
+	const partners = tradingPartners(actor);
+	if (!partners.length) {
+		globalThis.ui?.notifications?.warn?.('No other characters available to send zenit to.');
+		return null;
+	}
+	const myZenit = Number(actor.system?.resources?.zenit?.value ?? 0);
+	const opts = partners.map((a) => `<option value="${escHtmlTrade(a.uuid)}">${escHtmlTrade(a.name)}</option>`).join('');
+	const result = await DialogV2.wait({
+		window: { title: 'Send Zenit' },
+		content: `<form><label>To:<br><select name="target" style="width:100%;margin-top:4px">${opts}</select></label><div style="margin-top:8px"><label>Amount: <input type="number" name="amount" value="0" min="1" max="${myZenit}" style="width:6em"></label> (you have ${myZenit})</div></form>`,
+		buttons: [
+			{ action: 'ok', label: 'Send', default: true, callback: (_ev, btn) => {
+				const targetUuid = btn.form.querySelector('select[name="target"]').value;
+				const amount = Math.min(myZenit, Math.max(1, Number(btn.form.querySelector('input[name="amount"]').value) || 0));
+				return { targetUuid, amount };
+			}},
+			{ action: 'cancel', label: 'Cancel', callback: () => ({ cancel: true }) },
+		],
+	});
+	if (!result || result.cancel) return null;
+	if (!result.amount || result.amount < 1) return null;
+	return result;
+}
+
+/** Execute item give: "give all" uses FU's requestTrade (GM approval dialog); partial uses module socket. */
+async function executeItemGive(actor, item, targetUuid, qty) {
+	if (!globalThis.game?.users?.activeGM) {
+		globalThis.ui?.notifications?.warn?.('An active GM is required to transfer items.');
+		return;
+	}
+	const maxQty = Math.max(1, Number(item.system?.quantity?.value) || 1);
+	const n = Math.min(Math.max(1, qty), maxQty);
+	if (n >= maxQty) {
+		// Give all — use FU's own requestTrade (GM approval dialog, chat card, item move)
+		// shift:true ensures consumables are also deleted from source (not kept)
+		await globalThis.game.projectfu?.socket?.requestTrade?.(actor.uuid, item.uuid, false, targetUuid, { shift: true });
+	} else {
+		// Partial split — route to GM via module socket
+		globalThis.game?.socket?.emit?.(TRADE_SOCKET_ID, { action: TRADE_GIVE_ACTION, srcUuid: actor.uuid, itemUuid: item.uuid, targetUuid, qty: n });
+		globalThis.ui?.notifications?.info?.(`Sending ${n}× ${item.name} — the GM is processing the transfer.`);
+	}
+}
+
+/** Execute zenit send: routes to FU's requestZenitTransfer (GM validates funds, posts chat). */
+async function executeZenitSend(actor, targetUuid, amount) {
+	if (!globalThis.game?.users?.activeGM) {
+		globalThis.ui?.notifications?.warn?.('An active GM is required to send zenit.');
+		return;
+	}
+	await globalThis.game.projectfu?.socket?.requestZenitTransfer?.(actor.uuid, targetUuid, amount);
+}
+
+/** Guard and trigger FU's party-sheet deposit. Warns instead of silently no-opping (F2 fix). */
+async function executeZenitDeposit(actor) {
+	if (!globalThis.game?.users?.activeGM) {
+		globalThis.ui?.notifications?.warn?.('An active GM is required to deposit zenit to the party sheet.');
+		return;
+	}
+	const party = await globalThis.game?.projectfu?.party?.getActive?.();
+	if (!party) {
+		globalThis.ui?.notifications?.warn?.('No party sheet is configured — ask the GM to set one up (Party sheet tab → Make Active).');
+		return;
+	}
+	const inv = await fuInventoryPipeline();
+	if (!inv?.promptPartyZenitTransfer) {
+		globalThis.ui?.notifications?.warn?.('FU inventory pipeline unavailable — cannot deposit zenit.');
+		return;
+	}
+	inv.promptPartyZenitTransfer(actor, 'deposit');
 }
 
 /** HP/MP/IP damage (amount<0) or heal (amount>0) via FU's ResourcePipeline — ResourceRequest's amount
@@ -5365,7 +5535,10 @@ function getRippersActorSheetClass() {
 				effectDelete: RippersActorSheet.onEffectDelete,
 				itemEquip: RippersActorSheet.onItemEquip,
 				itemUse: RippersActorSheet.onItemUse,
+				itemGive: RippersActorSheet.onItemGive,
 				itemDelete: RippersActorSheet.onItemDelete,
+				zenitSend: RippersActorSheet.onZenitSend,
+				zenitDeposit: RippersActorSheet.onZenitDeposit,
 				spellAdd: RippersActorSheet.onSpellAdd,
 				rollCheck: RippersActorSheet.onRollCheck,
 				toggleRivalWaiver: RippersActorSheet.onToggleRivalWaiver,
@@ -5777,6 +5950,27 @@ function getRippersActorSheetClass() {
 			this.render();
 		}
 		static async onItemUse(event, target) { const it = this.document.items?.get?.(target?.dataset?.item); if (it?.roll) { try { await it.roll(); } catch (err) { console.warn('[rippers-guise] item use failed:', err); } } }
+		static async onItemGive(event, target) {
+			const it = this.document?.items?.get?.(target?.dataset?.item);
+			if (!it) return;
+			const equipped = !!this.document?.system?.equipped?.isEquipped?.(it);
+			if (!canGiveItem(it, equipped)) {
+				globalThis.ui?.notifications?.warn?.('Unequip this item before giving it.');
+				return;
+			}
+			const picked = await openGiveDialog(this.document, it);
+			if (!picked) return;
+			await executeItemGive(this.document, it, picked.targetUuid, picked.qty);
+			this.render();
+		}
+		static async onZenitSend(event, target) {
+			const picked = await openZenitSendDialog(this.document);
+			if (!picked) return;
+			await executeZenitSend(this.document, picked.targetUuid, picked.amount);
+		}
+		static async onZenitDeposit(event, target) {
+			await executeZenitDeposit(this.document);
+		}
 		static async onItemDelete(event, target) {
 			const id = target?.dataset?.item; if (!id) return;
 			try { await this.document.deleteEmbeddedDocuments('Item', [id]); }
@@ -6104,6 +6298,12 @@ function scheduleGuisePackPrewarm() {
 }
 
 Hooks.once('ready', async () => {
+	// PC-to-PC trading: GM-side handler for partial-quantity item splits.
+	// Players emit TRADE_GIVE_ACTION via the module socket; only the active GM processes it.
+	globalThis.game?.socket?.on?.(TRADE_SOCKET_ID, async (payload) => {
+		if (payload?.action !== TRADE_GIVE_ACTION || !globalThis.game?.user?.isGM) return;
+		await _gmHandleItemSplit(payload);
+	});
 	registerSpecialtyBumpHooks();
 	// PERF: warm the compendium pack INDICES when the link is idle (index-only, never on the critical
 	// path — a high-latency link must not have its first sheet render starved by a warm-up). Content

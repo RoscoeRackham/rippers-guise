@@ -430,6 +430,12 @@
 .rippers-sheet .rs-play-turn { opacity: .8; }
 
 /* ── v0.7.29: THE GUISE play surface skinned to the Design mockup (2a "The Slash") ────────────────── */
+/* PC-to-PC trading — Give button on inventory rows + zenit controls */
+.rippers-sheet .rs-chip-give-blocked { opacity: .45; cursor: not-allowed; }
+.rippers-sheet .rs-chip-give-blocked:hover { border-color: var(--rs-border); color: var(--rs-bone); }
+.rippers-sheet .rs-zenit-row { gap: 8px; align-items: center; }
+.rippers-sheet .rs-zenit-label { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--rs-bone-dim); margin-right: 4px; }
+.rippers-sheet .rs-zenit-label b { color: var(--rs-bone); font-size: 13px; }
 /* ⚠ DEMOTED — authoring debt is a to-do, not a danger. Red belongs to live emergencies only.
    Quiet dashed-slot treatment: dim ink, normal weight. Dashed container already handled by rs-dashed. */
 .rippers-sheet .rs-warn { color: var(--rs-muted); font-weight: 400; }

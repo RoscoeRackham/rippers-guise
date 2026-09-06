@@ -72,6 +72,12 @@
 					{{!-- H2: manual face toggle (normal ↔ other-shape) — shown only when a face is configured. --}}
 					{{#if vm.faces.canToggle}}<button type="button" class="rs-chip{{#if vm.faces.onOther}} rs-chip-on{{/if}}" data-action="toggleFace" title="{{localize 'RIPPERS.Sheet.ToggleFaceHint'}}">{{localize 'RIPPERS.Sheet.OtherShape'}}</button>{{/if}}
 				</div>
+				{{!-- Zenit controls: Send to another PC + Deposit to party (F2 fix: deposit warns when no party actor/GM) --}}
+				<div class="rs-floor-row rs-zenit-row">
+					<span class="rs-zenit-label">{{localize 'RIPPERS.Sheet.Zenit'}} <b>{{vm.vitals.zenit}}</b></span>
+					<button type="button" class="rs-chip" data-action="zenitSend" title="{{localize 'RIPPERS.Sheet.ZenitSendHint'}}">{{localize 'RIPPERS.Sheet.ZenitSend'}}</button>
+					<button type="button" class="rs-chip rs-chip-more" data-action="zenitDeposit" title="{{localize 'RIPPERS.Sheet.ZenitDepositHint'}}">{{localize 'RIPPERS.Sheet.ZenitDeposit'}}</button>
+				</div>
 			</div>
 
 			{{!-- Swap column --}}
@@ -485,6 +491,11 @@
 									<span class="rs-inv-controls">
 										{{#if it.equippable}}<button type="button" class="rs-chip" data-action="itemEquip" data-item="{{it.id}}">{{#if it.equipped}}{{localize 'RIPPERS.Sheet.Unequip'}}{{else}}{{localize 'RIPPERS.Sheet.Equip'}}{{/if}}</button>{{/if}}
 										{{#if it.usable}}<button type="button" class="rs-chip" data-action="itemUse" data-item="{{it.id}}">{{localize 'RIPPERS.Sheet.Use'}}</button>{{/if}}
+										{{#if it.equipped}}
+											<button type="button" class="rs-chip rs-chip-give rs-chip-give-blocked" data-action="itemGive" data-item="{{it.id}}" disabled title="{{localize 'RIPPERS.Sheet.GiveEquippedHint'}}">{{localize 'RIPPERS.Sheet.Give'}}</button>
+										{{else}}
+											<button type="button" class="rs-chip rs-chip-give" data-action="itemGive" data-item="{{it.id}}" title="{{#if it.qty}}{{it.qty}}× available{{else}}Give to another character{{/if}}">{{localize 'RIPPERS.Sheet.Give'}}</button>
+										{{/if}}
 										<button type="button" class="rs-chip" data-action="itemSheet" data-item="{{it.id}}" title="{{localize 'RIPPERS.Sheet.OpenItem'}}">⚙</button>
 										<button type="button" class="rs-chip rs-chip-danger" data-action="itemDelete" data-item="{{it.id}}" title="{{localize 'RIPPERS.Sheet.ItemDelete'}}">✕</button>
 									</span>
