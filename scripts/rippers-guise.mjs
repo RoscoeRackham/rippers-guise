@@ -3782,8 +3782,9 @@ Hooks.on('renderFUStandardActorSheet', (app) => injectGuisePanel(app));
 // RIPPERS CHARACTER SHEET — custom Actor sheet, Architecture B (SHEET-SKIN-SPIKE.md, 4 Sep 2026).
 // Our own ApplicationV2 ActorSheetV2 view over FU's stable engine data — NOT a subclass of FU's own
 // sheet (FU is mid AppV1->AppV2 migration; a subclass would inherit that breaking rewrite; a parallel
-// view over the DataModel layer is insulated). Registered user-selectable (makeDefault:false) so it
-// never steals the default. PHASE 1 = READ-ONLY faithful render of real actor.system.* (no control
+// view over the DataModel layer is insulated). ✎ 9 Sep 2026: registered as the WORLD DEFAULT for
+// character actors (owner ruling, audit F1); per-actor sheet config still overrides back to stock.
+// PHASE 1 = READ-ONLY faithful render of real actor.system.* (no control
 // wiring — that is Phase 2). All FU read paths verified against the projectfu dev checkout.
 // Skin: the Rippers Design System language (blood/bone/violet, notch-clipped cards) — its exact 2a
 // "Slash" Foundry-sheet canvas was not reachable this build, so the visual is grounded in the readable
@@ -5794,15 +5795,18 @@ function getRippersActorSheetClass() {
 	_RippersActorSheet = RippersActorSheet;
 	return RippersActorSheet;
 }
-/** Register the Rippers character sheet as an ALTERNATIVE (user-selectable, never default). */
+/** Register the Rippers character sheet as the WORLD DEFAULT for character actors (owner ruling on
+ * AUDIT-player-pov-sheet F1, 9 Sep 2026 — a fresh player otherwise lands on stock FU and never sees
+ * the guise surface). Per-actor sheet config can still override back to stock FU — that is native
+ * `core.sheetClass` behavior and existing per-actor configs are untouched by a default change. */
 function registerRippersSheet() {
 	try {
 		const Actors = foundry.documents?.collections?.Actors ?? globalThis.Actors;
 		if (!Actors?.registerSheet) { console.warn('[rippers-guise] Actors.registerSheet unavailable — Rippers sheet not registered.'); return; }
 		Actors.registerSheet(MODULE_ID, getRippersActorSheetClass(), {
-			types: ['character'], makeDefault: false, label: 'RIPPERS.Sheet.Label',
+			types: ['character'], makeDefault: true, label: 'RIPPERS.Sheet.Label',
 		});
-		console.log(`[${MODULE_ID}] registered the Rippers character sheet (alternative, user-selectable, read-only P1).`);
+		console.log(`[${MODULE_ID}] registered the Rippers character sheet (world default; per-actor override available).`);
 	} catch (err) { console.error('[rippers-guise] Rippers sheet registration failed:', err); }
 }
 Hooks.once('setup', registerRippersSheet);
