@@ -26,7 +26,10 @@
 
 /* ── Slash frame ──────────────────────────────────────── */
 .rippers-sheet .rs-frame { position: relative; overflow: hidden; background: var(--rs-bg); border: 1px solid var(--rs-border); box-shadow: 0 30px 80px rgba(0,0,0,.65); min-height: 100%; }
-.rippers-sheet .rs-slash-red { position: absolute; top: -120px; left: -140px; width: 640px; height: 430px; background: var(--rs-red); transform: rotate(-9deg); pointer-events: none; }
+/* Red-legibility ruling (Austin, override of the mock): the big masthead slash is a DARK BLOOD ground,
+   not a saturated-red field — text sits on dark, red returns to accent (Swap, borders, active tab, bars).
+   Nothing eye-searing/glowing at rest. */
+.rippers-sheet .rs-slash-red { position: absolute; top: -120px; left: -140px; width: 640px; height: 430px; background: #8c1c26; transform: rotate(-9deg); pointer-events: none; }
 .rippers-sheet .rs-slash-dark { position: absolute; top: -120px; left: 430px; width: 70px; height: 460px; background: #1a0e12; transform: rotate(-9deg); pointer-events: none; }
 .rippers-sheet .rs-grain { position: absolute; top: 0; left: 0; right: 0; height: 320px; background-image: radial-gradient(circle, rgba(232,220,203,.07) 1px, transparent 1px); background-size: 9px 9px; pointer-events: none; }
 .rippers-sheet .rs-watermark { position: absolute; top: 110px; right: -30px; font-family: var(--rs-verb); font-size: 360px; line-height: 1; color: rgba(200,16,42,.14); transform: rotate(-9deg); pointer-events: none; user-select: none; }
@@ -71,6 +74,11 @@
 .rippers-sheet .rs-step { display: inline-flex; gap: 3px; margin-top: 0; } /* compact masthead: stepper sits inline, right of the number */
 .rippers-sheet .rs-step button { font-family: var(--rs-mono); font-size: 11px; font-weight: 600; width: 16px; height: 16px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); line-height: 1; }
 .rippers-sheet .rs-step button:hover { border-color: var(--rs-red); color: #fff; }
+/* Fabula Spend is a text button, NOT a ±-glyph stepper: size to its label with a clear gap
+   from the value (the .rs-stat column-gap separates them), so it never renders flush ("3Spend"). */
+.rippers-sheet .rs-spend { display: inline-flex; }
+.rippers-sheet .rs-spend button { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; width: auto; height: 16px; padding: 0 7px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); line-height: 1; white-space: nowrap; }
+.rippers-sheet .rs-spend button:hover { border-color: var(--rs-red); color: #fff; }
 
 /* Attributes row: ONE line, never wraps. Abbreviated labels (DEX/INS/MIG/WLP) + nowrap + a small nudge
    down keep Level + all four attributes on a single line at header width. Die value stays bold. */
@@ -91,7 +99,9 @@
 /* label the picker so it reads as 'click a guise to wear it', distinct from the quick Swap button */
 .rippers-sheet .rs-guise-picker-k { font-family: var(--rs-mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rs-bone-dim); padding: 2px 2px 4px; }
 /* compact masthead: cap the picker height and scroll — keeps every guise reachable without blowing 160px */
-.rippers-sheet .rs-guise-picker { display: flex; flex-direction: column; gap: 3px; background: var(--rs-bg); padding: 4px; border: 1px solid var(--rs-border); max-height: 62px; overflow-y: auto; }
+/* Misalignment fix (Austin live shot): 62px clipped the 2nd row mid-height. Give the dropdown room for
+   a few rows before it scrolls, so rows never render half-cut. */
+.rippers-sheet .rs-guise-picker { display: flex; flex-direction: column; gap: 3px; background: var(--rs-bg); padding: 4px; border: 1px solid var(--rs-border); max-height: 132px; overflow-y: auto; }
 .rippers-sheet .rs-guise-pick { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-family: var(--rs-mono); font-size: 11px; padding: 3px 8px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-panel); color: var(--rs-bone-dim); text-align: left; }
 .rippers-sheet .rs-guise-pick:hover { border-color: var(--rs-red); color: var(--rs-bone); }
 .rippers-sheet .rs-guise-pick.rs-worn { border-color: var(--rs-red); color: #fff; background: #12080a; }
@@ -132,7 +142,7 @@
 .rippers-sheet .rs-classcard-name { font-family: var(--rs-disp); font-weight: 800; font-size: 20px; line-height: 1.2; color: var(--rs-bone); }
 .rippers-sheet .rs-skillrow { display: flex; justify-content: space-between; margin-top: 8px; font-family: var(--rs-mono); font-size: 13px; color: var(--rs-bone-dim); }
 .rippers-sheet .rs-skillrow b { font-weight: 600; color: var(--rs-bone); }
-.rippers-sheet .rs-heroic { align-self: flex-start; background: var(--rs-red); padding: 6px 16px; transform: skewX(-10deg); display: flex; align-items: baseline; gap: 12px; }
+.rippers-sheet .rs-heroic { align-self: flex-start; background: var(--rs-red); color: #fff; padding: 6px 16px; transform: skewX(-10deg); display: flex; align-items: baseline; gap: 12px; }
 .rippers-sheet .rs-heroic > * { transform: skewX(10deg); }
 .rippers-sheet .rs-heroic-label { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .16em; color: rgba(255,255,255,.85); }
 .rippers-sheet .rs-heroic-name { font-family: var(--rs-disp); font-weight: 800; font-size: 18px; line-height: 1.15; color: #fff; }
