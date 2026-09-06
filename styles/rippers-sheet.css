@@ -64,7 +64,16 @@
 .rippers-sheet .rs-stat-num { font-family: var(--rs-mono); font-weight: 600; font-size: 19px; line-height: 1; color: #fff; }
 .rippers-sheet .rs-stat-small .rs-stat-num { font-size: 15px; color: var(--rs-bone); }
 .rippers-sheet .rs-stat-sub { font-family: var(--rs-mono); font-size: 9px; letter-spacing: .1em; color: var(--rs-bone-dim); }
-.rippers-sheet .rs-stat-crisis-on .rs-stat-sub { color: var(--rs-vuln); font-weight: 600; }
+/* TIER B — HP CRISIS: bone-inversion slab (bone #e8dccb ground, blood #8c1c26 ink, 3-double top rule).
+   AA: blood ink #8c1c26 on bone #e8dccb = 6.73:1. Word + shape (▲ chevron) + colour — never colour alone. */
+.rippers-sheet .rs-stat-crisis-on { background: #e8dccb; border-top: 3px double #8c1c26; padding-left: 20px; position: relative; }
+.rippers-sheet .rs-stat-crisis-on::before { content: '▲'; position: absolute; left: 5px; top: 50%; transform: translateY(-50%); color: #8c1c26; font-size: 9px; line-height: 1; }
+.rippers-sheet .rs-stat-crisis-on .rs-stat-label,
+.rippers-sheet .rs-stat-crisis-on .rs-stat-num,
+.rippers-sheet .rs-stat-crisis-on .rs-lent-num { color: #8c1c26; }
+.rippers-sheet .rs-stat-crisis-on .rs-stat-sub { color: #8c1c26; font-weight: 700; text-transform: uppercase; }
+.rippers-sheet .rs-stat-crisis-on .rs-bar-fill { background: #8c1c26; }
+.rippers-sheet .rs-stat-crisis-on .rs-step button { border-color: rgba(140,28,38,.5); color: #8c1c26; background: rgba(140,28,38,.08); }
 /* DEF / M.DEF: two clear label+value cells side by side (Phase 2B dual-box fix — no overlap). */
 .rippers-sheet .rs-stat-dual { display: inline-flex !important; flex-wrap: nowrap !important; align-items: baseline; gap: 14px; }
 .rippers-sheet .rs-stat-dual .rs-dv { display: inline-flex; align-items: baseline; gap: 5px; flex: none; }
@@ -245,6 +254,9 @@
 .rippers-sheet .rs-mode { display: inline-flex; border: 1px solid var(--rs-border); margin-left: auto; }
 .rippers-sheet .rs-mode button { font-family: var(--rs-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; padding: 4px 10px; cursor: pointer; border: none; background: var(--rs-bg); color: var(--rs-bone-dim); }
 .rippers-sheet .rs-mode button.rs-mode-on { background: var(--rs-red); color: #fff; }
+/* TIER C — SELF/TARGET wrong-actor hazard frame. Fires when Target mode is active (wrong-actor trap).
+   Diagonal stripe + blood border: reads as hazard even without colour. AA: 16.24:1 for text. */
+.rippers-sheet .rs-hazard-target { border: 1.5px solid #ff5a6a !important; outline: 1px solid rgba(255,90,106,.3); outline-offset: 2px; background: repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(200,16,42,.09) 4px, rgba(200,16,42,.09) 5px) !important; }
 .rippers-sheet .rs-chip { font-family: var(--rs-verb); font-size: 15px; font-weight: 400; letter-spacing: .03em; padding: 3px 12px; cursor: pointer; border: 1px solid var(--rs-border); background: var(--rs-bg); color: var(--rs-bone); }
 .rippers-sheet .rs-chip:hover { border-color: var(--rs-red); color: var(--rs-bone); }
 .rippers-sheet .rs-chip.rs-chip-on { background: var(--rs-red); color: #fff; border-color: var(--rs-red); }
@@ -418,7 +430,10 @@
 .rippers-sheet .rs-play-turn { opacity: .8; }
 
 /* ── v0.7.29: THE GUISE play surface skinned to the Design mockup (2a "The Slash") ────────────────── */
-.rippers-sheet .rs-warn { color: var(--rs-vuln); font-weight: 700; }
+/* ⚠ DEMOTED — authoring debt is a to-do, not a danger. Red belongs to live emergencies only.
+   Quiet dashed-slot treatment: dim ink, normal weight. Dashed container already handled by rs-dashed. */
+.rippers-sheet .rs-warn { color: var(--rs-muted); font-weight: 400; }
+.rippers-sheet .rs-play-class-name.rs-warn { color: var(--rs-muted); font-size: 12px; font-weight: 600; }
 .rippers-sheet .rs-dashed { border: 1px dashed var(--rs-muted) !important; background: transparent !important; }
 /* title bar */
 .rippers-sheet .rs-play-titlebar { border-bottom: 1px solid var(--rs-border-red); padding-bottom: 5px; }

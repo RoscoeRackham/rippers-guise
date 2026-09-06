@@ -5,7 +5,7 @@
 {{!-- 2. CHARACTER SUMMARY STRIP — level/torment meta + the dice (▲/▼ = guise mods). --}}
 <div class="rs-play-strip">
 	<div class="rs-play-who">
-		<span class="rs-play-meta">LEVEL {{masthead.level}} · TORMENT — {{#if play.torment}}{{play.torment}}{{else}}<span class="rs-warn">⚠</span>{{/if}}{{#unless readonly}} <button type="button" class="rs-torment-btn" data-action="tormentDialog" title="{{localize 'RIPPERS.Sheet.TormentView'}}">{{#if play.torment}}{{localize 'RIPPERS.Sheet.TormentQuestions'}}{{else}}{{localize 'RIPPERS.Sheet.TormentChoose'}}{{/if}}</button>{{/unless}}</span>
+		<span class="rs-play-meta">LEVEL {{masthead.level}} · TORMENT — {{#if play.torment}}{{play.torment}}{{else}}<span class="rs-warn">not set</span>{{/if}}{{#unless readonly}} <button type="button" class="rs-torment-btn" data-action="tormentDialog" title="{{localize 'RIPPERS.Sheet.TormentView'}}">{{#if play.torment}}{{localize 'RIPPERS.Sheet.TormentQuestions'}}{{else}}{{localize 'RIPPERS.Sheet.TormentChoose'}}{{/if}}</button>{{/unless}}</span>
 	</div>
 	<div class="rs-play-dice">
 		{{#each play.attributes as |a|}}
@@ -30,7 +30,7 @@
 <div class="rs-play-classes">
 	{{#each play.classes as |c|}}
 		{{#if c.unauthored}}
-			<div class="rs-play-class rs-dashed"><div class="rs-play-class-name rs-warn">CLASS SLOT — ⚠ NOT SET YET</div></div>
+			<div class="rs-play-class rs-dashed"><div class="rs-play-class-name rs-warn">class — not set</div></div>
 		{{else}}
 			<div class="rs-play-class">
 				<div class="rs-play-class-name">{{c.name}}</div>
@@ -99,15 +99,15 @@
 </div>
 {{!-- 7. affinities — all NINE elements, four states --}}
 <div class="rs-play-affs">{{#each play.affinities as |aff|}}<span class="rs-affchip rs-aff-{{aff.state}}">{{aff.type}} — {{aff.word}}</span>{{/each}}</div>
-{{#if play.affinityTrioOwed}}<div class="rs-play-owed rs-warn">AFFINITIES — ⚠ NOT SET FOR THIS GUISE YET</div>{{else if play.innateNoTrio}}<div class="rs-play-owed rs-play-note">{{localize 'RIPPERS.Sheet.InnateNoTrio'}}</div>{{/if}}
+{{#if play.affinityTrioOwed}}<div class="rs-play-owed rs-warn">affinities — not set</div>{{else if play.innateNoTrio}}<div class="rs-play-owed rs-play-note">{{localize 'RIPPERS.Sheet.InnateNoTrio'}}</div>{{/if}}
 {{!-- 8. bane / tell / perk cards (innate → NONE; unauthored → ⚠ OWED) --}}
 <div class="rs-play-btp">
 	{{#if play.innate}}
 		<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> NONE — INNATE</div>
 	{{else}}
-		<div class="rs-play-card rs-play-bane"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> {{#if play.bane}}{{play.bane}}{{else}}<span class="rs-warn">⚠ NOT SET YET</span>{{/if}}</div>
-		<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Tell'}}</span> {{#if play.tell}}{{play.tell}}{{else}}<span class="rs-warn">⚠ NOT SET YET</span>{{/if}}</div>
-		<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Perk'}}</span> {{#if play.perk}}{{play.perk}}{{else}}<span class="rs-warn">⚠ NOT SET YET</span>{{/if}}</div>
+		<div class="rs-play-card rs-play-bane"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bane'}}</span> {{#if play.bane}}{{play.bane}}{{else}}<span class="rs-warn">not set</span>{{/if}}</div>
+		<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Tell'}}</span> {{#if play.tell}}{{play.tell}}{{else}}<span class="rs-warn">not set</span>{{/if}}</div>
+		<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Perk'}}</span> {{#if play.perk}}{{play.perk}}{{else}}<span class="rs-warn">not set</span>{{/if}}</div>
 	{{/if}}
 	{{#if play.bonus}}<div class="rs-play-card"><span class="rs-play-card-k">{{localize 'RIPPERS.Builder.Bonus'}}</span> +{{play.bonus.value}} to {{play.bonus.descriptor}}</div>{{/if}}
 </div>

@@ -607,7 +607,7 @@
 				{{/each}}
 				<button type="button" class="rs-chip rs-chip-more {{#if vm.showConditions}}rs-chip-on{{/if}}" data-action="toggleConditions">{{localize 'RIPPERS.Sheet.AllConditions'}}</button>
 				<button type="button" class="rs-chip rs-chip-more" data-action="openConditions" title="{{localize 'RIPPERS.Sheet.AfflictHint'}}">{{localize 'RIPPERS.Sheet.Afflict'}}</button>
-				<span class="rs-mode">
+				<span class="rs-mode{{#unless vm.statusSelf}} rs-hazard-target{{/unless}}">
 					<button type="button" class="{{#if vm.statusSelf}}rs-mode-on{{/if}}" data-action="statusMode" data-mode="self">{{localize 'RIPPERS.Sheet.Self'}}</button>
 					<button type="button" class="{{#unless vm.statusSelf}}rs-mode-on{{/unless}}" data-action="statusMode" data-mode="target">{{localize 'RIPPERS.Sheet.Target'}}</button>
 				</span>
