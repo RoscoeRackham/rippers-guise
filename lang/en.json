@@ -87,7 +87,7 @@
   "RIPPERS.Builder.ModeWorn": "A worn Guise (a mask)",
   "RIPPERS.Builder.ModeInnate": "The Innate Guise (the face under the masks)",
   "RIPPERS.Builder.ModeWornHint": "A mask distilled from a monster: three classes, equipment, an affinity trio, a Perk, a +3 Bonus, a Tell and a narrative bane.",
-  "RIPPERS.Builder.ModeInnateHint": "Your base self: three innate classes, its Specialties (two, or four if Talented), a creation Heroic, the Hunter Weapon, and its own armour + accessory. No affinities, no Nature, Tell or Perk.",
+  "RIPPERS.Builder.ModeInnateHint": "Your base self: three class slots (Innate-only classes live here), its Specialties (two, or four if Talented), a creation Heroic, the Hunter Weapon, and its own armour + accessory. No affinities, no Nature, Tell or Perk.",
   "RIPPERS.Builder.Nature": "Nature",
   "RIPPERS.Builder.NatureHint": "the Guise's identity — the face it wears",
   "RIPPERS.Builder.Affinities": "Affinities",
