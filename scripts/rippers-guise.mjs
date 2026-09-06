@@ -4731,7 +4731,6 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		}),
 		hp: { value: hp.value, max: hp.max ?? 0 }, mp: { value: mp.value, max: mp.max ?? 0 }, ip: { value: ip.value, max: ip.max ?? 0 },
 		fp: vitals.fp, exp: vitals.exp, zenit: vitals.zenit,
-		level: Number(sys.level?.value ?? sys.level ?? 0) || 0, // v0.7.20: level display + Level Up (Tier-1 #4)
 		// Inline bonds: name + the three FU emotion SELECTS (blank + two valid choices each). Strength is
 		// read-only (derived from the emotions). `tier` is the Deeper-Bonds tier by name (fleeting by
 		// default) — shown as a chip so a freshly-added bond visibly reads "Fleeting"; promotion to
@@ -4934,49 +4933,12 @@ async function sheetHealToCrisis(actor) {
 	const threshold = Number(hpRes.crisisScore ?? Math.floor(max / 2));
 	if (Number.isFinite(threshold)) await actor.update({ 'system.resources.hp.value': threshold });
 }
-// ── v0.7.20 LEVEL UP (Tier-1 #4) ──────────────────────────────────────────────────────────────────
-// Austin's SIMPLE model: increment system.level.value (which drives skill budget = min(level,30) AND
-// the hoplosphere socket cadence, both DERIVED from level — see budgetOf / baseSocketCapacity /
-// persistentSlotsUnlocked — so sockets auto-follow, no recompute wiring needed), plus the FU attribute
-// milestone: at character levels 20 and 40, raise ONE attribute die a size (player's choice, cap d12).
-// FU dice ladder is fixed (6/8/10/12; d20 Apex is a class feature, NOT a level milestone).
-const RS_ATTR_DICE = Object.freeze([6, 8, 10, 12]);
-/** PURE: next die size up the FU ladder, capped at d12. */
-function raiseDieSize(base) { const i = RS_ATTR_DICE.indexOf(Number(base)); return i < 0 ? Number(base) || 6 : RS_ATTR_DICE[Math.min(i + 1, RS_ATTR_DICE.length - 1)]; }
-/** PURE: does reaching `level` hit an FU attribute-increase milestone (levels 20 and 40)? */
-function levelUpMilestone(level) { return level === 20 || level === 40; }
-/** Small DEX/INS/MIG/WLP picker for the milestone attribute increase (DialogV2, classic-Dialog fallback). */
-async function promptLevelUpAttribute() {
-	const opts = SPECIALTY_ATTRIBUTES.map((a) => `<option value="${a.key}">${a.label}</option>`).join('');
-	const title = game.i18n?.localize?.('RIPPERS.Sheet.LevelUpMilestone') ?? 'Milestone — raise an attribute';
-	const content = `<p>${game.i18n?.localize?.('RIPPERS.Sheet.LevelUpPickAttr') ?? 'Milestone reached — raise one attribute die a size (max d12):'}</p>`
-		+ `<div class="form-group"><label>${game.i18n?.localize?.('RIPPERS.Specialty.Attribute') ?? 'Attribute'} </label><select name="attr">${opts}</select></div>`;
-	const okLabel = game.i18n?.localize?.('RIPPERS.Sheet.LevelUpRaise') ?? 'Raise';
-	const DV2 = foundry?.applications?.api?.DialogV2;
-	if (DV2?.prompt) return DV2.prompt({ window: { title }, content, ok: { label: okLabel, callback: (_e, b) => b.form?.elements?.attr?.value ?? null }, rejectClose: false }).catch(() => null);
-	const Dlg = globalThis.Dialog; if (!Dlg) return null;
-	return new Promise((resolve) => new Dlg({ title, content, buttons: { ok: { label: okLabel, callback: (h) => resolve((h[0] ?? h).querySelector('select[name=attr]')?.value ?? null) }, cancel: { label: 'Cancel', callback: () => resolve(null) } }, default: 'ok', close: () => resolve(null) }).render(true));
-}
-/** Level up one character level. Sets system.level.value (+1); on reaching a milestone (20/40) prompts to
- *  raise one attribute die a size (cap d12). Hoplosphere sockets + skill budget are derived from level, so
- *  they update on their own. No rules values invented — milestones + dice ladder are FU canon. */
-async function sheetLevelUp(actor) {
-	if (!actor?.update) return;
-	const cur = Number(actor.system?.level?.value ?? actor.system?.level ?? 0) || 0;
-	const next = cur + 1;
-	await actor.update({ 'system.level.value': next });
-	if (levelUpMilestone(next)) {
-		const attr = await promptLevelUpAttribute();
-		if (attr) {
-			const base = Number(actor.system?.attributes?.[attr]?.base ?? 8) || 8;
-			const raised = raiseDieSize(base);
-			if (raised !== base) await actor.update({ [`system.attributes.${attr}.base`]: raised });
-			ui.notifications?.info((game.i18n?.localize?.('RIPPERS.Sheet.LevelUpAttrRaised') ?? 'Milestone: attribute raised to d') + raised + '.');
-		} else {
-			ui.notifications?.info(game.i18n?.localize?.('RIPPERS.Sheet.LevelUpMilestoneReached') ?? 'Milestone reached — raise an attribute when ready.');
-		}
-	}
-}
+// LEVEL / XP / ADVANCEMENT: deferred to projectfu 4.16.2 (Austin ruling 2026-09-06 "defer to FU").
+// Character level lives at system.level.value (FU-owned); our sheet READS it and never writes a
+// competing value. The two things FU cannot know — the 40/50 HEROIC SLOTS (HEROIC_SLOTS / assignHeroicSlot)
+// and the HOPLOSPHERE socket cadence (baseSocketCapacity / persistentSlotsUnlocked) — DERIVE from that
+// level, so they follow FU advancement with no button. The old manual Level Up (level bump + 20/40 FU
+// attribute-milestone prompt) is removed: FU owns level, XP and advancement.
 
 // Item 4: weapon attack stats for the Kit rows. Project FU stores the two item types differently —
 // 'weapon' wraps everything in .value SchemaFields (attributes.primary.value, accuracy.value,
@@ -5355,7 +5317,6 @@ function getRippersActorSheetClass() {
 				toggleRivalWaiver: RippersActorSheet.onToggleRivalWaiver,
 				rest: RippersActorSheet.onRest,
 				healToCrisis: RippersActorSheet.onHealToCrisis,
-				levelUp: RippersActorSheet.onLevelUp,
 				skillSlAdjust: RippersActorSheet.onSkillSlAdjust,
 				toggleSlLock: RippersActorSheet.onToggleSlLock,
 				quirkAdd: RippersActorSheet.onQuirkAdd,
@@ -5627,7 +5588,6 @@ function getRippersActorSheetClass() {
 		}
 		static async onRest() { await sheetRest(this.document); this.render(); }
 		static async onHealToCrisis() { await sheetHealToCrisis(this.document); this.render(); }
-		static async onLevelUp() { await sheetLevelUp(this.document); this.render(); }
 		static async onSkillSlAdjust(event, target) {
 			const g = this.document?.items?.get?.(target?.dataset?.guise);
 			const classUuid = target?.dataset?.class, skillUuid = target?.dataset?.skill, dir = Number(target?.dataset?.dir) || 0;
@@ -6128,7 +6088,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, raiseDieSize, levelUpMilestone, sheetLevelUp, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, EQUIP_SLOT_TYPES, editFieldUpdate };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, EQUIP_SLOT_TYPES, editFieldUpdate };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };
