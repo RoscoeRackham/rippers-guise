@@ -474,6 +474,8 @@ async function materialiseEquipment(actor, item) {
 		delete obj._id;
 		obj.flags = obj.flags ?? {};
 		obj.flags[MODULE_ID] = { origin: item.id, kind: 'equipment' };
+		// v0.8.1: the owned copy wears the author's name (the Hide). Stats, type and img are the base's.
+		obj.name = equipCopyName(eq, obj.name);
 		objs.push(obj);
 		slotOf.push(EQUIP_SLOTS.includes(eq.slot) ? eq.slot : 'mainHand');
 	}
@@ -523,14 +525,31 @@ async function collectEquipItems() {
 async function collectArmorItems() { return (await collectEquipItems()).filter((i) => i.type === 'armor'); }
 /** PURE: set/replace/clear one equipment SLOT's single entry. Removes ANY existing entry for that slot
  *  first (atomic replace, never doubles), then appends the new one; '' uuid = empty (none). */
-function setDraftEquip(draft, slot, uuid, name = '') {
+function setDraftEquip(draft, slot, uuid, name = '', label = undefined) {
 	const s = EQUIP_SLOTS.includes(slot) ? slot : 'mainHand';
+	const prev = (draft.equipment ?? []).find((e) => e?.slot === s) ?? null;
 	const rest = (draft.equipment ?? []).filter((e) => e?.slot !== s);
-	draft.equipment = uuid ? [...rest, { itemUuid: uuid, slot: s, name }] : rest;
+	// v0.8.1 HIDE RENAME: `label` is the author's name for this piece ON THE GUISE — the Hide.
+	// `name` stays what it always was, a CACHE of the base item's name. Swapping the base item KEEPS
+	// the label (the author named the Hide, not the item); clearing the slot drops it with the entry.
+	const keep = label === undefined ? (prev?.label ?? '') : String(label ?? '');
+	draft.equipment = uuid ? [...rest, { itemUuid: uuid, slot: s, name, label: keep }] : rest;
 	return draft.equipment;
 }
-/** Back-compat wrapper: the armor slot. */
-function setDraftArmor(draft, uuid, name = '') { return setDraftEquip(draft, 'armor', uuid, name); }
+/** PURE: the name an owned copy takes on bind — the author's label if set, else the base item's name. */
+function equipCopyName(entry, baseName = '') {
+	const label = String(entry?.label ?? '').trim();
+	return label || baseName;
+}
+/** PURE: set (or clear) one slot's display-name override, leaving its item pick alone. */
+function setDraftEquipLabel(draft, slot, label) {
+	const s = EQUIP_SLOTS.includes(slot) ? slot : 'mainHand';
+	const entry = (draft.equipment ?? []).find((e) => e?.slot === s);
+	if (entry) entry.label = String(label ?? '').trim();
+	return draft.equipment ?? [];
+}
+/** Back-compat wrapper: the armor slot (the Hide). */
+function setDraftArmor(draft, uuid, name = '', label = undefined) { return setDraftEquip(draft, 'armor', uuid, name, label); }
 
 // FDN-7.1 re-entrancy lock. A stacked/duplicate click (or two rapid macro calls) must NOT run
 // two binds for one actor — that would materialise a second skill set and overwrite the `owned`
@@ -2478,7 +2497,7 @@ function guiseDraftToData(draft, skillMax = {}, budget = SKILL_BUDGET_CAP) {
 	// A worn guise: equipment (was hardcoded [] — the P2 bug) + the affinity TRIO + narrative fields.
 	const equipment = (draft.equipment ?? [])
 		.filter((e) => e?.itemUuid)
-		.map((e) => ({ itemUuid: e.itemUuid, slot: EQUIP_SLOTS.includes(e.slot) ? e.slot : 'mainHand' }));
+		.map((e) => ({ itemUuid: e.itemUuid, slot: EQUIP_SLOTS.includes(e.slot) ? e.slot : 'mainHand', label: String(e.label ?? '').trim() }));
 	const affinityModifiers = affinityTrioToModifiers({
 		immunity: draft.affinityImmunity, vulnerability: draft.affinityVulnerability, resistance: draft.affinityResistance,
 	});
@@ -2540,7 +2559,7 @@ function guiseDataToDraft(data = {}) {
 	}
 	// worn: equipment + the affinity trio + narrative + attached heroic/effects
 	draft.equipment = (data.equipment ?? []).filter((e) => e?.itemUuid)
-		.map((e) => ({ itemUuid: e.itemUuid, slot: EQUIP_SLOTS.includes(e.slot) ? e.slot : 'mainHand' }));
+		.map((e) => ({ itemUuid: e.itemUuid, slot: EQUIP_SLOTS.includes(e.slot) ? e.slot : 'mainHand', label: String(e.label ?? '').trim() }));
 	for (const m of data.affinityModifiers ?? []) {
 		if (!AFFINITY_TYPES.includes(m.type)) continue;
 		if (Number(m.level) === TRIO_LEVEL.immunity) draft.affinityImmunity = m.type;
@@ -2894,7 +2913,7 @@ function getGuiseBuilderApp() {
 			// ---- loadout step view model ----------------------------------------
 			const slotChoices = EQUIP_SLOTS.map((s) => ({ value: s, label: game.i18n.localize(`RIPPERS.Builder.Slot.${s}`) }));
 			const equipment = (this._draft.equipment ?? []).map((eq, i) => ({
-				i, uuid: eq.itemUuid, name: eq.name ?? eq.itemUuid,
+				i, uuid: eq.itemUuid, name: eq.name ?? eq.itemUuid, label: eq.label ?? '',
 				slots: slotChoices.map((c) => ({ ...c, selected: c.value === eq.slot })),
 			}));
 			// v0.7.34: an editable dropdown for EVERY equipment slot of a WORN guise (Austin — was armor-only).
@@ -2909,7 +2928,16 @@ function getGuiseBuilderApp() {
 				const options = [{ uuid: '', name: game.i18n.localize('RIPPERS.Builder.SlotNone'), selected: !curUuid }]
 					.concat(equipItems.filter((i) => allowed.includes(i.type)).map((i) => ({ uuid: i.uuid, name: i.name, selected: i.uuid === curUuid })));
 				if (curUuid && !equipByUuid.has(curUuid)) options.push({ uuid: curUuid, name: cur?.name || curUuid, selected: true });
-				return { slot, label: game.i18n.localize(`RIPPERS.Builder.Slot.${slot}`), options };
+				// v0.8.1 HIDE RENAME: a per-slot display-name override. Blank = keep the base item's name.
+				const baseName = equipByUuid.get(curUuid)?.name || cur?.name || '';
+				return {
+					slot, label: game.i18n.localize(`RIPPERS.Builder.Slot.${slot}`), options,
+					nameLabel: cur?.label ?? '',
+					hasPick: !!curUuid,
+					namePlaceholder: baseName
+						? game.i18n.format('RIPPERS.Builder.EquipNamePlaceholder', { base: baseName })
+						: game.i18n.localize('RIPPERS.Builder.SlotNone'),
+				};
 			});
 			// v0.7.9 (Austin, 3 Sep): Specialties are FREE TEXT, not a picker. N inputs (N = SPECIALTY_COUNT),
 			// the 13-name list demoted to a <datalist> of autocomplete hints. Padded to N so positions are stable.
@@ -2969,7 +2997,7 @@ function getGuiseBuilderApp() {
 					skills: cb.skills.filter((s) => s.checked).map((s) => ({ name: s.name, sl: s.sl })),
 				})),
 				affinities: affSummary,
-				equipment: isInnate ? [] : equipment.map((e) => ({ name: e.name, slot: e.slots.find((s) => s.selected)?.label ?? '' })),
+				equipment: isInnate ? [] : equipment.map((e) => ({ name: e.label || e.name, slot: e.slots.find((s) => s.selected)?.label ?? '' })),
 				perk: isInnate ? '' : (this._draft.perk || ''),
 				bonus: (!isInnate && (this._draft.bonusDescriptor || '').trim()) ? this._draft.bonusDescriptor.trim() : '',
 				tell: isInnate ? '' : (this._draft.tell || ''), bane: isInnate ? '' : (this._draft.bane || ''), flaw: isInnate ? '' : (this._draft.flaw || ''),
@@ -3100,6 +3128,10 @@ function getGuiseBuilderApp() {
 				const name = uuid ? (sel.selectedOptions?.[0]?.textContent?.trim() ?? '') : '';
 				setDraftEquip(this._draft, slot, uuid, name);
 				this.render();
+			}));
+			// v0.8.1: the per-slot display-name override (the Hide's name). Blank = the base item's name.
+			root.querySelectorAll('input.guise-equip-label').forEach((inp) => inp.addEventListener('change', () => {
+				setDraftEquipLabel(this._draft, inp.dataset.slot, inp.value);
 			}));
 			// #5 (v0.7.9): remove an attached effect/ability
 			root.querySelectorAll('[data-action="removeAttachedEffect"]').forEach((a) => a.addEventListener('click', (ev) => {
@@ -3343,12 +3375,18 @@ async function enrichGuiseData(model) {
 	const equipment = [];
 	for (const [i, eq] of (data.equipment ?? []).entries()) {
 		const edoc = await safeFromUuid(eq.itemUuid);
-		equipment.push({ i, uuid: eq.itemUuid, name: edoc?.name ?? '(missing item)', img: edoc?.img ?? 'icons/svg/item-bag.svg', slot: eq.slot ?? 'mainHand', missing: !edoc });
+		const baseName = edoc?.name ?? '(missing item)';
+		const label = String(eq.label ?? '').trim();
+		equipment.push({
+			i, uuid: eq.itemUuid, name: equipCopyName(eq, baseName), baseName,
+			renamed: !!label && label !== baseName,
+			img: edoc?.img ?? 'icons/svg/item-bag.svg', slot: eq.slot ?? 'mainHand', missing: !edoc,
+		});
 	}
 
 	const affinities = (data.affinityModifiers ?? []).map((m, i) => ({ i, type: m.type, level: m.level, word: affinityWordOf(m.level) }));
 
-	const slotChoices = Object.fromEntries(EQUIP_SLOTS.map((s) => [s, s]));
+	const slotChoices = Object.fromEntries(EQUIP_SLOTS.map((s) => [s, game.i18n?.localize?.(`RIPPERS.Builder.Slot.${s}`) ?? s]));
 	const typeChoices = Object.fromEntries(AFFINITY_TYPES.map((t) => [t, t]));
 	const levelChoices = Object.fromEntries(AFFINITY_LEVELS.map((l) => [String(l.value), l.label]));
 
@@ -3480,6 +3518,9 @@ function defineGuiseModel() {
 				equipment: new ArrayField(new SchemaField({
 					itemUuid: new StringField({ initial: '' }),
 					slot: new StringField({ initial: 'mainHand', choices: EQUIP_SLOTS }),
+					// v0.8.1: the author's name for this piece on the guise (the armor slot is the HIDE).
+					// Blank = wear the base item's own name. Display only — never a stat.
+					label: new StringField({ initial: '' }),
 				})),
 				// affinity modifiers (legacy MODIFY path — additive; via the transferEffects gate)
 				affinityModifiers: new ArrayField(new SchemaField({
@@ -6406,7 +6447,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, EQUIP_SLOT_TYPES, editFieldUpdate };
+export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, setDraftEquipLabel, equipCopyName, EQUIP_SLOT_TYPES, editFieldUpdate };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };

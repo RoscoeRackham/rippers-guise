@@ -115,7 +115,7 @@
 		{{#each additionalData.equipment as |eq|}}
 			<div class="guise-equip-row">
 				<img class="guise-icon" src="{{eq.img}}" width="18" height="18" />
-				<span class="guise-name {{#if eq.missing}}guise-missing{{/if}}">{{eq.name}}</span>
+				<span class="guise-name {{#if eq.missing}}guise-missing{{/if}}">{{eq.name}}{{#if eq.renamed}} <em class="guise-base-name">({{eq.baseName}})</em>{{/if}}</span>
 				{{#if ../additionalData.canEditFixed}}
 					<input type="hidden" name="system.data.equipment.{{eq.i}}.itemUuid" value="{{eq.uuid}}" />
 					<select name="system.data.equipment.{{eq.i}}.slot">

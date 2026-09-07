@@ -144,7 +144,7 @@
 					<p class="gb-hint">{{localize "RIPPERS.Builder.AttachedEffectsHint"}}</p>
 					{{#each loadout.attachedEffects}}
 						<div class="gb-equip-row">
-							<span class="gb-equip-name">{{name}}</span>
+							<span class="gb-equip-name">{{#if label}}{{label}} <em class="gb-equip-base">({{name}})</em>{{else}}{{name}}{{/if}}</span>
 							<a data-action="removeAttachedEffect" data-i="{{i}}" title="{{localize "RIPPERS.Builder.RemoveAttachedEffect"}}"><i class="fas fa-times"></i></a>
 						</div>
 					{{/each}}
@@ -159,13 +159,17 @@
 						{{#each loadout.equipSlots}}
 							<label class="gb-equip-pick">{{label}}
 								<select class="guise-equip-pick" data-slot="{{slot}}">{{#each options}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select>
+								{{#if hasPick}}
+									<input class="guise-equip-label" type="text" data-slot="{{slot}}" value="{{nameLabel}}"
+										placeholder="{{namePlaceholder}}" title="{{localize 'RIPPERS.Builder.EquipNameHint'}}" />
+								{{/if}}
 							</label>
 						{{/each}}
 					</div>
 					<p class="gb-hint">{{localize "RIPPERS.Builder.EquipPickHint"}}</p>
 					{{#each loadout.equipment}}
 						<div class="gb-equip-row">
-							<span class="gb-equip-name">{{name}}</span>
+							<span class="gb-equip-name">{{#if label}}{{label}} <em class="gb-equip-base">({{name}})</em>{{else}}{{name}}{{/if}}</span>
 							<select class="guise-equip-slot" data-i="{{i}}">{{#each slots}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
 							<a data-action="removeEquip" data-i="{{i}}" title="{{localize "RIPPERS.Builder.RemoveEquip"}}"><i class="fas fa-times"></i></a>
 						</div>
@@ -187,7 +191,7 @@
 					<p class="gb-hint">{{localize "RIPPERS.Builder.AttachedEffectsHint"}}</p>
 					{{#each loadout.attachedEffects}}
 						<div class="gb-equip-row">
-							<span class="gb-equip-name">{{name}}</span>
+							<span class="gb-equip-name">{{#if label}}{{label}} <em class="gb-equip-base">({{name}})</em>{{else}}{{name}}{{/if}}</span>
 							<a data-action="removeAttachedEffect" data-i="{{i}}" title="{{localize "RIPPERS.Builder.RemoveAttachedEffect"}}"><i class="fas fa-times"></i></a>
 						</div>
 					{{/each}}

@@ -1377,6 +1377,69 @@ test('armor-picker: the picked armor flows through guiseDraftToData → data.equ
 	assert.equal(armor.itemUuid, 'Compendium.x.Item.toughskin');  // exactly what materialiseEquipment binds
 });
 
+// ── v0.8.1 HIDE RENAME: a display-name override on a guise's equipment (Austin, 7 Sep 2026) ──
+// The armor slot is the guise's HIDE. The author picks Leather Armor for the stats and calls it
+// "Charnel Hide"; the owned copy made on bind wears the label, the base item is untouched.
+
+test('hide-rename: setDraftEquip stores a label alongside the base pick, per slot', () => {
+	const { setDraftEquip } = mod;
+	const draft = { equipment: [] };
+	setDraftEquip(draft, 'armor', 'Compendium.x.Item.leather', 'Leather Armor', 'Charnel Hide');
+	setDraftEquip(draft, 'mainHand', 'w1', 'Rifle');
+	const armor = draft.equipment.find((e) => e.slot === 'armor');
+	assert.equal(armor.itemUuid, 'Compendium.x.Item.leather');
+	assert.equal(armor.name, 'Leather Armor');      // the CACHE of the base name is unchanged
+	assert.equal(armor.label, 'Charnel Hide');      // the author's name rides alongside it
+	assert.equal(draft.equipment.find((e) => e.slot === 'mainHand').label, ''); // other slots unaffected
+});
+
+test('hide-rename: swapping the base item KEEPS the label; clearing the slot drops it', () => {
+	const { setDraftEquip } = mod;
+	const draft = { equipment: [] };
+	setDraftEquip(draft, 'armor', 'a1', 'Leather Armor', 'Charnel Hide');
+	setDraftEquip(draft, 'armor', 'a2', 'Brigandine');              // re-pick, no label argument
+	const armor = draft.equipment.find((e) => e.slot === 'armor');
+	assert.equal(armor.itemUuid, 'a2');
+	assert.equal(armor.name, 'Brigandine');
+	assert.equal(armor.label, 'Charnel Hide', 'the author named the Hide, not the item');
+	setDraftEquip(draft, 'armor', '');                              // cleared
+	assert.equal(draft.equipment.filter((e) => e.slot === 'armor').length, 0);
+});
+
+test('hide-rename: setDraftEquipLabel edits the name without touching the pick; blank restores the base', () => {
+	const { setDraftEquip, setDraftEquipLabel } = mod;
+	const draft = { equipment: [] };
+	setDraftEquip(draft, 'armor', 'a1', 'Leather Armor');
+	setDraftEquipLabel(draft, 'armor', '  Charnel Hide  ');          // trimmed
+	let armor = draft.equipment.find((e) => e.slot === 'armor');
+	assert.equal(armor.label, 'Charnel Hide');
+	assert.equal(armor.itemUuid, 'a1');                              // pick untouched
+	setDraftEquipLabel(draft, 'armor', '');
+	armor = draft.equipment.find((e) => e.slot === 'armor');
+	assert.equal(armor.label, '');
+	assert.equal(mod.equipCopyName(armor, 'Leather Armor'), 'Leather Armor'); // blank ⇒ the base name
+});
+
+test('hide-rename: equipCopyName is what the owned copy is called on bind', () => {
+	const { equipCopyName } = mod;
+	assert.equal(equipCopyName({ label: 'Charnel Hide' }, 'Leather Armor'), 'Charnel Hide');
+	assert.equal(equipCopyName({ label: '   ' }, 'Leather Armor'), 'Leather Armor'); // whitespace ≠ a name
+	assert.equal(equipCopyName({}, 'Leather Armor'), 'Leather Armor');
+	assert.equal(equipCopyName(null, 'Leather Armor'), 'Leather Armor');
+});
+
+test('hide-rename: the label survives draft → data → draft (so a rebind keeps the name)', () => {
+	const { setDraftEquip, guiseDraftToData, guiseDataToDraft } = mod;
+	const draft = { mode: 'worn', name: 'The Ripper', classUuids: [], sl: {}, equipment: [], affinityImmunity: '', affinityVulnerability: '', affinityResistance: '' };
+	setDraftEquip(draft, 'armor', 'Compendium.x.Item.leather', 'Leather Armor', 'Charnel Hide');
+	const data = guiseDraftToData(draft, {}, 30);
+	const saved = (data.equipment ?? []).find((e) => e.slot === 'armor');
+	assert.equal(saved.itemUuid, 'Compendium.x.Item.leather', 'stats still come from the base item');
+	assert.equal(saved.label, 'Charnel Hide');
+	const back = guiseDataToDraft(data, 'worn');
+	assert.equal((back.equipment ?? []).find((e) => e.slot === 'armor').label, 'Charnel Hide');
+});
+
 // ── v0.7.36 innate guise gains attachable effects ──
 test('innate-effects: guiseDraftToData(innate) carries attachedEffects (was silently dropped)', () => {
 	const { guiseDraftToData } = mod;
