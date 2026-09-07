@@ -1440,6 +1440,46 @@ test('hide-rename: the label survives draft → data → draft (so a rebind keep
 	assert.equal((back.equipment ?? []).find((e) => e.slot === 'armor').label, 'Charnel Hide');
 });
 
+// ── v0.8.1 HIDE THE DEFAULT UNARMED STRIKE (Austin, 7 Sep 2026) ──
+// projectfu's FUActor._onCreate copies the basic-equipment item whose system.fuid ===
+// 'unarmed-strike' onto every new character. The FUID is the selector — never the name (a GM may
+// rename it) and never the img. HIDE ONLY: nothing is ever deleted.
+
+test('unarmed: isUnarmedStrike matches on the FUID, not the name or the image', () => {
+	const { isUnarmedStrike } = mod;
+	assert.equal(isUnarmedStrike({ name: 'Unarmed Strike', type: 'weapon', system: { fuid: 'unarmed-strike' } }), true);
+	assert.equal(isUnarmedStrike({ name: 'Bare Knuckles', type: 'weapon', system: { fuid: 'unarmed-strike' } }), true, 'a renamed strike is still the strike');
+	assert.equal(isUnarmedStrike({ name: 'Unarmed Strike', type: 'weapon', system: { fuid: 'cestus' } }), false, 'a weapon merely NAMED that is not it');
+	assert.equal(isUnarmedStrike({ name: 'Sabre', type: 'weapon', system: {} }), false);
+	assert.equal(isUnarmedStrike(null), false);
+});
+
+test('unarmed: withoutUnarmed drops only the strike, and only when hiding is on', () => {
+	const { withoutUnarmed } = mod;
+	const strike = { name: 'Unarmed Strike', system: { fuid: 'unarmed-strike' } };
+	const sabre = { name: 'Sabre', system: { fuid: 'sabre' } };
+	assert.deepEqual(withoutUnarmed([strike, sabre], true).map((i) => i.name), ['Sabre']);
+	assert.deepEqual(withoutUnarmed([strike, sabre], false).map((i) => i.name), ['Unarmed Strike', 'Sabre']);
+	assert.deepEqual(withoutUnarmed([], true), []);
+	assert.deepEqual(withoutUnarmed(undefined, true), []);
+});
+
+test('unarmed: the per-actor flag overrides the world default in BOTH directions', () => {
+	const { hideUnarmedFor } = mod;
+	const savedGame = globalThis.game;
+	try {
+		const actorWith = (flag) => ({ getFlag: () => flag });
+		globalThis.game = { settings: { get: () => true } };   // world default: hide
+		assert.equal(hideUnarmedFor(actorWith(undefined)), true, 'no flag ⇒ the world default');
+		assert.equal(hideUnarmedFor(actorWith(false)), false, 'an actor may opt back IN to the strike');
+		globalThis.game = { settings: { get: () => false } };  // world default: show
+		assert.equal(hideUnarmedFor(actorWith(undefined)), false);
+		assert.equal(hideUnarmedFor(actorWith(true)), true, 'an actor may hide it on a showing world');
+		globalThis.game = { settings: { get: () => { throw new Error('not registered'); } } };
+		assert.equal(hideUnarmedFor(actorWith(undefined)), false, 'an unregistered setting shows the strike');
+	} finally { globalThis.game = savedGame; }
+});
+
 // ── v0.7.36 innate guise gains attachable effects ──
 test('innate-effects: guiseDraftToData(innate) carries attachedEffects (was silently dropped)', () => {
 	const { guiseDraftToData } = mod;

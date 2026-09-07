@@ -445,6 +445,14 @@
 			{{/if}}
 
 			{{#if vm.tab.kit}}
+				{{#if vm.unarmedToggle.has}}
+					<div class="rs-unarmed-toggle">
+						<button type="button" class="rs-chip" data-action="toggleUnarmed"
+							title="{{localize 'RIPPERS.Sheet.HideUnarmedHint'}}">
+							{{#if vm.unarmedToggle.hidden}}{{localize 'RIPPERS.Sheet.ShowUnarmed'}}{{else}}{{localize 'RIPPERS.Sheet.HideUnarmed'}}{{/if}}
+						</button>
+					</div>
+				{{/if}}
 				{{#if vm.weapons.length}}
 					{{#each vm.weapons as |w|}}
 						<div class="rs-classcard rs-weapon-row">

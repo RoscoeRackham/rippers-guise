@@ -795,6 +795,29 @@ async function clearAllGuiseSceneState() {
 //    existing handOffDecision/sheetHandOffGuise clean path already serves it; a player dropping onto
 //    another owner's field is still refused 'needs-gm-socket'). Wired to the tab in 3b.
 const PARTY_SIZE_SETTING = 'partySize';
+
+// ── v0.8.1: hide the default unarmed strike (Austin, 7 Sep 2026) ──────────────────────────────────
+// WHERE IT COMES FROM: projectfu's FUActor._onCreate copies the `projectfu.basic-equipment`
+// compendium Item whose `system.fuid === 'unarmed-strike'` onto every new character
+// (module/documents/actors/actor.mjs:152-171; the id is FU.unarmedStrike in helpers/config.mjs, and
+// the system's own lookup is actor.getItemsByFuid('unarmed-strike')). It is an ordinary embedded
+// `weapon` Item, so the honest selector is the FUID — never the NAME, which a GM may rename, and
+// never the img.
+// WE HIDE, WE NEVER DELETE. The Item stays on the actor and every other reader — the system's own
+// sheet, macros, anything that resolves it — still finds it. This only filters OUR readouts.
+const UNARMED_FUID = 'unarmed-strike';
+const HIDE_UNARMED_SETTING = 'hideUnarmedStrike';
+const HIDE_UNARMED_FLAG = 'hideUnarmed';
+/** PURE: is this the system's default unarmed strike? */
+function isUnarmedStrike(item) { return String(rsDotGet(item, 'system.fuid') ?? '') === UNARMED_FUID; }
+/** The world default, overridden per actor when the actor carries the flag. */
+function hideUnarmedFor(actor) {
+	const per = actor?.getFlag?.(MODULE_ID, HIDE_UNARMED_FLAG);
+	if (per === true || per === false) return per;
+	try { return game.settings.get(MODULE_ID, HIDE_UNARMED_SETTING) === true; } catch { return false; }
+}
+/** PURE: drop the default unarmed strike from a list when hiding is on. */
+function withoutUnarmed(items, hide) { return hide ? (items ?? []).filter((it) => !isUnarmedStrike(it)) : (items ?? []); }
 // V4 cabinet store. The module-shipped pack (rippers-guise.guises) is LOCKED read-only distributed
 // content — you cannot create documents in it at runtime, and on hosted Forge the module dir is
 // read-only (a module update would clobber writes anyway). So the WRITABLE cabinet is a WORLD-owned
@@ -3945,10 +3968,11 @@ function buildSpellsVM(actor) {
 /** Full non-weapon inventory VM (armor/shield/accessory/consumable/treasure) with the actor's native
  *  equipped-slot state. Read-only; weapons keep their own Kit block. */
 function buildInventoryVM(actor) {
+	const hideUnarmed = hideUnarmedFor(actor);
 	let isEq = () => false;
 	try { const rec = actor?.system?.equipped; if (rec && typeof rec.isEquipped === 'function') isEq = (it) => { try { return !!rec.isEquipped(it); } catch { return false; } }; } catch { /* no equip record */ }
 	const sections = RS_INVENTORY_TYPES.map((spec) => {
-		const items = (actor?.itemTypes?.[spec.type] ?? []).map((it) => ({
+		const items = withoutUnarmed(actor?.itemTypes?.[spec.type] ?? [], hideUnarmed).map((it) => ({
 			id: it.id, name: it.name ?? '', img: it.img,
 			fields: spec.fields.map(([label, path]) => ({ label, val: rsDotGet(it, path) ?? '—' })),
 			equippable: !!spec.equip && itemEquippable(it.type), equipped: !!spec.equip && isEq(it),
@@ -4104,7 +4128,7 @@ async function buildGuisePlayVM(actor, opts = {}) {
 		return { slot, name: it.name ?? '', img: it.img, type: it.type };
 	}).filter(Boolean);
 	// Weapon / unarmed strike detail (reuse weaponStats). Prefer the equipped mainHand weapon, else first.
-	const weaponItems = [...(actor?.itemTypes?.weapon ?? []), ...(actor?.itemTypes?.customWeapon ?? [])];
+	const weaponItems = withoutUnarmed([...(actor?.itemTypes?.weapon ?? []), ...(actor?.itemTypes?.customWeapon ?? [])], hideUnarmedFor(actor));
 	const primaryWeapon = getItem(eq.mainHand) && weaponItems.some((w) => w.id === eq.mainHand) ? getItem(eq.mainHand) : weaponItems[0] ?? null;
 	const weapon = primaryWeapon ? { id: primaryWeapon.id, name: primaryWeapon.name ?? '', ...weaponStats(primaryWeapon) } : null; // P0-4: id → attack-from-readout
 	// Clot pane (Austin ruling — NAME + EFFECT phase): a seated Clot renders as its NAME + its EFFECT text,
@@ -4735,7 +4759,8 @@ async function buildRippersSheetVM(actor, ui = {}) {
 	const statusChips = RS_STATUS_IDS.map((id) => ({ id, label: id, active: activeStatuses.has(id) }));
 	const condGroups = RS_COND_GROUPS.map((grp) => ({ label: grp.label, items: grp.ids.map((id) => ({ id, label: id, active: activeStatuses.has(id) })) }));
 	// Weapons for the Kit tab's attack rows (weapon + customWeapon; item.roll() drives the attack flow).
-	const weaponItems = [...(actor.itemTypes?.weapon ?? []), ...(actor.itemTypes?.customWeapon ?? [])];
+	const hideUnarmed = hideUnarmedFor(actor);
+	const weaponItems = withoutUnarmed([...(actor.itemTypes?.weapon ?? []), ...(actor.itemTypes?.customWeapon ?? [])], hideUnarmed);
 	const ATTR_KEYS = ['dex', 'ins', 'mig', 'wlp'];
 	const optList = (list, cur) => list.map((v) => ({ v, sel: v === cur }));
 	const weapons = weaponItems.map((w) => {
@@ -4840,6 +4865,12 @@ async function buildRippersSheetVM(actor, ui = {}) {
 		vault, trackedResources, isGM: !!globalThis.game?.user?.isGM,
 		statuses, statusChips, condGroups,
 		weapons, quirks, editable, editor, worn: !!activeId, wornName, tabs, tab, statusSelf, showConditions,
+		// v0.8.1: the unarmed-strike toggle. `has` gates the control so it only appears on an actor that
+		// actually carries the system's default strike; `hidden` drives the label.
+		unarmedToggle: {
+			has: [...(actor.itemTypes?.weapon ?? []), ...(actor.itemTypes?.customWeapon ?? [])].some(isUnarmedStrike),
+			hidden: hideUnarmed,
+		},
 		resolving: deferHeavy, // true on the fast first-paint pass; the sheet re-renders with resolved content
 		inventory, effects, spells, play, guisePreview,
 	};
@@ -5607,6 +5638,7 @@ function getRippersActorSheetClass() {
 				spellAdd: RippersActorSheet.onSpellAdd,
 				rollCheck: RippersActorSheet.onRollCheck,
 				toggleRivalWaiver: RippersActorSheet.onToggleRivalWaiver,
+				toggleUnarmed: RippersActorSheet.onToggleUnarmed,
 				rest: RippersActorSheet.onRest,
 				healToCrisis: RippersActorSheet.onHealToCrisis,
 				skillSlAdjust: RippersActorSheet.onSkillSlAdjust,
@@ -5908,6 +5940,12 @@ function getRippersActorSheetClass() {
 			const api = rippersAutomationApi();
 			if (api?.toggleRivalWaiver) { await api.toggleRivalWaiver(this.document); this.render(); }
 		}
+		/** v0.8.1: hide/show the system's default unarmed strike on THIS actor. Hide only — never delete. */
+		static async onToggleUnarmed() {
+			const actor = this.document;
+			await actor.setFlag(MODULE_ID, HIDE_UNARMED_FLAG, !hideUnarmedFor(actor));
+			this.render();
+		}
 		static async onRest() { await sheetRest(this.document); this.render(); }
 		static async onHealToCrisis() { await sheetHealToCrisis(this.document); this.render(); }
 		static async onSkillSlAdjust(event, target) {
@@ -6109,6 +6147,15 @@ Hooks.once('setup', () => {
 			scope: 'world', config: true, type: Boolean, default: false,
 		});
 	} catch (err) { console.warn('[rippers-guise] could not register the edit-override setting:', err); }
+	// v0.8.1: the world default for hiding projectfu's unarmed strike on our sheet. A per-actor flag
+	// (set from the Kit tab) overrides it either way; neither ever deletes the Item.
+	try {
+		game.settings.register(MODULE_ID, HIDE_UNARMED_SETTING, {
+			name: 'RIPPERS.Settings.HideUnarmed',
+			hint: 'RIPPERS.Settings.HideUnarmedHint',
+			scope: 'world', config: true, type: Boolean, default: false,
+		});
+	} catch (err) { console.warn('[rippers-guise] could not register the hide-unarmed setting:', err); }
 	// V2 (Party Vault): party size drives the field limit (partySize + 2). World-scoped Number.
 	try {
 		game.settings.register(MODULE_ID, PARTY_SIZE_SETTING, {
@@ -6447,7 +6494,7 @@ export { armSpecialtyDieBump, disarmSpecialtyDieBump, SPECIALTY_ARM_FLAG };
 // Phase 2a: the generalized check-bump API (die + flat) + the flat runtime pieces.
 export { armCheckBump, armCheckFlatBump, disarmCheckFlatBump, pendingFlatModifier, CHECK_FLAT_ARM_FLAG };
 export { normalizeLentLayer, normalizeIpSatchel, spendLentThenOwn, restRefillLayer, restockIp, spendIp, IP_UNIT_COST, guiseVitals, setGuiseLentCurrent, activeGuiseItem, applyResourceCost, restRefillActorGuises, lentHpAbsorbPlan, onDamagePostLentSplit, onCalculateExpenseLentMp };
-export { buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, setDraftEquipLabel, equipCopyName, EQUIP_SLOT_TYPES, editFieldUpdate };
+export { isUnarmedStrike, withoutUnarmed, hideUnarmedFor, UNARMED_FUID, buildRippersSheetVM, getRippersActorSheetClass, registerRippersSheet, RS_ATTR_LABELS, RS_AFFINITY_TYPES, RS_STATUS_IDS, RS_COND_GROUPS, RS_TABS, rsAffFlags, weaponStats, sheetHealToCrisis, clampSkillSL, guiseSlEditable, setGuiseSkillSL, toggleGuiseSlLock, RS_BOND_EMOTIONS, bondEmotionOptions, bondStrengthOf, withBondAppended, withBondRemoved, RS_INVENTORY_TYPES, itemEquippable, itemIsTwoHanded, equipToggleUpdate, effectBucket, buildInventoryVM, buildEffectsVM, buildSpellsVM, buildGuisePlayVM, materialiseSpells, spellsForSkill, spellGrantingSkillKeys, loadSpellIndex, collectArmorItems, setDraftArmor, collectEquipItems, setDraftEquip, setDraftEquipLabel, equipCopyName, EQUIP_SLOT_TYPES, editFieldUpdate };
 export { statusTargetActor, sheetAdjustResource, sheetToggleStatus, sheetGuiseWear, sheetGuiseSwap, sheetOpenConditions };
 // 2a guise-identity arcana tiles (local assets; picker persists to the guise Item flag).
 export { ARCANA, ARCANA_FLAG, ARCANA_BASE_SETTING, DEFAULT_ARCANA_BASE, arcanaBySlug, arcanaBasePath, arcanaImg, arcanaImgAt, isArcanaImage, prettifyArcanaName, arcanaEntriesFromFiles, resolveArcana, browseArcana, guiseArcana, sheetPickArcana };
