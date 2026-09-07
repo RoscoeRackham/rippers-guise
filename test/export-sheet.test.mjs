@@ -9,13 +9,23 @@ const parts = () => ({
 		classes: ['Orator', 'Sharpshooter'],
 		vitals: { hp: { value: 26, max: 36 }, mp: { value: 11, max: 20 }, ip: { value: 4, max: 6 }, fp: 3, exp: 7, zenit: 250, crisis: { inCrisis: false, score: 18 } },
 		attributes: [{ key: 'dex', label: 'Dexterity', short: 'DEX', die: 'd8' }, { key: 'mig', label: 'Might', short: 'MIG', die: 'd10' }],
-		affinities: [{ type: 'physical', level: 0, word: '—' }, { type: 'dark', level: 1, word: 'Resistant' }],
+		// ✎ 7 Sep 2026 (GUISE-test-affinity-minus-one): all FIVE levels the sheet can emit,
+		// with the exact words from rippers-guise.mjs:3343 (AFFINITY_LEVELS). This fixture used
+		// to say 'Resistant'/'Immune' — strings the exporter cannot produce — and carried no
+		// -1 or 3 case at all. Two consumer bugs traced to exactly that gap.
+		affinities: [
+			{ type: 'physical', level: -1, word: 'Vulnerability' },
+			{ type: 'air', level: 0, word: '—' },
+			{ type: 'dark', level: 1, word: 'Resistance' },
+			{ type: 'bolt', level: 2, word: 'Immunity' },
+			{ type: 'poison', level: 3, word: 'Absorption' },
+		],
 		derived: { def: 11, mdef: 12, init: 6 },
 	},
 	guises: [{
 		name: 'The Vampire Form', role: 'Predator', identity: 'a thing that was a man', innate: false, worn: true, heroicName: 'Nosferatu',
 		bane: 'sunlight', tell: 'no reflection', perk: 'never tires',
-		affinities: [{ type: 'dark', level: 2, word: 'Immune' }],
+		affinities: [{ type: 'dark', level: 2, word: 'Immunity' }],
 		classes: [{ name: 'Vampire', skills: [{ name: 'Blood Drain', sl: 3, maxSl: 5 }] }],
 	}],
 	bonds: [
@@ -53,11 +63,35 @@ test('assembleExport: guises carry classes→skills and affinity words', () => {
 	assert.equal(p.guises[0].heroicName, 'Nosferatu');
 	assert.equal(p.guises[0].classes[0].skills[0].name, 'Blood Drain');
 	assert.equal(p.guises[0].classes[0].skills[0].sl, 3);
-	assert.equal(p.guises[0].affinities[0].word, 'Immune');
+	assert.equal(p.guises[0].affinities[0].word, 'Immunity');
 	// bane/tell/perk structured per-guise (god ruling 5 Sep 2026; additive within schemaVersion 1)
 	assert.equal(p.guises[0].bane, 'sunlight');
 	assert.equal(p.guises[0].tell, 'no reflection');
 	assert.equal(p.guises[0].perk, 'never tires');
+});
+
+test('assembleExport: affinity WORDS survive verbatim, for every level the sheet emits', () => {
+	// The words are the contract a consumer matches on — rippers-guise.mjs:3343 AFFINITY_LEVELS:
+	//   -1 Vulnerability · 0 "—" · 1 Resistance · 2 Immunity · 3 Absorption
+	// Asserting the levels alone is what let 'Resistant'/'Immune' sit in this fixture for a
+	// release: a consumer written against those strings passes its own tests and still
+	// misreads every real sheet.
+	const p = assembleExport(parts());
+	assert.deepEqual(
+		p.character.affinities.map((a) => [a.level, a.word]),
+		[[-1, 'Vulnerability'], [0, '—'], [1, 'Resistance'], [2, 'Immunity'], [3, 'Absorption']]
+	);
+	// -1 is the one that must never be lost: it is the dangerous direction to hide.
+	assert.equal(p.character.affinities.find((a) => a.level === -1).word, 'Vulnerability');
+});
+
+test('renderExportHTML: prints the marked affinities and omits the em-dash row', () => {
+	const html = renderExportHTML(assembleExport(parts()));
+	for (const word of ['Vulnerability', 'Resistance', 'Immunity', 'Absorption']) {
+		assert.match(html, new RegExp(word));
+	}
+	// `air` is level 0 / "—" and is filtered out by the printable sheet's own predicate.
+	assert.doesNotMatch(html, /air/);
 });
 
 test('renderExportHTML: renders guise bane/tell/perk when present, omits when blank', () => {
